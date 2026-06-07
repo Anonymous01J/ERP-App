@@ -1,68 +1,81 @@
-// app/(tabs)/_layout.tsx
 import { Tabs } from 'expo-router';
-import { MD3LightTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useTheme } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Platform } from 'react-native';
 
-export default function TabsLayout() {
+export default function TabLayout() {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+
+  // On Android with 3-button navigation, insets.bottom is > 0.
+  // We add this to the base height and padding to avoid overlap.
+  const bottomPadding = Math.max(insets.bottom, Platform.OS === 'ios' ? 20 : 8);
+  const tabBarHeight = 60 + bottomPadding;
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: MD3LightTheme.colors.primary,
-        tabBarInactiveTintColor: '#757575',
+        headerShown: true,
+        headerStyle: { backgroundColor: theme.colors.primary },
+        headerTintColor: theme.colors.onPrimary,
         tabBarStyle: {
           backgroundColor: '#ffffff',
-          borderTopWidth: 1,
-          borderTopColor: '#E0E0E0',
-          height: 60,
-          paddingBottom: 8,
+          height: tabBarHeight,
+          paddingBottom: bottomPadding,
           paddingTop: 8,
         },
-        headerStyle: {
-          backgroundColor: MD3LightTheme.colors.primary,
-        },
-        headerTintColor: '#ffffff',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-        },
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: 'gray',
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Inicio',
-          headerTitle: 'Panel de Control',
+          title: 'Panel de Control',
+          tabBarLabel: 'Inicio',
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="view-dashboard" color={color} size={size} />
+            <MaterialCommunityIcons name="view-dashboard" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="inventario"
         options={{
-          title: 'Inventario',
-          headerTitle: 'Materia Prima y Stock',
+          title: 'Materia Prima y Stock',
+          tabBarLabel: 'Inventario',
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="database" color={color} size={size} />
+            <MaterialCommunityIcons name="database" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="pedidos"
         options={{
-          title: 'Pedidos',
-          headerTitle: 'Gestión de Pedidos',
+          title: 'Gestión de Ventas',
+          tabBarLabel: 'Pedidos',
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="clipboard-text" color={color} size={size} />
+            <MaterialCommunityIcons name="clipboard-text" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="viajes"
         options={{
-          title: 'Viajes',
-          headerTitle: 'Logística de Viajes',
+          title: 'Logística',
+          tabBarLabel: 'Viajes',
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="truck-delivery" color={color} size={size} />
+            <MaterialCommunityIcons name="truck-delivery" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="clientes"
+        options={{
+          title: 'Directorio de Clientes',
+          tabBarLabel: 'Clientes',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="account-group" size={size} color={color} />
           ),
         }}
       />
