@@ -30,16 +30,6 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Panel de Control',
-          tabBarLabel: 'Inicio',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="view-dashboard" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="inventario"
         options={{
           title: 'Materia Prima y Stock',
@@ -56,6 +46,16 @@ export default function TabLayout() {
           tabBarLabel: 'Pedidos',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="clipboard-text" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Panel de Control',
+          tabBarLabel: 'Inicio',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="view-dashboard" size={size} color={color} />
           ),
         }}
       />

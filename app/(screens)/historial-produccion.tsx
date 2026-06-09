@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, Appbar, useTheme, Divider } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { CustomCard } from '@components/CustomCard';
+import { CustomCard } from '@components/ui/CustomCard';
 
 export default function HistorialProduccionScreen() {
   const router = useRouter();

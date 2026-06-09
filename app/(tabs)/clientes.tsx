@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Text, Avatar, useTheme, IconButton, Divider, Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { CustomCard } from '@components/CustomCard';
-import { StatusBarBadge, StatusType } from '@components/StatusBarBadge';
+import { CustomCard } from '@components/ui/CustomCard';
+import { StatusBarBadge, StatusType } from '@components/uiStatusBarBadge';
 
 export default function ClientesScreen() {
   const theme = useTheme();

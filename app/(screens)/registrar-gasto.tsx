@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text, Appbar, useTheme, TextInput, IconButton, Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { CustomCard } from '@components/CustomCard';
+import { CustomCard } from '@components/ui/CustomCard';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 export default function RegistrarGastoScreen() {

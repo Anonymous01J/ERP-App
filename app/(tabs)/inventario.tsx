@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { SegmentedButtons, List, Text, Button, Divider, useTheme } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { CustomCard } from '@components/CustomCard';
+import { CustomCard } from '@components/ui/CustomCard';
 
 export default function InventarioScreen() {
   const router = useRouter();
@@ -11,8 +11,8 @@ export default function InventarioScreen() {
 
   // Mock data
   const bobinas = [
-    { id: '1', tipo: 'Papel A', kg: 1500, status: 'activa' },
-    { id: '2', tipo: 'Papel B', kg: 800, status: 'activa' },
+    { id: '1', tipo: 'Papel A', kg: 343, status: 'activa' },
+    { id: '2', tipo: 'Papel B', kg: 234, status: 'activa' },
   ];
 
   const productoTerminado = [

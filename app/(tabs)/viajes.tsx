@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { List, Text, Button, useTheme, Chip, IconButton, TextInput, Divider } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { CustomCard } from '@components/CustomCard';
+import { CustomCard } from '@components/ui/CustomCard';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 // Subcomponente para el formulario de gastos dentro de un viaje activo
@@ -84,9 +84,9 @@ export default function ViajesScreen() {
 
   // Mock data minimalist approach
   const viajes = [
-    { id: '1', tipo: 'compra', origen: 'Distribuidora Central', estado: 'En Curso', fecha: 'Hoy, 08:30 AM', items: '2 Bobinas (1500kg)', conductor: 'Carlos M.' },
-    { id: '3', tipo: 'entrega', destino: 'Papelera Norte', estado: 'En Curso', fecha: 'Hoy, 10:00 AM', items: '300 Rollos (600g)', conductor: 'Pedro A.' },
-    { id: '2', tipo: 'entrega', destino: 'Librería Escolar', estado: 'Entregado', fecha: 'Ayer, 02:15 PM', items: '150 Rollos (1kg)', conductor: 'José L.' },
+    { id: '1', tipo: 'compra', origen: 'Distribuidora Central', estado: 'En Curso', fecha: 'Hoy, 08:30 AM', items: '2 Bobinas (1500kg)' },
+    { id: '3', tipo: 'entrega', destino: 'Papelera Norte', estado: 'En Curso', fecha: 'Hoy, 10:00 AM', items: '300 Rollos (600g)' },
+    { id: '2', tipo: 'entrega', destino: 'Librería Escolar', estado: 'Entregado', fecha: 'Ayer, 02:15 PM', items: '150 Rollos (1kg)' },
   ];
 
   const viajesActivos = viajes.filter(v => v.estado === 'En Curso');
@@ -126,9 +126,7 @@ export default function ViajesScreen() {
                 titleStyle={{ fontWeight: 'bold' }}
               >
                 <View style={styles.accordionContent}>
-                  <Text variant="bodyMedium" style={styles.detailText}>Carga: <Text style={{fontWeight:'bold'}}>{viaje.items}</Text></Text>
-                  <Text variant="bodyMedium" style={styles.detailText}>Conductor: {viaje.conductor}</Text>
-                  
+                  <Text variant="bodyMedium" style={styles.detailText}>Carga: <Text style={{fontWeight:'bold'}}>{viaje.items}</Text></Text>                  
                   {/* Formulario de Gastos */}
                   <View style={{ marginTop: 16 }}>
                     <GastoViajeForm theme={theme} />
@@ -163,8 +161,7 @@ export default function ViajesScreen() {
               >
                 <View style={styles.accordionContent}>
                   <Text variant="bodyMedium" style={styles.detailText}>Carga: <Text style={{fontWeight:'bold'}}>{viaje.items}</Text></Text>
-                  <Text variant="bodyMedium" style={styles.detailText}>Conductor: {viaje.conductor}</Text>
-                  
+
                   <View style={styles.actionRow}>
                     <Button mode="outlined" onPress={() => console.log('Ver Detalles')} style={styles.actionButton}>
                       Ver Detalles

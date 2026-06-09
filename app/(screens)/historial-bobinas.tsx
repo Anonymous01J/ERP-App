@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, Appbar, useTheme, Divider } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { CustomCard } from '@components/CustomCard';
+import { CustomCard } from '@components/ui/CustomCard';
 
 export default function HistorialBobinasScreen() {
   const router = useRouter();
@@ -14,7 +14,7 @@ export default function HistorialBobinasScreen() {
       id: '1',
       codigo: 'BOB-045',
       tipo: 'Papel A',
-      pesoOriginal: 1520,
+      pesoOriginal: 340,
       fechaIngreso: '10/05/2026',
       fechaInicio: '28/05/2026',
       fechaAgotada: '05/06/2026',
@@ -22,14 +22,14 @@ export default function HistorialBobinasScreen() {
         { presentacion: '600g', cantidad: 1200 },
         { presentacion: '1kg', cantidad: 450 },
       ],
-      merma: 35, // kg
-      pesoMuerto: 15,
+      merma: 2.3, // kg
+      pesoMuerto: 3,
     },
     {
       id: '2',
       codigo: 'BOB-044',
       tipo: 'Papel B',
-      pesoOriginal: 810,
+      pesoOriginal: 345,
       fechaIngreso: '01/05/2026',
       fechaInicio: '15/05/2026',
       fechaAgotada: '01/06/2026',
@@ -37,8 +37,8 @@ export default function HistorialBobinasScreen() {
         { presentacion: '1kg', cantidad: 600 },
         { presentacion: '2.5kg', cantidad: 60 },
       ],
-      merma: 20, // kg
-      pesoMuerto: 10,
+      merma: 4, // kg
+      pesoMuerto: 1.8,
     },
   ];
 

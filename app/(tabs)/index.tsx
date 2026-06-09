@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, Dimensions } from 'react-native';
 import { Text, FAB, useTheme, Avatar, SegmentedButtons } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { CustomCard } from '@components/CustomCard';
+import { CustomCard } from '@components/ui/CustomCard';
 import { LineChart } from 'react-native-gifted-charts';
 
 export default function DashboardScreen() {
@@ -15,7 +15,7 @@ export default function DashboardScreen() {
   const metrics = {
     pedidosPorProducir: 15,
     produccionHoy: 450,
-    viajesActivos: 3,
+    pedidosListos: 5,
     pagosPorVencer: 2,
     pagosVencidos: 1,
   };
@@ -201,10 +201,10 @@ export default function DashboardScreen() {
 
         <CustomCard>
           <View style={styles.cardContent}>
-            <Avatar.Icon size={48} icon="truck-fast-outline" style={{ backgroundColor: theme.colors.tertiaryContainer }} color={theme.colors.onTertiaryContainer} />
+            <Avatar.Icon size={48} icon="package-check" style={{ backgroundColor: theme.colors.tertiaryContainer }} color={theme.colors.onTertiaryContainer} />
             <View style={styles.textContainer}>
-              <Text variant="titleMedium">Viajes Activos</Text>
-              <Text variant="headlineMedium" style={{ color: theme.colors.tertiary, fontWeight: 'bold' }}>{metrics.viajesActivos}</Text>
+              <Text variant="titleMedium">Pedidos Listos (Para Despacho)</Text>
+              <Text variant="headlineMedium" style={{ color: theme.colors.tertiary, fontWeight: 'bold' }}>{metrics.pedidosListos}</Text>
             </View>
           </View>
         </CustomCard>
