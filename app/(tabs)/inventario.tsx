@@ -37,6 +37,12 @@ export default function InventarioScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {tab === 'bobinas' ? (
           <List.Section>
+            <View style={styles.headerRow}>
+              <Text variant="titleLarge" style={styles.sectionTitle}>Bobinas Activas</Text>
+              <Button mode="text" onPress={() => router.push('/(screens)/historial-bobinas')}>
+                Ver Historial
+              </Button>
+            </View>
             {bobinas.map((bobina) => (
               <List.Accordion
                 key={bobina.id}
@@ -62,14 +68,14 @@ export default function InventarioScreen() {
           <View>
             <View style={styles.headerRow}>
               <Text variant="titleLarge" style={styles.sectionTitle}>Rollos Empaquetados</Text>
-              <Button 
-                mode="outlined"
-                icon="pencil-outline"
-                onPress={() => router.push('/(screens)/gestionar-presentaciones')}
-                style={{ marginRight: 16 }}
-              >
-                Gestionar
-              </Button>
+              <View style={{ flexDirection: 'row' }}>
+                <Button mode="text" onPress={() => router.push('/(screens)/historial-produccion')}>
+                  Historial
+                </Button>
+                <Button mode="text" onPress={() => router.push('/(screens)/gestionar-presentaciones')}>
+                  Ajustes
+                </Button>
+              </View>
             </View>
             {productoTerminado.map((prod, index) => (
               <CustomCard key={index}>

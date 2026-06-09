@@ -12,10 +12,31 @@ export default function RegistrarViajeScreen() {
   const [conductor, setConductor] = useState('');
   const [notas, setNotas] = useState('');
 
+  const [pedidosSeleccionados, setPedidosSeleccionados] = useState<string[]>([]);
+
+  // Mock pedidos pendientes
+  const pedidosPendientes = [
+    { id: '1', titulo: 'Pedido #001 - Librería Escolar' },
+    { id: '2', titulo: 'Pedido #002 - Papelera Central' },
+    { id: '3', titulo: 'Pedido #003 - Distribuidora X' },
+  ];
+
+  const handleTogglePedido = (id: string) => {
+    if (pedidosSeleccionados.includes(id)) {
+      setPedidosSeleccionados(pedidosSeleccionados.filter(p => p !== id));
+    } else {
+      setPedidosSeleccionados([...pedidosSeleccionados, id]);
+    }
+  };
+
   const handleGuardar = () => {
-    console.log('Iniciar Viaje:', { tipoViaje, destinoOrigen, conductor, notas });
+    console.log('Iniciar Viaje:', { tipoViaje, destinoOrigen, conductor, notas, pedidosSeleccionados });
     router.back();
   };
+
+  const isBotonDeshabilitado = tipoViaje === 'compra' 
+    ? (!destinoOrigen || !conductor)
+    : (pedidosSeleccionados.length === 0);
 
   return (
     <View style={styles.container}>
@@ -40,20 +61,44 @@ export default function RegistrarViajeScreen() {
             style={styles.segmented}
           />
 
-          <TextInput
-            mode="outlined"
-            label={tipoViaje === 'entrega' ? 'Cliente Destino' : 'Proveedor Origen'}
-            value={destinoOrigen}
-            onChangeText={setDestinoOrigen}
-            style={styles.input}
-          />
-          <TextInput
-            mode="outlined"
-            label="Conductor Asignado"
-            value={conductor}
-            onChangeText={setConductor}
-            style={styles.input}
-          />
+          {tipoViaje === 'compra' ? (
+            <>
+              <TextInput
+                mode="outlined"
+                label="Proveedor Origen"
+                value={destinoOrigen}
+                onChangeText={setDestinoOrigen}
+                style={styles.input}
+              />
+              <TextInput
+                mode="outlined"
+                label="Conductor Asignado"
+                value={conductor}
+                onChangeText={setConductor}
+                style={styles.input}
+              />
+            </>
+          ) : (
+            <View style={styles.pedidosContainer}>
+              <Text variant="titleMedium" style={styles.label}>Pedidos a Transportar</Text>
+              {pedidosPendientes.map((pedido) => {
+                const seleccionado = pedidosSeleccionados.includes(pedido.id);
+                return (
+                  <Button
+                    key={pedido.id}
+                    mode={seleccionado ? 'contained' : 'outlined'}
+                    icon={seleccionado ? 'check-circle' : 'package-variant'}
+                    onPress={() => handleTogglePedido(pedido.id)}
+                    style={styles.pedidoItem}
+                    contentStyle={{ justifyContent: 'flex-start' }}
+                  >
+                    {pedido.titulo}
+                  </Button>
+                );
+              })}
+            </View>
+          )}
+
           <TextInput
             mode="outlined"
             label="Notas de Carga (Opcional)"
@@ -73,7 +118,7 @@ export default function RegistrarViajeScreen() {
           onPress={handleGuardar} 
           style={styles.saveButton}
           contentStyle={styles.saveButtonContent}
-          disabled={!destinoOrigen || !conductor}
+          disabled={isBotonDeshabilitado}
         >
           Iniciar Viaje
         </Button>
@@ -114,5 +159,12 @@ const styles = StyleSheet.create({
   },
   saveButtonContent: {
     paddingVertical: 12,
+  },
+  pedidosContainer: {
+    marginBottom: 24,
+  },
+  pedidoItem: {
+    marginBottom: 8,
+    borderRadius: 8,
   },
 });

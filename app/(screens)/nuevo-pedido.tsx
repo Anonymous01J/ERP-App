@@ -1,9 +1,16 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
-import { Text, Button, Appbar, useTheme, Divider, Menu, TextInput } from 'react-native-paper';
+import { Text, Button, Appbar, useTheme, Divider, Menu, SegmentedButtons, IconButton } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { NumericInput } from '@components/NumericInput';
 import { CustomCard } from '@components/CustomCard';
+
+type PedidoItem = {
+  id: string;
+  papel: string;
+  presentacion: string;
+  cantidad: number;
+};
 
 export default function NuevoPedidoScreen() {
   const router = useRouter();
@@ -12,16 +19,32 @@ export default function NuevoPedidoScreen() {
   // Form state
   const [menuVisible, setMenuVisible] = useState(false);
   const [cliente, setCliente] = useState<string | null>(null);
-  const [rollos600g, setRollos600g] = useState(0);
-  const [rollos1kg, setRollos1kg] = useState(0);
-  const [rollos2kg, setRollos2kg] = useState(0);
+  
+  // Item Form state
+  const [papel, setPapel] = useState('Papel A');
+  const [presentacion, setPresentacion] = useState('600g');
+  const [cantidad, setCantidad] = useState(0);
+
+  // List of added items
+  const [items, setItems] = useState<PedidoItem[]>([]);
+
+  const handleAgregarItem = () => {
+    if (cantidad > 0) {
+      setItems([...items, { id: Date.now().toString(), papel, presentacion, cantidad }]);
+      setCantidad(0); // Reset quantity for next item
+    }
+  };
+
+  const handleRemoverItem = (id: string) => {
+    setItems(items.filter(item => item.id !== id));
+  };
 
   const handleGuardar = () => {
-    console.log('Guardar Pedido a Crédito:', { cliente, rollos600g, rollos1kg, rollos2kg });
+    console.log('Guardar Pedido a Crédito:', { cliente, items });
     router.back();
   };
 
-  const totalRollos = rollos600g + rollos1kg + rollos2kg;
+  const totalRollos = items.reduce((acc, curr) => acc + curr.cantidad, 0);
 
   return (
     <View style={styles.container}>
@@ -35,6 +58,8 @@ export default function NuevoPedidoScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          
+          {/* 1. Selección de Cliente */}
           <CustomCard>
             <View style={styles.cardContent}>
               <Text variant="titleMedium" style={styles.sectionTitle}>1. Selección de Cliente</Text>
@@ -67,28 +92,80 @@ export default function NuevoPedidoScreen() {
             </View>
           </CustomCard>
 
+          {/* 2. Constructor de Productos */}
           <CustomCard>
             <View style={styles.cardContent}>
-              <Text variant="titleMedium" style={styles.sectionTitle}>2. Productos Requeridos</Text>
+              <Text variant="titleMedium" style={styles.sectionTitle}>2. Añadir Productos</Text>
               
-              <View style={styles.inputRow}>
-                <Text variant="bodyLarge">Rollos 600g</Text>
-                <NumericInput value={rollos600g} onChange={setRollos600g} />
-              </View>
-              <Divider style={styles.divider} />
-              
-              <View style={styles.inputRow}>
-                <Text variant="bodyLarge">Rollos 1kg</Text>
-                <NumericInput value={rollos1kg} onChange={setRollos1kg} />
-              </View>
-              <Divider style={styles.divider} />
+              <Text variant="bodyMedium" style={{ marginBottom: 8, color: '#555' }}>Tipo de Papel</Text>
+              <SegmentedButtons
+                value={papel}
+                onValueChange={setPapel}
+                buttons={[
+                  { value: 'Papel A', label: 'Papel A' },
+                  { value: 'Papel B', label: 'Papel B' },
+                  { value: 'Kraft', label: 'Kraft' },
+                ]}
+                style={{ marginBottom: 16 }}
+              />
 
+              <Text variant="bodyMedium" style={{ marginBottom: 8, color: '#555' }}>Presentación</Text>
+              <SegmentedButtons
+                value={presentacion}
+                onValueChange={setPresentacion}
+                buttons={[
+                  { value: '600g', label: '600g' },
+                  { value: '1kg', label: '1kg' },
+                  { value: '2.5kg', label: '2.5kg' },
+                ]}
+                style={{ marginBottom: 16 }}
+              />
+              
               <View style={styles.inputRow}>
-                <Text variant="bodyLarge">Rollos 2.5kg</Text>
-                <NumericInput value={rollos2kg} onChange={setRollos2kg} />
+                <Text variant="bodyLarge">Cantidad de Rollos</Text>
+                <NumericInput value={cantidad} onChange={setCantidad} />
               </View>
+
+              <Button 
+                mode="contained-tonal" 
+                icon="plus" 
+                onPress={handleAgregarItem} 
+                style={{ marginTop: 16 }} 
+                disabled={cantidad === 0}
+              >
+                Añadir al Pedido
+              </Button>
             </View>
           </CustomCard>
+
+          {/* 3. Resumen del Pedido */}
+          {items.length > 0 && (
+            <CustomCard>
+              <View style={styles.cardContent}>
+                <Text variant="titleMedium" style={styles.sectionTitle}>3. Resumen del Pedido</Text>
+                
+                {items.map((item) => (
+                  <View key={item.id} style={styles.itemAddedRow}>
+                    <Text variant="bodyMedium" style={{ flex: 1, color: '#333' }}>
+                      • {item.cantidad} x {item.presentacion} ({item.papel})
+                    </Text>
+                    <IconButton 
+                      icon="close-circle-outline" 
+                      iconColor={theme.colors.error} 
+                      size={20} 
+                      onPress={() => handleRemoverItem(item.id)} 
+                      style={{ margin: 0 }}
+                    />
+                  </View>
+                ))}
+                
+                <Divider style={styles.divider} />
+                <Text variant="bodyMedium" style={{ fontWeight: 'bold', textAlign: 'right' }}>
+                  Total Rollos: {totalRollos}
+                </Text>
+              </View>
+            </CustomCard>
+          )}
 
           <View style={styles.infoBox}>
             <Text variant="bodyMedium" style={{ color: '#555', textAlign: 'center' }}>
@@ -106,7 +183,7 @@ export default function NuevoPedidoScreen() {
           style={styles.saveButton}
           contentStyle={styles.saveButtonContent}
           labelStyle={styles.saveButtonLabel}
-          disabled={!cliente || totalRollos === 0}
+          disabled={!cliente || items.length === 0}
         >
           Guardar Pedido
         </Button>
@@ -126,6 +203,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 8,
     paddingBottom: 24,
+    gap: 8,
   },
   cardContent: {
     padding: 16,
@@ -144,8 +222,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginVertical: 4,
   },
+  itemAddedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
   divider: {
-    marginVertical: 8,
+    marginVertical: 12,
   },
   infoBox: {
     marginHorizontal: 16,

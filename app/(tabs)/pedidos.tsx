@@ -12,10 +12,10 @@ export default function PedidosScreen() {
 
   // Mock data - All orders are on credit (1 installment, 30 days)
   const pedidos = [
-    { id: '1', cliente: 'Distribuidora Norte', status: 'en_produccion' as StatusType, fechaVencimiento: '2026-07-06', deuda: 200, abonado: 0 },
-    { id: '2', cliente: 'Papelera Central', status: 'credito' as StatusType, fechaVencimiento: '2026-06-20', deuda: 100, abonado: 40 },
-    { id: '3', cliente: 'Librería Escolar', status: 'por_vencer' as StatusType, fechaVencimiento: '2026-06-10', deuda: 50, abonado: 0 },
-    { id: '4', cliente: 'Inversiones Sur', status: 'atrasado' as StatusType, fechaVencimiento: '2026-05-15', deuda: 80, abonado: 20 },
+    { id: '1', cliente: 'Distribuidora Norte', status: 'en_produccion' as StatusType, fechaVencimiento: '2026-07-06', deuda: 200, abonado: 0, items: [{ cantidad: 300, presentacion: '2.5kg', papel: 'Papel A' }] },
+    { id: '2', cliente: 'Papelera Central', status: 'credito' as StatusType, fechaVencimiento: '2026-06-20', deuda: 100, abonado: 40, items: [{ cantidad: 100, presentacion: '1kg', papel: 'Papel B' }, { cantidad: 50, presentacion: '600g', papel: 'Papel A' }] },
+    { id: '3', cliente: 'Librería Escolar', status: 'por_vencer' as StatusType, fechaVencimiento: '2026-06-10', deuda: 50, abonado: 0, items: [{ cantidad: 50, presentacion: '5kg', papel: 'Kraft' }] },
+    { id: '4', cliente: 'Inversiones Sur', status: 'atrasado' as StatusType, fechaVencimiento: '2026-05-15', deuda: 80, abonado: 20, items: [{ cantidad: 200, presentacion: '600g', papel: 'Papel A' }] },
   ];
 
   return (
@@ -49,7 +49,15 @@ export default function PedidosScreen() {
                   <StatusBarBadge status={pedido.status} />
                 </View>
                 
-                <Text variant="bodyMedium" style={styles.dueDate}>
+                <View style={{ marginBottom: 8 }}>
+                  {pedido.items.map((item, index) => (
+                    <Text key={index} variant="bodyMedium" style={{ color: '#444' }}>
+                      • {item.cantidad} x {item.presentacion} ({item.papel})
+                    </Text>
+                  ))}
+                </View>
+
+                <Text variant="bodySmall" style={styles.dueDate}>
                   Vence: {pedido.fechaVencimiento}
                 </Text>
 

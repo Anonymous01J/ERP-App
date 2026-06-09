@@ -65,6 +65,10 @@ export default function RootLayout() {
           name="(screens)/historial-bobinas" 
           options={{ presentation: 'fullScreenModal' }} 
         />
+        <Stack.Screen 
+          name="(screens)/historial-produccion" 
+          options={{ presentation: 'fullScreenModal' }} 
+        />
       </Stack>
     </PaperProvider>
   );
