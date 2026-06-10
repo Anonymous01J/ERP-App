@@ -3,7 +3,8 @@ export type EstadoFinanciero = 'credito' | 'por_vencer' | 'atrasado' | 'pagado' 
 
 export interface PedidoItem {
   id?: string; // Optional since it might be generated at creation
-  papel: string;
+  tipoItem: 'papel' | 'pote';
+  papel?: string;
   presentacion: string;
   cantidad: number;
 }

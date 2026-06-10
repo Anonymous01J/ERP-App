@@ -21,6 +21,12 @@ export function InventarioDashboardScreen() {
     { presentacion: '2.5kg', rollos: 12, paquetes: 3, porPaquete: 4 },
   ];
 
+  const potes = [
+    { id: '1', capacidad: '250g', stockActual: 150, precioVentaUsd: 0.30 },
+    { id: '2', capacidad: '500g', stockActual: 80, precioVentaUsd: 0.50 },
+    { id: '3', capacidad: '1kg', stockActual: 45, precioVentaUsd: 0.80 },
+  ];
+
   return (
     <View style={styles.container}>
       <View style={styles.segmentContainer}>
@@ -28,8 +34,9 @@ export function InventarioDashboardScreen() {
           value={tab}
           onValueChange={setTab}
           buttons={[
-            { value: 'bobinas', label: 'Bobinas Grandes' },
-            { value: 'terminado', label: 'Producto Terminado' },
+            { value: 'bobinas', label: 'Bobinas' },
+            { value: 'terminado', label: 'Rollos' },
+            { value: 'potes', label: 'Potes' },
           ]}
         />
       </View>
@@ -64,7 +71,7 @@ export function InventarioDashboardScreen() {
               </List.Accordion>
             ))}
           </List.Section>
-        ) : (
+        ) : tab === 'terminado' ? (
           <View>
             <View style={styles.headerRow}>
               <Text variant="titleLarge" style={styles.sectionTitle}>Rollos Empaquetados</Text>
@@ -84,6 +91,32 @@ export function InventarioDashboardScreen() {
                     <Text variant="titleMedium">Presentación {prod.presentacion}</Text>
                     <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
                       {prod.rollos} rollos sueltos / {prod.paquetes} paquetes ({prod.porPaquete}x)
+                    </Text>
+                  </View>
+                </View>
+              </CustomCard>
+            ))}
+          </View>
+        ) : (
+          <View>
+            <View style={styles.headerRow}>
+              <Text variant="titleLarge" style={styles.sectionTitle}>Inventario de Potes</Text>
+              <Button mode="text" icon="plus" onPress={() => router.push('/(screens)/gestionar-potes')}>
+                Registrar Compra
+              </Button>
+            </View>
+            {potes.map((pote) => (
+              <CustomCard key={pote.id}>
+                <View style={styles.cardContent}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View>
+                      <Text variant="titleMedium">Pote de {pote.capacidad}</Text>
+                      <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                        En stock: {pote.stockActual} unidades
+                      </Text>
+                    </View>
+                    <Text variant="titleMedium" style={{ color: theme.colors.primary }}>
+                      ${pote.precioVentaUsd.toFixed(2)}
                     </Text>
                   </View>
                 </View>

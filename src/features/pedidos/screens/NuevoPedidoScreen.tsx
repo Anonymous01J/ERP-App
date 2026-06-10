@@ -15,8 +15,10 @@ export function NuevoPedidoScreen() {
   const [cliente, setCliente] = useState<string | null>(null);
   
   // Item Form state
+  const [tipoItem, setTipoItem] = useState<'papel' | 'pote'>('papel');
   const [papel, setPapel] = useState('Papel A');
   const [presentacion, setPresentacion] = useState('600g');
+  const [poteCapacidad, setPoteCapacidad] = useState('500g');
   const [cantidad, setCantidad] = useState(0);
 
   // List of added items
@@ -24,7 +26,13 @@ export function NuevoPedidoScreen() {
 
   const handleAgregarItem = () => {
     if (cantidad > 0) {
-      setItems([...items, { id: Date.now().toString(), papel, presentacion, cantidad }]);
+      setItems([...items, { 
+        id: Date.now().toString(), 
+        tipoItem, 
+        papel: tipoItem === 'papel' ? papel : undefined, 
+        presentacion: tipoItem === 'papel' ? presentacion : poteCapacidad, 
+        cantidad 
+      }]);
       setCantidad(0); // Reset quantity for next item
     }
   };
@@ -91,29 +99,57 @@ export function NuevoPedidoScreen() {
             <View style={styles.cardContent}>
               <Text variant="titleMedium" style={styles.sectionTitle}>2. Añadir Productos</Text>
               
-              <Text variant="bodyMedium" style={{ marginBottom: 8, color: '#555' }}>Tipo de Papel</Text>
               <SegmentedButtons
-                value={papel}
-                onValueChange={setPapel}
+                value={tipoItem}
+                onValueChange={(val) => setTipoItem(val as 'papel' | 'pote')}
                 buttons={[
-                  { value: 'Papel A', label: 'Papel A' },
-                  { value: 'Papel B', label: 'Papel B' },
-                  { value: 'Kraft', label: 'Kraft' },
+                  { value: 'papel', label: 'Rollos de Papel' },
+                  { value: 'pote', label: 'Envases (Potes)' },
                 ]}
                 style={{ marginBottom: 16 }}
               />
 
-              <Text variant="bodyMedium" style={{ marginBottom: 8, color: '#555' }}>Presentación</Text>
-              <SegmentedButtons
-                value={presentacion}
-                onValueChange={setPresentacion}
-                buttons={[
-                  { value: '600g', label: '600g' },
-                  { value: '1kg', label: '1kg' },
-                  { value: '2.5kg', label: '2.5kg' },
-                ]}
-                style={{ marginBottom: 16 }}
-              />
+              {tipoItem === 'papel' ? (
+                <>
+                  <Text variant="bodyMedium" style={{ marginBottom: 8, color: '#555' }}>Tipo de Papel</Text>
+                  <SegmentedButtons
+                    value={papel}
+                    onValueChange={setPapel}
+                    buttons={[
+                      { value: 'Papel A', label: 'Papel A' },
+                      { value: 'Papel B', label: 'Papel B' },
+                      { value: 'Kraft', label: 'Kraft' },
+                    ]}
+                    style={{ marginBottom: 16 }}
+                  />
+
+                  <Text variant="bodyMedium" style={{ marginBottom: 8, color: '#555' }}>Presentación</Text>
+                  <SegmentedButtons
+                    value={presentacion}
+                    onValueChange={setPresentacion}
+                    buttons={[
+                      { value: '600g', label: '600g' },
+                      { value: '1kg', label: '1kg' },
+                      { value: '2.5kg', label: '2.5kg' },
+                    ]}
+                    style={{ marginBottom: 16 }}
+                  />
+                </>
+              ) : (
+                <>
+                  <Text variant="bodyMedium" style={{ marginBottom: 8, color: '#555' }}>Capacidad del Pote</Text>
+                  <SegmentedButtons
+                    value={poteCapacidad}
+                    onValueChange={setPoteCapacidad}
+                    buttons={[
+                      { value: '250g', label: '250g' },
+                      { value: '500g', label: '500g' },
+                      { value: '1kg', label: '1kg' },
+                    ]}
+                    style={{ marginBottom: 16 }}
+                  />
+                </>
+              )}
               
               <View style={styles.inputRow}>
                 <Text variant="bodyLarge">Cantidad de Rollos</Text>
@@ -141,7 +177,7 @@ export function NuevoPedidoScreen() {
                 {items.map((item) => (
                   <View key={item.id} style={styles.itemAddedRow}>
                     <Text variant="bodyMedium" style={{ flex: 1, color: '#333' }}>
-                      • {item.cantidad} x {item.presentacion} ({item.papel})
+                      • {item.cantidad} x {item.presentacion} {item.tipoItem === 'papel' ? `(${item.papel})` : '(Pote)'}
                     </Text>
                     <IconButton 
                       icon="close-circle-outline" 

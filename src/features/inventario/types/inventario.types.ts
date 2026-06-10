@@ -30,3 +30,11 @@ export interface HistorialBobina extends Bobina {
   merma: number; // kg
   pesoMuerto: number; // core weight
 }
+
+export interface Pote {
+  id?: string;
+  capacidad: string;
+  stockActual: number;
+  precioVentaUsd: number;
+  precioCompraUsd?: number;
+}
