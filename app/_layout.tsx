@@ -3,6 +3,8 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MD3LightTheme, PaperProvider } from 'react-native-paper';
+import { PowerSyncContext } from '@powersync/react';
+import { db, setupPowerSync } from '../src/core/powersync/system';
 
 // Custom theme for the paper rewinding business
 const theme = {
@@ -29,47 +31,54 @@ export default function RootLayout() {
     }
   }, [fontError]);
 
+  useEffect(() => {
+    // Inicializar PowerSync y conectar con Supabase al iniciar la app
+    setupPowerSync().catch(console.error);
+  }, []);
+
   if (!fontsLoaded && !fontError) {
     return null;
   }
 
   return (
-    <PaperProvider theme={theme}>
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen 
-          name="(screens)/registrar-produccion" 
-          options={{ presentation: 'fullScreenModal' }} 
-        />
-        <Stack.Screen 
-          name="(screens)/registrar-gasto" 
-          options={{ presentation: 'fullScreenModal' }} 
-        />
-        <Stack.Screen 
-          name="(screens)/nuevo-pedido" 
-          options={{ presentation: 'fullScreenModal' }} 
-        />
-        <Stack.Screen 
-          name="(screens)/registrar-cliente" 
-          options={{ presentation: 'fullScreenModal' }} 
-        />
-        <Stack.Screen 
-          name="(screens)/gestionar-presentaciones" 
-          options={{ presentation: 'fullScreenModal' }} 
-        />
-        <Stack.Screen 
-          name="(screens)/registrar-viaje" 
-          options={{ presentation: 'fullScreenModal' }} 
-        />
-        <Stack.Screen 
-          name="(screens)/historial-bobinas" 
-          options={{ presentation: 'fullScreenModal' }} 
-        />
-        <Stack.Screen 
-          name="(screens)/historial-produccion" 
-          options={{ presentation: 'fullScreenModal' }} 
-        />
-      </Stack>
-    </PaperProvider>
+    <PowerSyncContext.Provider value={db}>
+      <PaperProvider theme={theme}>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen 
+            name="(screens)/registrar-produccion" 
+            options={{ presentation: 'fullScreenModal' }} 
+          />
+          <Stack.Screen 
+            name="(screens)/registrar-gasto" 
+            options={{ presentation: 'fullScreenModal' }} 
+          />
+          <Stack.Screen 
+            name="(screens)/nuevo-pedido" 
+            options={{ presentation: 'fullScreenModal' }} 
+          />
+          <Stack.Screen 
+            name="(screens)/registrar-cliente" 
+            options={{ presentation: 'fullScreenModal' }} 
+          />
+          <Stack.Screen 
+            name="(screens)/gestionar-presentaciones" 
+            options={{ presentation: 'fullScreenModal' }} 
+          />
+          <Stack.Screen 
+            name="(screens)/registrar-viaje" 
+            options={{ presentation: 'fullScreenModal' }} 
+          />
+          <Stack.Screen 
+            name="(screens)/historial-bobinas" 
+            options={{ presentation: 'fullScreenModal' }} 
+          />
+          <Stack.Screen 
+            name="(screens)/historial-produccion" 
+            options={{ presentation: 'fullScreenModal' }} 
+          />
+        </Stack>
+      </PaperProvider>
+    </PowerSyncContext.Provider>
   );
 }
