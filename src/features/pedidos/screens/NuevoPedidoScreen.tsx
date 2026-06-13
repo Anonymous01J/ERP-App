@@ -4,6 +4,7 @@ import { Text, Button, Appbar, useTheme, Divider, Menu, SegmentedButtons, IconBu
 import { useRouter } from 'expo-router';
 import { NumericInput } from '@components/ui/NumericInput';
 import { CustomCard } from '@components/ui/CustomCard';
+import { DatePickerInput } from '@components/ui/DatePickerInput';
 import { PedidoItem } from '../types/pedidos.types';
 
 export function NuevoPedidoScreen() {
@@ -13,6 +14,7 @@ export function NuevoPedidoScreen() {
   // Form state
   const [menuVisible, setMenuVisible] = useState(false);
   const [cliente, setCliente] = useState<string | null>(null);
+  const [fechaEntrega, setFechaEntrega] = useState<string>('');
   
   // Item Form state
   const [tipoItem, setTipoItem] = useState<'papel' | 'pote'>('papel');
@@ -42,7 +44,7 @@ export function NuevoPedidoScreen() {
   };
 
   const handleGuardar = () => {
-    console.log('Guardar Pedido a Crédito:', { cliente, items });
+    console.log('Guardar Pedido a Crédito:', { cliente, fechaEntrega, items });
     router.back();
   };
 
@@ -61,10 +63,10 @@ export function NuevoPedidoScreen() {
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
           
-          {/* 1. Selección de Cliente */}
+          {/* 1. Cliente y Entrega */}
           <CustomCard>
             <View style={styles.cardContent}>
-              <Text variant="titleMedium" style={styles.sectionTitle}>1. Selección de Cliente</Text>
+              <Text variant="titleMedium" style={styles.sectionTitle}>1. Cliente y Entrega</Text>
               
               <Menu
                 visible={menuVisible}
@@ -91,6 +93,14 @@ export function NuevoPedidoScreen() {
                   + Registrar Nuevo Cliente
                 </Button>
               )}
+
+              <View style={{ marginTop: 16 }}>
+                <DatePickerInput
+                  label="Fecha de Entrega"
+                  value={fechaEntrega}
+                  onChange={setFechaEntrega}
+                />
+              </View>
             </View>
           </CustomCard>
 
@@ -213,7 +223,7 @@ export function NuevoPedidoScreen() {
           style={styles.saveButton}
           contentStyle={styles.saveButtonContent}
           labelStyle={styles.saveButtonLabel}
-          disabled={!cliente || items.length === 0}
+          disabled={!cliente || items.length === 0 || !fechaEntrega}
         >
           Guardar Pedido
         </Button>
