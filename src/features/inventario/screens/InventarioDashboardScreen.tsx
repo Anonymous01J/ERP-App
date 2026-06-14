@@ -102,7 +102,7 @@ export function InventarioDashboardScreen() {
             <View style={styles.headerRow}>
               <Text variant="titleLarge" style={styles.sectionTitle}>Inventario de Potes</Text>
               <Button mode="text" icon="plus" onPress={() => router.push('/(screens)/gestionar-potes')}>
-                Registrar Compra
+                Gestionar Potes
               </Button>
             </View>
             {potes.map((pote) => (

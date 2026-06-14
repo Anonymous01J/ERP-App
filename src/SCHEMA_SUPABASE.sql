@@ -18,7 +18,8 @@ CREATE TABLE public.inventario_potes (
   capacidad text NOT NULL,
   stock_unidades int NOT NULL DEFAULT 0,
   precio_compra_usd numeric(10,2) NOT NULL DEFAULT 0.00,
-  precio_venta_usd numeric(10,2) NOT NULL DEFAULT 0.00
+  precio_venta_usd numeric(10,2) NOT NULL DEFAULT 0.00,
+  estado text NOT NULL DEFAULT 'activo' CHECK (estado IN ('activo', 'inactivo'))
 );
 
 CREATE TABLE public.productos_presentacion (

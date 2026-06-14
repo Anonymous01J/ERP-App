@@ -12,7 +12,8 @@ const inventario_potes = new Table({
   capacidad: column.text,
   stock_unidades: column.integer,
   precio_compra_usd: column.real,
-  precio_venta_usd: column.real
+  precio_venta_usd: column.real,
+  estado: column.text
 });
 
 const productos_presentacion = new Table({

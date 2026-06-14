@@ -40,9 +40,10 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - **Eliminación Lógica:** Soporte de desactivación/activación de clientes desde la tarjeta UI.
   - **Creación/Edición:** Formulario dinámico y adaptativo sin dependencias de mockups locales.
 - **Inventario - Presentaciones (`src/features/inventario`):**
-  - **CRUD Funcional Offline-First:** Conectado con PowerSync mediante `usePowerSync()`.
-  - **Single Screen CRUD:** Unificación del listado y el formulario de creación/edición en una sola pantalla (`GestionarPresentacionesScreen`).
-  - **Eliminación Lógica:** Se alteró el esquema de base de datos para soportar la eliminación lógica (campo `estado`) de las presentaciones de rollos, usando un menú de 3 puntos.
+  - **Dashboard y CRUD:** Se refactorizó la interfaz imitando el módulo de clientes. `GestionarPresentacionesScreen` sirve como Dashboard interactivo con filtrado (Activos/Inactivos) y botón flotante (FAB).
+  - **Pantalla de Registro:** La creación y edición se realiza ahora de manera independiente en `RegistrarPresentacionScreen.tsx`.
+  - **Feedback y UI:** Se usan `CustomCard` expansibles para la lista y notificaciones modernas tipo `Toast` (react-native-toast-message) para dar feedback al usuario.
+  - **Eliminación Lógica:** Soporte de desactivación a través del menú interactivo en las tarjetas (campo `estado` agregado a base de datos).
 
 ---
 
