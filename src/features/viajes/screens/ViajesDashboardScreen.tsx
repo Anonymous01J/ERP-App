@@ -163,9 +163,14 @@ export function ViajesDashboardScreen() {
     return theme.colors.tertiary;
   };
 
+  const { data: proveedores = [] } = useQuery(`SELECT id, nombre_empresa FROM proveedores`);
+
   const getViajeTitle = (viaje: any) => {
-    if (viaje.tipo_viaje === 'mixto') return `Mixto: Pedidos ➔ ${viaje.destino_origen || 'Retorno'}`;
-    if (viaje.tipo_viaje === 'compra') return `Compra: ${viaje.destino_origen || 'No definido'}`;
+    const proveedor = proveedores.find((p: any) => p.id === viaje.id_proveedor);
+    const nombreProveedor = proveedor ? proveedor.nombre_empresa : 'Proveedor Desconocido';
+
+    if (viaje.tipo_viaje === 'mixto') return `Mixto: Pedidos ➔ ${nombreProveedor}`;
+    if (viaje.tipo_viaje === 'compra') return `Compra: ${nombreProveedor}`;
     return `Entrega: Pedidos (Múltiples)`;
   };
 

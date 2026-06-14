@@ -9,11 +9,16 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 - **Tipado y Alias:** Archivo `tsconfig.json` con alias de rutas (`@components`, `@ui`, `@features`, `@state`, `@core`) para importaciones limpias.
 - **Cliente de Desarrollo:** Se ha creado un **cliente de desarrollo personalizado** para Android usando EAS Build. Este cliente incluye las dependencias nativas necesarias (`expo-dev-client`, `@react-native-google-signin/google-signin`) para poder probar el flujo de autenticación completo en un dispositivo real.
 
-## 2. Backend & Data Layer
-- **Backend como Servicio (BaaS):** **Supabase** ha sido implementado como el backend principal.
-  - La base de datos PostgreSQL en Supabase ha sido configurada utilizando el esquema de `src/SCHEMA_SUPABASE.sql` (adaptado de `src/SCHEMA.sql`).
-- **Sincronización Offline-First con PowerSync:**
-  - **Conector Personalizado:** `src/core/powersync/Connector.ts` implementa la lógica para subir cambios locales a Supabase.
+## Progreso Actual (Features Implementadas)
+
+### 1. Arquitectura y Navegación Base
+- **Infraestructura:** Expo Router configurado con soporte para Drawer Navigation (Menú Lateral) y Bottom Tabs.
+- **Enrutamiento Principal:**
+  - `app/(drawer)`: Drawer principal que contiene Catálogos y Configuración.
+  - `app/(drawer)/(tabs)`: Bottom Tabs para operativa diaria y rápida.
+- **PowerSync + Supabase:** Sincronización offline-first activa y schemas definidos.
+- **UI Kit:** React Native Paper integrado con un tema de colores personalizado (Azul/Celeste).
+- **Componentes Core:** `CustomCard`, `SyncStatusNotifier`.
   - **Edge Function Segura:** Se refactorizó la Edge Function `powersync` (`supabase/functions/powersync/index.ts`) para que actúe en nombre del usuario autenticado. En lugar de usar la `service_role_key` (que omite RLS), ahora utiliza el token del usuario para crear un cliente que **respeta las políticas de Row Level Security (RLS)**. Esto garantiza que un usuario solo pueda escribir datos que tiene permiso para modificar.
   - **Manejo de Sesión:** Se mejoró el conector para evitar intentos de subida de datos si no hay una sesión de usuario activa, previniendo errores al iniciar la aplicación.
 - **Autenticación:**
@@ -46,6 +51,8 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - **Dashboard y CRUD Independiente:** Se replicó la arquitectura de presentaciones para la gestión de potes. `GestionarPotesScreen` sirve como Dashboard interactivo con filtrado (Activos/Inactivos) y botón flotante (FAB).
   - **Pantalla de Registro:** La creación y edición de potes se realiza de manera independiente en `RegistrarPoteScreen.tsx`.
   - **Eliminación Lógica:** Soporte de desactivación a través de las tarjetas (campo `estado` en base de datos).
+- **Proveedores (`src/features/proveedores`):**
+  - **CRUD Completo:** Pantalla de dashboard para listar proveedores activos/inactivos, con funcionalidad de búsqueda. `RegistrarProveedorScreen` para creación y edición de datos de la empresa.
 - **Logística - Viajes (`src/features/viajes`):**
   - **Reestructuración de Esquema:** Se modificó la tabla `viajes` para permitir fechas de llegada relativas (nullable) y campos `destino_origen` y `notas`.
   - **Dashboard en Tiempo Real:** `ViajesDashboardScreen` implementa una lista unificada de viajes alimentada por PowerSync.

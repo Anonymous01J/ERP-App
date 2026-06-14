@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
-import { Text, Button, Appbar, useTheme, TextInput, SegmentedButtons } from 'react-native-paper';
+import { Text, Button, Appbar, useTheme, TextInput, SegmentedButtons, Menu } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { usePowerSync } from '@powersync/react';
+import { usePowerSync, useQuery } from '@powersync/react';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,16 +13,19 @@ export function RegistrarViajeScreen() {
   const powerSync = usePowerSync();
 
   const [tipoViaje, setTipoViaje] = useState('entrega');
-  const [destinoOrigen, setDestinoOrigen] = useState('');
+  const [idProveedor, setIdProveedor] = useState<string | null>(null);
+  const [menuProveedorVisible, setMenuProveedorVisible] = useState(false);
   const [notas, setNotas] = useState('');
 
   const [pedidosSeleccionados, setPedidosSeleccionados] = useState<string[]>([]);
 
-  // Mock pedidos pendientes - Esto se reemplazará más adelante por consultas reales a 'pedidos'
+  // Queries
+  const { data: proveedores = [] } = useQuery('SELECT * FROM proveedores WHERE estado = ? ORDER BY nombre_empresa ASC', ['activo']);
+
+  // Mock pedidos pendientes
   const pedidosPendientes = [
     { id: '1', titulo: 'Pedido #001 - Librería Escolar' },
     { id: '2', titulo: 'Pedido #002 - Papelera Central' },
-    { id: '3', titulo: 'Pedido #003 - Distribuidora X' },
   ];
 
   const handleTogglePedido = (id: string) => {
@@ -34,16 +37,15 @@ export function RegistrarViajeScreen() {
   };
 
   const handleGuardar = async () => {
-    // Validación manual
-    if (tipoViaje === 'compra' && !destinoOrigen.trim()) {
-      Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Debes indicar el proveedor de origen.' });
+    if (tipoViaje === 'compra' && !idProveedor) {
+      Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Debes seleccionar un proveedor de origen.' });
       return;
     }
     if (tipoViaje === 'entrega' && pedidosSeleccionados.length === 0) {
       Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Debes seleccionar al menos un pedido.' });
       return;
     }
-    if (tipoViaje === 'mixto' && (!destinoOrigen.trim() || pedidosSeleccionados.length === 0)) {
+    if (tipoViaje === 'mixto' && (!idProveedor || pedidosSeleccionados.length === 0)) {
       Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Para viajes mixtos, requieres proveedor y pedidos.' });
       return;
     }
@@ -53,19 +55,12 @@ export function RegistrarViajeScreen() {
       const now = new Date().toISOString();
 
       await powerSync.execute(
-        `INSERT INTO viajes (id, tipo_viaje, destino_origen, notas, fecha_viaje_inicio, estado) 
+        `INSERT INTO viajes (id, tipo_viaje, id_proveedor, notas, fecha_viaje_inicio, estado) 
          VALUES (?, ?, ?, ?, ?, 'en_progreso')`,
-        [newId, tipoViaje, tipoViaje !== 'entrega' ? destinoOrigen.trim() : null, notas.trim(), now]
+        [newId, tipoViaje, tipoViaje !== 'entrega' ? idProveedor : null, notas.trim(), now]
       );
 
-      // Quedará pendiente insertar en entregas_viaje si hay pedidosSeleccionados
-      
-      Toast.show({
-        type: 'success',
-        text1: 'Viaje Iniciado',
-        text2: 'El viaje ha comenzado exitosamente.',
-      });
-
+      Toast.show({ type: 'success', text1: 'Viaje Iniciado', text2: 'El viaje ha comenzado exitosamente.' });
       setTimeout(() => router.back(), 500);
     } catch (error) {
       console.error('Error iniciando viaje:', error);
@@ -74,9 +69,11 @@ export function RegistrarViajeScreen() {
   };
 
   const isBotonDeshabilitado = 
-    (tipoViaje === 'compra' && !destinoOrigen) ||
+    (tipoViaje === 'compra' && !idProveedor) ||
     (tipoViaje === 'entrega' && pedidosSeleccionados.length === 0) ||
-    (tipoViaje === 'mixto' && (!destinoOrigen || pedidosSeleccionados.length === 0));
+    (tipoViaje === 'mixto' && (!idProveedor || pedidosSeleccionados.length === 0));
+
+  const proveedorSeleccionado = proveedores.find(p => p.id === idProveedor);
 
   return (
     <View style={styles.container}>
@@ -86,7 +83,7 @@ export function RegistrarViajeScreen() {
       </Appbar.Header>
 
       <KeyboardAvoidingView style={styles.content} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView contentContainerStyle={styles.formContainer}>
+        <ScrollView contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
           <Text variant="titleMedium" style={styles.label}>Tipo de Viaje</Text>
           <SegmentedButtons
             value={tipoViaje}
@@ -121,13 +118,36 @@ export function RegistrarViajeScreen() {
           )}
 
           {(tipoViaje === 'compra' || tipoViaje === 'mixto') && (
-            <TextInput
-              mode="outlined"
-              label="Proveedor Origen (Retorno)"
-              value={destinoOrigen}
-              onChangeText={setDestinoOrigen}
-              style={styles.input}
-            />
+            <View style={styles.pedidosContainer}>
+              <Text variant="titleMedium" style={styles.label}>Proveedor Origen (Retorno)</Text>
+              <Menu
+                visible={menuProveedorVisible}
+                onDismiss={() => setMenuProveedorVisible(false)}
+                anchor={
+                  <Button 
+                    mode="outlined" 
+                    onPress={() => setMenuProveedorVisible(true)}
+                    icon="domain"
+                    contentStyle={{ justifyContent: 'flex-start', paddingVertical: 8 }}
+                    style={{ backgroundColor: '#fff' }}
+                    textColor={proveedorSeleccionado ? theme.colors.primary : '#555'}
+                  >
+                    {proveedorSeleccionado ? proveedorSeleccionado.nombre_empresa : 'Seleccionar Proveedor...'}
+                  </Button>
+                }
+              >
+                {proveedores.map(prov => (
+                  <Menu.Item 
+                    key={prov.id} 
+                    onPress={() => { setIdProveedor(prov.id); setMenuProveedorVisible(false); }} 
+                    title={prov.nombre_empresa} 
+                  />
+                ))}
+                {proveedores.length === 0 && (
+                  <Menu.Item title="No hay proveedores activos" disabled />
+                )}
+              </Menu>
+            </View>
           )}
 
           <TextInput
@@ -143,13 +163,7 @@ export function RegistrarViajeScreen() {
       </KeyboardAvoidingView>
 
       <View style={styles.footer}>
-        <Button 
-          mode="contained" 
-          onPress={handleGuardar} 
-          style={styles.saveButton}
-          contentStyle={styles.saveButtonContent}
-          disabled={isBotonDeshabilitado}
-        >
+        <Button mode="contained" onPress={handleGuardar} style={styles.saveButton} contentStyle={styles.saveButtonContent} disabled={isBotonDeshabilitado}>
           Iniciar Viaje
         </Button>
       </View>
@@ -158,43 +172,15 @@ export function RegistrarViajeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  content: {
-    flex: 1,
-  },
-  formContainer: {
-    padding: 24,
-  },
-  label: {
-    marginBottom: 8,
-    fontWeight: 'bold',
-  },
-  segmented: {
-    marginBottom: 24,
-  },
-  input: {
-    marginBottom: 16,
-  },
-  footer: {
-    padding: 24,
-    paddingBottom: 36,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  saveButton: {
-    borderRadius: 12,
-  },
-  saveButtonContent: {
-    paddingVertical: 12,
-  },
-  pedidosContainer: {
-    marginBottom: 24,
-  },
-  pedidoItem: {
-    marginBottom: 8,
-    borderRadius: 8,
-  },
+  container: { flex: 1, backgroundColor: '#ffffff' },
+  content: { flex: 1 },
+  formContainer: { padding: 24 },
+  label: { marginBottom: 8, fontWeight: 'bold' },
+  segmented: { marginBottom: 24 },
+  input: { marginBottom: 16 },
+  footer: { padding: 24, paddingBottom: 36, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
+  saveButton: { borderRadius: 12 },
+  saveButtonContent: { paddingVertical: 12 },
+  pedidosContainer: { marginBottom: 24 },
+  pedidoItem: { marginBottom: 8, borderRadius: 8 },
 });

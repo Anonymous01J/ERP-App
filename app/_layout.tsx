@@ -38,14 +38,14 @@ function RootLayoutNav() {
       router.replace('/login');
     } else if (session && inAuthGroup) {
       // Redirigir al inicio si hay sesión y estamos intentando ver el login
-      router.replace('/(tabs)');
+      router.replace('/(drawer)');
     }
   }, [session, isLoading, segments]);
 
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }}>
       <Stack.Screen name="login" />
-      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="(drawer)" />
       <Stack.Screen name="(screens)/registrar-produccion" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="(screens)/registrar-gasto" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="(screens)/nuevo-pedido" options={{ presentation: 'fullScreenModal' }} />
