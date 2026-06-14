@@ -12,26 +12,26 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 ## 2. Backend & Data Layer
 - **Backend como Servicio (BaaS):** **Supabase** ha sido implementado como el backend principal.
   - La base de datos PostgreSQL en Supabase ha sido configurada utilizando el esquema de `src/SCHEMA_SUPABASE.sql` (adaptado de `src/SCHEMA.sql`).
-  - Se ha creado un cliente de Supabase en `src/core/supabase/client.ts` para interactuar con la API.
-- **Sincronización Offline-First:** **PowerSync** está integrado para la sincronización de datos bidireccional mediante SQLite.
-  - **Upload de Datos:** El conector (`src/core/powersync/connector.ts`) gestiona la conexión enviando las mutaciones a Supabase mediante una **Edge Function** llamada `powersync`.
-  - **Ciclo de Conexión:** PowerSync depende estrictamente del JWT (access_token) de Supabase Auth para autenticar la sincronización.
+- **Sincronización Offline-First con PowerSync:**
+  - **Conector Personalizado:** `src/core/powersync/Connector.ts` implementa la lógica para subir cambios locales a Supabase.
+  - **Edge Function Segura:** Se refactorizó la Edge Function `powersync` (`supabase/functions/powersync/index.ts`) para que actúe en nombre del usuario autenticado. En lugar de usar la `service_role_key` (que omite RLS), ahora utiliza el token del usuario para crear un cliente que **respeta las políticas de Row Level Security (RLS)**. Esto garantiza que un usuario solo pueda escribir datos que tiene permiso para modificar.
+  - **Manejo de Sesión:** Se mejoró el conector para evitar intentos de subida de datos si no hay una sesión de usuario activa, previniendo errores al iniciar la aplicación.
+- **Autenticación:**
+  - **Flujo de Autenticación con Google:** Implementado utilizando el paquete `@react-native-google-signin/google-signin` en el cliente y la autenticación de Supabase en el backend.
+  - **Gestión de Sesión:** El estado de la sesión se gestiona globalmente a través de `AuthProvider.tsx`, que expone el estado de carga y la sesión del usuario a toda la aplicación.
 
-## 3. Autenticación
-- **Flujo de Autenticación Completo:** Se ha implementado un sistema de autenticación robusto gestionado por **Supabase Auth**.
-- **Proveedores de Autenticación:**
-  - **Email y Contraseña:** Formulario de login estándar.
-  - **Google Sign-In (OAuth):** Integrado con el paquete `@react-native-google-signin/google-signin`. La configuración en la Consola de Google Cloud (huella SHA-1) ha sido completada para permitir la autenticación desde la app construida con EAS.
-- **Gestión de Sesión:**
-  - Un `AuthProvider` (`src/core/auth/AuthProvider.tsx`) envuelve la aplicación.
-  - Gestiona el estado de la sesión del usuario (logueado o no).
-  - Redirige automáticamente a los usuarios entre la pantalla de `login` y el `dashboard` principal (`(tabs)`) según su estado de autenticación.
+## 3. Autenticación y Acceso
+- **Flujo de Inicio de Sesión:** La aplicación redirige automáticamente al usuario a la pantalla de inicio de sesión (`/login`) si no hay una sesión activa.
+- **Pantalla de Login:** `src/features/auth/screens/LoginScreen.tsx` contiene la UI y la lógica para iniciar sesión con Google.
+- **Protección de Rutas:** El layout principal (`app/(tabs)/_layout.tsx`) y otras rutas protegidas verifican el estado de autenticación y redirigen al login si es necesario.
 
-## 4. Estructura de Rutas (app/)
-- **`(tabs)`:** Contiene las pantallas principales de la aplicación para usuarios autenticados.
-- **`login.tsx`:** Pantalla de inicio de sesión.
-- **`_layout.tsx`:** Layout raíz que implementa el `AuthProvider` para proteger las rutas.
-- **`(screens)`:** Directorio para pantallas que se presentan como modales o fuera del navegador de pestañas principal.
+## 4. UI y Componentes Reutilizables
+- **Componentes Genéricos (`src/components/ui/`):**
+  - `CustomCard`: Componente de tarjeta base con estilos personalizables.
+  - `NumericInput`: Campo de texto optimizado para entrada numérica.
+  - `DatePickerInput`: Selector de fecha reutilizable.
+  - `StatusBarBadge`: Indicador de estado para mostrar en las tarjetas (ej. "Activo"/"Inactivo").
+- **Componentes Específicos:** Otros componentes de UI más específicos (ej. `SyncStatusNotifier`) están ubicados dentro de sus respectivos `features`.
 
 ## 5. Módulos y Features Funcionales
 - **Clientes (`src/features/clientes`):**
@@ -42,8 +42,9 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 - **Inventario - Presentaciones (`src/features/inventario`):**
   - **Dashboard y CRUD:** Se refactorizó la interfaz imitando el módulo de clientes. `GestionarPresentacionesScreen` sirve como Dashboard interactivo con filtrado (Activos/Inactivos) y botón flotante (FAB).
   - **Pantalla de Registro:** La creación y edición se realiza ahora de manera independiente en `RegistrarPresentacionScreen.tsx`.
-  - **Feedback y UI:** Se usan `CustomCard` expansibles para la lista y notificaciones modernas tipo `Toast` (react-native-toast-message) para dar feedback al usuario.
-  - **Eliminación Lógica:** Soporte de desactivación a través del menú interactivo en las tarjetas (campo `estado` agregado a base de datos).
+- **Inventario - Potes (`src/features/inventario`):**
+  - **Dashboard y CRUD:** Se implementó `GestionarPotesScreen.tsx` para listar y gestionar los tipos de potes.
+  - **Corrección de Hook:** Se solucionó un error en el uso del hook `useQuery` de PowerSync, que ahora se importa directamente desde `@powersync/react` para obtener datos reactivos.
 
 ---
 
