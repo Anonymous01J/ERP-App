@@ -21,7 +21,8 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous01j.erpapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -29,6 +30,12 @@
     "plugins": [
       "expo-router"
     ],
-    "scheme": "erp-app"
+    "scheme": "erp-app",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "55f9e1cd-8a3e-4423-80e3-5b8042fe19f5"
+      }
+    }
   }
 }
