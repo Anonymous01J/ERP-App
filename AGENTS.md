@@ -44,3 +44,8 @@ Always use path aliases defined in `tsconfig.json` to prevent relative path hell
 
 ## 7. Development Environment (Project IDX & Nix)
 - System dependencies, CLIs, Node versions, and VS Code extensions must be configured in `dev.nix` (Nix packages).
+
+## 8. PowerSync & Hooks (CRITICAL)
+- **`useQuery` Hook:** When querying reactive data, **ALWAYS** import `useQuery` directly from `@powersync/react`. 
+  - ❌ **INCORRECT:** `const { data } = powerSync.useQuery('SELECT * FROM table')` (This will throw a TypeError because `useQuery` is not a method on the `powerSync` object).
+  - ✅ **CORRECT:** `import { useQuery } from '@powersync/react';` and then `const { data = [] } = useQuery('SELECT * FROM table')`.

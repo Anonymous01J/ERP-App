@@ -4,7 +4,7 @@ import { List, Text, Button, useTheme, Chip, IconButton, TextInput, Divider } fr
 import { useRouter } from 'expo-router';
 import { CustomCard } from '@components/ui/CustomCard';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { usePowerSync } from '@powersync/react';
+import { usePowerSync, useQuery } from '@powersync/react';
 import Toast from 'react-native-toast-message';
 
 // Subcomponente para el formulario de gastos dentro de un viaje activo
@@ -97,11 +97,11 @@ export function ViajesDashboardScreen() {
     'Entregas (Pedidos)': "AND tipo_viaje = 'entrega'"
   };
 
-  const { data: viajesActivos } = powerSync.useQuery(
+  const { data: viajesActivos = [] } = useQuery(
     `SELECT * FROM viajes WHERE estado != 'completado' ${filterToQuery[filtro as keyof typeof filterToQuery]} ORDER BY fecha_viaje_inicio DESC`
   );
 
-  const { data: viajesPasados } = powerSync.useQuery(
+  const { data: viajesPasados = [] } = useQuery(
     `SELECT * FROM viajes WHERE estado = 'completado' ${filterToQuery[filtro as keyof typeof filterToQuery]} ORDER BY fecha_viaje_inicio DESC`
   );
 
