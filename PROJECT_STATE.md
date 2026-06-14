@@ -3,86 +3,38 @@
 Este documento resume todo lo que ya está implementado en el sistema ERP-App (Sistema de Gestión Administrativa para rebobinado de papel y venta de potes) hasta la fecha.
 
 ## 1. Arquitectura y Configuración
-- **Stack:** React Native (Expo Router v54.0.0), React Native Paper, TypeScript estricto.
+- **Stack:** React Native (Expo SDK 54), Expo Router v3, React Native Paper, TypeScript estricto.
 - **Estructura Base:** Feature-Based Architecture (`app/` para ruteo estricto, `src/features/` para lógica de negocio, `src/components/ui/` para componentes UI genéricos).
 - **Entorno:** Configurado con `.idx/dev.nix` para un entorno aislado y reproducible (NixPackages en Firebase Studio).
 - **Tipado y Alias:** Archivo `tsconfig.json` con alias de rutas (`@components`, `@ui`, `@features`, `@state`, `@core`) para importaciones limpias.
+- **Cliente de Desarrollo:** Se ha creado un **cliente de desarrollo personalizado** para Android usando EAS Build. Este cliente incluye las dependencias nativas necesarias (`expo-dev-client`, `@react-native-google-signin/google-signin`) para poder probar el flujo de autenticación completo en un dispositivo real.
 
-## 2. Base de Datos / Backend
-- **Archivos Base:** Existen archivos de definiciones SQL (`src/SCHEMA.sql` y `src/STORED_PROCEDURES.sql`) que perfilan la base de datos que respaldará los módulos de este proyecto (posible integración con Supabase).
+## 2. Backend & Data Layer
+- **Backend como Servicio (BaaS):** **Supabase** ha sido implementado como el backend principal.
+  - La base de datos PostgreSQL en Supabase ha sido configurada utilizando el esquema de `src/SCHEMA.sql` y los procedimientos de `src/STORED_PROCEDURES.sql`.
+  - Se ha creado un cliente de Supabase en `src/core/supabase/client.ts` para interactuar con la API.
+- **Sincronización Offline-First:** **PowerSync** está integrado para la sincronización de datos entre la base de datos de Supabase y una base de datos SQLite local en el dispositivo.
+  - Un conector de PowerSync (`src/core/powersync/connector.ts`) gestiona la conexión y la sincronización.
+  - Esto permite que la aplicación funcione sin conexión a internet.
 
-## 3. Componentes Compartidos (`src/components/ui/`)
-Componentes UI universales y adaptables que ya han sido desarrollados:
-- `CalendarCustom.tsx`: Integración de calendario personalizado para selección de fechas (usando `react-native-calendars`).
-- `CustomCard.tsx`: Tarjeta con el diseño estándar de la aplicación.
-- `DatePickerInput.tsx`: Componente de selector rápido de fecha.
-- `NumericInput.tsx`: Campo de entrada exclusivo de valores numéricos estricto.
-- `StatusBarBadge.tsx`: Indicador visual de estado (badges de status).
+## 3. Autenticación
+- **Flujo de Autenticación Completo:** Se ha implementado un sistema de autenticación robusto gestionado por **Supabase Auth**.
+- **Proveedores de Autenticación:**
+  - **Email y Contraseña:** Formulario de login estándar.
+  - **Google Sign-In (OAuth):** Integrado con el paquete `@react-native-google-signin/google-signin`. La configuración en la Consola de Google Cloud (huella SHA-1) ha sido completada para permitir la autenticación desde la app construida con EAS.
+- **Gestión de Sesión:**
+  - Un `AuthProvider` (`src/core/auth/AuthProvider.tsx`) envuelve la aplicación.
+  - Gestiona el estado de la sesión del usuario (logueado o no).
+  - Redirige automáticamente a los usuarios entre la pantalla de `login` y el `dashboard` principal (`(tabs)`) según su estado de autenticación.
+- **Pantallas:**
+  - `src/features/auth/screens/LoginScreen.tsx`: Contiene la UI y la lógica para ambos métodos de inicio de sesión.
+  - `app/login.tsx`: La ruta que renderiza la pantalla de login.
 
-## 4. Dominios de Negocio (`src/features/`)
-La lógica se ha dividido estrictamente por dominios. Cada uno incluye sus propios archivos de tipado (`.types.ts`) y sus pantallas base (`screens/`):
-
-### 👥 Clientes
-- **Tipos:** `clientes.types.ts`
-- **Pantallas:** 
-  - `ClientesDashboardScreen`: Vista general de clientes.
-  - `RegistrarClienteScreen`: Formulario de creación de nuevos clientes.
-
-### 📊 Dashboard
-- **Pantallas:** 
-  - `DashboardScreen`: Pantalla de inicio con métricas y resumen operativo general.
-
-### 💸 Gastos
-- **Tipos:** `gastos.types.ts`
-- **Pantallas:** 
-  - `RegistrarGastoScreen`: Formulario para asentar viáticos, peajes, gasolina y cualquier otro gasto operativo.
-
-### 📦 Inventario
-- **Tipos:** `inventario.types.ts`
-- **Pantallas:** 
-  - `InventarioDashboardScreen`: Visión general del inventario en todas sus áreas.
-  - `HistorialBobinasScreen`: Control y listado de bobinas maestras ingresadas (Tipo A y Tipo B), así como su consumo.
-  - `GestionarPotesScreen`: Stock y salidas independientes de potes.
-  - `GestionarPresentacionesScreen`: Control de la producción terminada y empaquetada (agrupación en 600g, 1kg, 2.5kg y 5kg).
-
-### 🛒 Pedidos
-- **Tipos:** `pedidos.types.ts`
-- **Pantallas:** 
-  - `PedidosDashboardScreen`: Visión global de los pedidos (y ventas).
-  - `NuevoPedidoScreen`: Creación de un pedido/venta, contemplando lógicas de crédito, abonos y notas de entrega.
-
-### 🏭 Producción
-- **Tipos:** `produccion.types.ts`
-- **Pantallas:** 
-  - `HistorialProduccionScreen`: Registro continuo de lo producido en el área de rebobinado.
-  - `RegistrarProduccionScreen`: Ingreso de nuevo rebobinado, donde se calcula el peso muerto (core) de las bobinas usadas y se calcula el destajo por kilos producidos.
-
-### 🚚 Viajes
-- **Tipos:** `viajes.types.ts`
-- **Pantallas:** 
-  - `ViajesDashboardScreen`: Visión global sobre la logística de despachos y repartos.
-  - `RegistrarViajeScreen`: Asignación y registro para la salida de un viaje de reparto.
-
-## 5. Navegación (Expo Router - `app/`)
-El sistema de ruteo está completamente configurado y mapeado; la carpeta `app/` no contiene lógica de negocio, únicamente delega la renderización a los dominios de `src/features/`.
-
-- **Root Layout:** `app/_layout.tsx`
-- **Tabs (`app/(tabs)`):** Rutas base para la barra de navegación inferior.
-  - `index.tsx` (Renderiza Dashboard)
-  - `clientes.tsx`
-  - `inventario.tsx`
-  - `pedidos.tsx`
-  - `viajes.tsx`
-- **Screens (`app/(screens)`):** Rutas de pantallas anidadas y modales fuera de los tabs.
-  - `gestionar-potes.tsx`
-  - `gestionar-presentaciones.tsx`
-  - `historial-bobinas.tsx`
-  - `historial-produccion.tsx`
-  - `nuevo-pedido.tsx`
-  - `registrar-cliente.tsx`
-  - `registrar-gasto.tsx`
-  - `registrar-produccion.tsx`
-  - `registrar-viaje.tsx`
+## 4. Estructura de Rutas (app/)
+- **`(tabs)`:** Contiene las pantallas principales de la aplicación para usuarios autenticados.
+- **`login.tsx`:** Pantalla de inicio de sesión.
+- **`_layout.tsx`:** Layout raíz que implementa el `AuthProvider` para proteger las rutas.
+- **`(screens)`:** Directorio para pantallas que se presentan como modales o fuera del navegador de pestañas principal.
 
 ---
 
