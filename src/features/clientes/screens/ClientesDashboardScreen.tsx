@@ -1,95 +1,142 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Text, Avatar, useTheme, IconButton, Divider, Button } from 'react-native-paper';
+import { Text, Avatar, useTheme, IconButton, Divider, Button, Searchbar, SegmentedButtons, Menu } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { CustomCard } from '@components/ui/CustomCard';
 import { StatusBarBadge, StatusType } from '@components/ui/StatusBarBadge';
+import { usePowerSync } from '@powersync/react';
 
 export function ClientesDashboardScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const powerSync = usePowerSync();
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('activo');
+  const [menuVisibleId, setMenuVisibleId] = useState<string | null>(null);
+
+  // Fetch clients from PowerSync
+  // Assuming table name is 'clientes'
+  const { data: clientes } = powerSync.useQuery(
+    `SELECT * FROM clientes WHERE estado = ? ORDER BY razon_social ASC`, 
+    [filtroEstado]
+  );
 
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
   };
 
-  // Mock data
-  const clientes = [
-    { 
-      id: '1', nombre: 'Distribuidora Norte', telefono: '0414-1234567', deuda: 120, estado: 'credito' as StatusType,
-      historial: [
-        { id: 'h1', fecha: '05/06/2026', descripcion: 'Pedido #041', monto: 120, tipo: 'cargo' },
-        { id: 'h2', fecha: '01/06/2026', descripcion: 'Abono en Efectivo', monto: 50, tipo: 'abono' },
-      ]
-    },
-    { 
-      id: '2', nombre: 'Papelera Central', telefono: '0424-9876543', deuda: 0, estado: 'credito' as StatusType,
-      historial: [
-        { id: 'h3', fecha: '28/05/2026', descripcion: 'Pedido #039', monto: 200, tipo: 'cargo' },
-        { id: 'h4', fecha: '28/05/2026', descripcion: 'Pago Total Zelle', monto: 200, tipo: 'abono' },
-      ]
-    },
-    { 
-      id: '3', nombre: 'Librería Escolar', telefono: '0412-4567890', deuda: 350, estado: 'atrasado' as StatusType,
-      historial: [
-        { id: 'h5', fecha: '10/05/2026', descripcion: 'Pedido #032', monto: 350, tipo: 'cargo' },
-      ]
-    },
-    { 
-      id: '4', nombre: 'Inversiones Sur', telefono: '0416-2345678', deuda: 80, estado: 'por_vencer' as StatusType,
-      historial: [
-        { id: 'h6', fecha: '15/05/2026', descripcion: 'Pedido #035', monto: 80, tipo: 'cargo' },
-      ]
-    },
-  ];
+  const toggleMenu = (id: string) => {
+    setMenuVisibleId(menuVisibleId === id ? null : id);
+  };
+
+  const handleEdit = (id: string) => {
+    setMenuVisibleId(null);
+    router.push(`/(screens)/registrar-cliente?id=${id}`);
+  };
+
+  const handleToggleEstado = async (id: string, estadoActual: string) => {
+    setMenuVisibleId(null);
+    const nuevoEstado = estadoActual === 'activo' ? 'inactivo' : 'activo';
+    try {
+      await powerSync.execute('UPDATE clientes SET estado = ? WHERE id = ?', [nuevoEstado, id]);
+    } catch (error) {
+      console.error('Error actualizando estado del cliente:', error);
+    }
+  };
+
+  const filteredClientes = clientes.filter(c => 
+    c.razon_social?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    c.telefono?.includes(searchQuery)
+  );
 
   return (
     <View style={styles.container}>
+      <View style={styles.headerControls}>
+        <Searchbar
+          placeholder="Buscar cliente..."
+          onChangeText={setSearchQuery}
+          value={searchQuery}
+          style={styles.searchbar}
+          elevation={1}
+        />
+        <SegmentedButtons
+          value={filtroEstado}
+          onValueChange={setFiltroEstado}
+          buttons={[
+            { value: 'activo', label: 'Activos' },
+            { value: 'inactivo', label: 'Inactivos' },
+          ]}
+          style={styles.segmentedButtons}
+        />
+      </View>
+
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {clientes.map(cliente => {
+        {filteredClientes.map(cliente => {
           const isExpanded = expandedId === cliente.id;
+          const isMenuVisible = menuVisibleId === cliente.id;
+          // Calculate debt based on your logic, for now using saldo_a_favor_usd (if negative it would be debt)
+          // Defaulting to 0 for UI purposes if not specified in your actual schema rules
+          const deuda = 0; 
+          const isInactive = cliente.estado === 'inactivo';
+
           return (
-            <CustomCard key={cliente.id} style={styles.cardWrapper}>
+            <CustomCard key={cliente.id} style={[styles.cardWrapper, isInactive && styles.cardInactive]}>
               <TouchableOpacity onPress={() => toggleExpand(cliente.id)} activeOpacity={0.7}>
                 <View style={styles.cardContent}>
                   <View style={styles.avatarContainer}>
-                    <Avatar.Text size={48} label={cliente.nombre.substring(0, 2).toUpperCase()} />
+                    <Avatar.Text 
+                      size={48} 
+                      label={(cliente.razon_social || 'XX').substring(0, 2).toUpperCase()} 
+                      style={isInactive ? { backgroundColor: theme.colors.surfaceDisabled } : undefined}
+                    />
                   </View>
                   <View style={styles.textContainer}>
-                    <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>{cliente.nombre}</Text>
-                    <Text variant="bodyMedium" style={{ color: '#666' }}>{cliente.telefono}</Text>
+                    <Text variant="titleMedium" style={[{ fontWeight: 'bold' }, isInactive && { color: theme.colors.outline }]}>
+                      {cliente.razon_social}
+                    </Text>
+                    <Text variant="bodyMedium" style={{ color: isInactive ? theme.colors.outline : '#666' }}>
+                      {cliente.telefono || 'Sin teléfono'}
+                    </Text>
                     <View style={styles.statusRow}>
-                      <Text variant="titleSmall" style={{ color: cliente.deuda > 0 ? theme.colors.error : theme.colors.primary }}>
-                        Deuda: ${cliente.deuda}
+                      <Text variant="titleSmall" style={{ color: isInactive ? theme.colors.outline : theme.colors.primary }}>
+                        Saldo a Favor: ${cliente.saldo_a_favor_usd?.toFixed(2) || '0.00'}
                       </Text>
-                      {cliente.deuda > 0 && <StatusBarBadge status={cliente.estado} />}
                     </View>
                   </View>
+
+                  <Menu
+                    visible={isMenuVisible}
+                    onDismiss={() => setMenuVisibleId(null)}
+                    anchor={
+                      <IconButton
+                        icon="dots-vertical"
+                        size={24}
+                        onPress={() => toggleMenu(cliente.id)}
+                      />
+                    }
+                  >
+                    <Menu.Item onPress={() => handleEdit(cliente.id)} title="Editar" leadingIcon="pencil" />
+                    <Menu.Item 
+                      onPress={() => handleToggleEstado(cliente.id, cliente.estado)} 
+                      title={isInactive ? "Activar Cliente" : "Desactivar Cliente"} 
+                      leadingIcon={isInactive ? "check-circle" : "cancel"} 
+                    />
+                  </Menu>
                 </View>
               </TouchableOpacity>
 
               {isExpanded && (
                 <View style={styles.historyContainer}>
                   <Divider style={styles.divider} />
-                  <Text variant="titleSmall" style={styles.historyTitle}>Historial Reciente</Text>
-                  
-                  {cliente.historial.map(hist => (
-                    <View key={hist.id} style={styles.historyRow}>
-                      <Text variant="bodySmall" style={styles.histFecha}>{hist.fecha}</Text>
-                      <Text variant="bodySmall" style={styles.histDesc} numberOfLines={1}>{hist.descripcion}</Text>
-                      <Text variant="bodySmall" style={[
-                        styles.histMonto, 
-                        { color: hist.tipo === 'abono' ? '#16a34a' : theme.colors.error }
-                      ]}>
-                        {hist.tipo === 'abono' ? '+' : '-'}${hist.monto}
-                      </Text>
-                    </View>
-                  ))}
+                  {/* Historial mockeado temporalmente hasta que se implemente la tabla de movimientos/pedidos por cliente */}
+                  <Text variant="bodySmall" style={{ color: '#888', fontStyle: 'italic', marginBottom: 12 }}>
+                    El historial de transacciones se mostrará aquí.
+                  </Text>
                   
                   <View style={styles.actionsRow}>
-                    <Button mode="contained-tonal" compact onPress={() => {}} style={{ flex: 1, marginRight: 8 }}>
+                    <Button mode="contained-tonal" compact onPress={() => {}} style={{ flex: 1, marginRight: 8 }} disabled={isInactive}>
                       Registrar Abono
                     </Button>
                     <Button mode="outlined" compact onPress={() => {}} style={{ flex: 1 }}>
@@ -101,6 +148,9 @@ export function ClientesDashboardScreen() {
             </CustomCard>
           );
         })}
+        {filteredClientes.length === 0 && (
+          <Text style={styles.emptyText}>No se encontraron clientes.</Text>
+        )}
       </ScrollView>
 
       <IconButton
@@ -119,6 +169,18 @@ export function ClientesDashboardScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  headerControls: {
+    padding: 16,
+    paddingBottom: 8,
+    backgroundColor: '#fff',
+  },
+  searchbar: {
+    marginBottom: 12,
+    backgroundColor: '#f3f4f6',
+  },
+  segmentedButtons: {
+    marginBottom: 8,
   },
   scrollContent: {
     padding: 8,
@@ -154,6 +216,9 @@ const styles = StyleSheet.create({
   cardWrapper: {
     marginBottom: 12,
   },
+  cardInactive: {
+    opacity: 0.6,
+  },
   historyContainer: {
     paddingHorizontal: 16,
     paddingBottom: 16,
@@ -161,32 +226,14 @@ const styles = StyleSheet.create({
   divider: {
     marginBottom: 12,
   },
-  historyTitle: {
-    fontWeight: 'bold',
-    marginBottom: 8,
-    color: '#444',
-  },
-  historyRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  histFecha: {
-    width: 80,
-    color: '#888',
-  },
-  histDesc: {
-    flex: 1,
-    paddingHorizontal: 8,
-  },
-  histMonto: {
-    fontWeight: 'bold',
-    width: 60,
-    textAlign: 'right',
-  },
   actionsRow: {
     flexDirection: 'row',
     marginTop: 12,
   },
+  emptyText: {
+    textAlign: 'center',
+    marginTop: 40,
+    color: '#888',
+  }
 });
+

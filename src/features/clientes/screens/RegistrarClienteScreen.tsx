@@ -1,27 +1,88 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { Button, Appbar, useTheme, TextInput } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { usePowerSync } from '@powersync/react';
+
+// Generador simple de UUID v4 para la base de datos offline
+function uuidv4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 export function RegistrarClienteScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const powerSync = usePowerSync();
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const isEditing = !!id;
 
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
-  const [direccion, setDireccion] = useState('');
   const [limiteCredito, setLimiteCredito] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleGuardar = () => {
-    console.log('Guardar Cliente:', { nombre, telefono, direccion, limiteCredito });
-    router.back();
+  useEffect(() => {
+    if (isEditing && id) {
+      // Cargar datos del cliente existente
+      const cargarCliente = async () => {
+        try {
+          const result = await powerSync.get('SELECT * FROM clientes WHERE id = ?', [id]);
+          if (result) {
+            setNombre(result.razon_social || '');
+            setTelefono(result.telefono || '');
+            setLimiteCredito(result.limite_credito ? result.limite_credito.toString() : '');
+          }
+        } catch (error) {
+          console.error('Error cargando cliente:', error);
+          Alert.alert('Error', 'No se pudieron cargar los datos del cliente.');
+        }
+      };
+      cargarCliente();
+    }
+  }, [id, isEditing, powerSync]);
+
+  const handleGuardar = async () => {
+    if (!nombre.trim()) {
+      Alert.alert('Error', 'El nombre o razón social es obligatorio.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const creditoNumerico = limiteCredito ? parseFloat(limiteCredito) : 0;
+
+      if (isEditing && id) {
+        // Actualizar
+        await powerSync.execute(
+          'UPDATE clientes SET razon_social = ?, telefono = ?, limite_credito = ? WHERE id = ?',
+          [nombre.trim(), telefono.trim(), creditoNumerico, id]
+        );
+      } else {
+        // Insertar
+        const newId = uuidv4();
+        await powerSync.execute(
+          'INSERT INTO clientes (id, razon_social, telefono, limite_credito, estado, saldo_a_favor_usd) VALUES (?, ?, ?, ?, ?, ?)',
+          [newId, nombre.trim(), telefono.trim(), creditoNumerico, 'activo', 0]
+        );
+      }
+      
+      router.back();
+    } catch (error) {
+      console.error('Error guardando cliente:', error);
+      Alert.alert('Error', 'Hubo un problema al guardar el cliente. Por favor intente de nuevo.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <View style={styles.container}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
-        <Appbar.BackAction onPress={() => router.back()} />
-        <Appbar.Content title="Registrar Cliente" />
+        <Appbar.BackAction onPress={() => router.back()} disabled={loading} />
+        <Appbar.Content title={isEditing ? "Editar Cliente" : "Registrar Cliente"} />
       </Appbar.Header>
 
       <KeyboardAvoidingView 
@@ -35,6 +96,7 @@ export function RegistrarClienteScreen() {
             value={nombre}
             onChangeText={setNombre}
             style={styles.input}
+            disabled={loading}
           />
           <TextInput
             mode="outlined"
@@ -43,15 +105,7 @@ export function RegistrarClienteScreen() {
             onChangeText={setTelefono}
             keyboardType="phone-pad"
             style={styles.input}
-          />
-          <TextInput
-            mode="outlined"
-            label="Dirección"
-            value={direccion}
-            onChangeText={setDireccion}
-            multiline
-            numberOfLines={3}
-            style={styles.input}
+            disabled={loading}
           />
           <TextInput
             mode="outlined"
@@ -60,6 +114,7 @@ export function RegistrarClienteScreen() {
             onChangeText={setLimiteCredito}
             keyboardType="numeric"
             style={styles.input}
+            disabled={loading}
           />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -70,9 +125,10 @@ export function RegistrarClienteScreen() {
           onPress={handleGuardar} 
           style={styles.saveButton}
           contentStyle={styles.saveButtonContent}
-          disabled={!nombre}
+          disabled={!nombre || loading}
+          loading={loading}
         >
-          Guardar Cliente
+          {isEditing ? "Guardar Cambios" : "Guardar Cliente"}
         </Button>
       </View>
     </View>
