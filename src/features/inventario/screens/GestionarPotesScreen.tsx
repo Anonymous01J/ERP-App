@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Text, Appbar, useTheme, IconButton, SegmentedButtons, Menu, Avatar } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { usePowerSync } from '@powersync/react';
+import { usePowerSync, useQuery } from '@powersync/react';
 import { CustomCard } from '@components/ui/CustomCard';
 import Toast from 'react-native-toast-message';
 
@@ -15,7 +15,7 @@ export function GestionarPotesScreen() {
   const [menuVisibleId, setMenuVisibleId] = useState<string | null>(null);
 
   // Consultar los potes filtrados por estado
-  const { data: potes } = powerSync.useQuery(
+  const { data: potes = [] } = useQuery(
     `SELECT * FROM inventario_potes WHERE estado = ? ORDER BY capacidad ASC`,
     [filtroEstado]
   );
@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
   },
   fab: {
     position: 'absolute',
-    bottom: 16,
+    bottom: 96,
     right: 16,
     width: 64,
     height: 64,

@@ -1,76 +1,96 @@
 import { serve } from 'https://deno.land/std@0.131.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// Las variables de entorno son inyectadas automáticamente por Supabase
+// Get Supabase URL from environment variables
 const supabaseUrl = Deno.env.get('SUPABASE_URL');
-const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
-if (!supabaseUrl || !serviceRoleKey) {
-  const errorMessage = 'Las variables de entorno SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY son obligatorias.';
-  console.error(errorMessage);
-  throw new Error(errorMessage);
+if (!supabaseUrl) {
+  throw new Error('SUPABASE_URL environment variable is not set.');
 }
 
 /**
- * Maneja las solicitudes entrantes desde el conector de PowerSync.
+ * Creates a Supabase client for a given user request.
+ * 
+ * If the request is authenticated, it returns a client that acts on behalf of the user.
+ * If not, it returns a client using the anonymous key.
+ * 
+ * @param {Request} req - The incoming HTTP request.
+ * @returns {SupabaseClient} A Supabase client instance.
+ */
+const createSupabaseClientForUser = (req: Request): SupabaseClient => {
+  // Extract the Authorization header
+  const authHeader = req.headers.get('Authorization')!;
+
+  // Get the anon key from environment variables
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  if (!supabaseAnonKey) {
+    throw new Error('SUPABASE_ANON_KEY environment variable is not set.');
+  }
+
+  // Create a client with the user's token or the anon key
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } },
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
+};
+
+/**
+ * Main request handler for PowerSync data upload.
  */
 serve(async (req) => {
   try {
-    // 1. Crear un cliente de Supabase con permisos de administrador.
-    // Este cliente puede saltarse las políticas de RLS.
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    });
+    // 1. Create a Supabase client that will act on behalf of the user
+    const supabase = createSupabaseClientForUser(req);
 
-    // 2. Obtener las operaciones del cuerpo de la solicitud
+    // 2. Get operations from the request body
     const { operations } = await req.json();
     if (!operations) {
-      throw new Error("No se encontraron operaciones en el cuerpo de la solicitud.");
+      throw new Error("No operations found in the request body.");
     }
 
-    // 3. Procesar cada operación del lote de PowerSync
+    // 3. Process each operation in the batch
     for (const op of operations) {
       const { op: opType, table, id, opData } = op;
 
       let query;
       switch (opType) {
         case 'PUT':
-          // Usar `upsert` para insertar o actualizar. Es la operación ideal para PUT.
-          query = supabaseAdmin.from(table).upsert({ id, ...opData });
+          // Use `upsert` for inserts or updates. It's ideal for PUT.
+          query = supabase.from(table).upsert({ id, ...opData });
           break;
         case 'PATCH':
-          // Usar `update` para actualizaciones parciales.
-          query = supabaseAdmin.from(table).update(opData).eq('id', id);
+          // Use `update` for partial updates.
+          query = supabase.from(table).update(opData).eq('id', id);
           break;
         case 'DELETE':
-          // Usar `delete` para eliminaciones.
-          query = supabaseAdmin.from(table).delete().eq('id', id);
+          // Use `delete` for removals.
+          query = supabase.from(table).delete().eq('id', id);
           break;
         default:
-          console.warn(`Tipo de operación desconocido: ${opType}`);
-          continue; // Saltar operaciones desconocidas
+          console.warn(`Unknown operation type: ${opType}`);
+          continue; // Skip unknown operations
       }
 
-      // Ejecutar la consulta y comprobar si hay errores
+      // Execute the query and check for errors
       const { error } = await query;
       if (error) {
-        console.error(`Error procesando: ${opType} en la tabla ${table} para el id ${id}`, error);
-        // Lanzar el error para abortar el proceso y devolver un error 500.
+        console.error(`Error processing: ${opType} on table ${table} for id ${id}`, error);
+        // Throw the error to abort and return a 500 status.
         throw error;
       }
     }
 
-    // 4. Si todas las operaciones fueron exitosas, devolver una respuesta de éxito.
+    // 4. If all operations succeeded, return a success response.
     return new Response(JSON.stringify({ success: true }), {
       headers: { 'Content-Type': 'application/json' },
       status: 200,
     });
 
   } catch (e) {
-    console.error('El manejador principal de errores capturó una excepción:', e);
+    // Catch any exceptions and return a generic 500 error
+    console.error('Main error handler caught an exception:', e);
     return new Response(JSON.stringify({ error: e.message }), {
       headers: { 'Content-Type': 'application/json' },
       status: 500,
