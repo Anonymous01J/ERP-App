@@ -27,9 +27,17 @@ const productos_presentacion = new Table({
   estado: column.text
 });
 
+const proveedores = new Table({
+  nombre_empresa: column.text,
+  telefono: column.text,
+  direccion: column.text,
+  notas: column.text,
+  estado: column.text
+});
+
 const viajes = new Table({
   tipo_viaje: column.text,
-  destino_origen: column.text,
+  id_proveedor: column.text,
   notas: column.text,
   fecha_viaje_inicio: column.text,
   fecha_viaje_llegada_destino: column.text,
@@ -117,6 +125,7 @@ export const AppSchema = new Schema({
   clientes,
   inventario_potes,
   productos_presentacion,
+  proveedores,
   viajes,
   pedidos,
   abonos_pagos,

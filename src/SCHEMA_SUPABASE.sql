@@ -34,10 +34,19 @@ CREATE TABLE public.productos_presentacion (
   estado text NOT NULL DEFAULT 'activo' CHECK (estado IN ('activo', 'inactivo'))
 );
 
+CREATE TABLE public.proveedores (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  nombre_empresa text NOT NULL,
+  telefono text,
+  direccion text,
+  notas text,
+  estado text NOT NULL DEFAULT 'activo' CHECK (estado IN ('activo','inactivo'))
+);
+
 CREATE TABLE public.viajes (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   tipo_viaje text NOT NULL,
-  destino_origen text,
+  id_proveedor uuid REFERENCES public.proveedores(id),
   notas text,
   fecha_viaje_inicio timestamp with time zone NOT NULL,
   fecha_viaje_llegada_destino timestamp with time zone,

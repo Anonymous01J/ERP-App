@@ -34,12 +34,17 @@ export function RegistrarViajeScreen() {
   };
 
   const handleGuardar = async () => {
+    // Validación manual
     if (tipoViaje === 'compra' && !destinoOrigen.trim()) {
-      Toast.show({
-        type: 'error',
-        text1: 'Datos incompletos',
-        text2: 'Debes indicar el proveedor de origen.',
-      });
+      Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Debes indicar el proveedor de origen.' });
+      return;
+    }
+    if (tipoViaje === 'entrega' && pedidosSeleccionados.length === 0) {
+      Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Debes seleccionar al menos un pedido.' });
+      return;
+    }
+    if (tipoViaje === 'mixto' && (!destinoOrigen.trim() || pedidosSeleccionados.length === 0)) {
+      Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Para viajes mixtos, requieres proveedor y pedidos.' });
       return;
     }
 
@@ -50,34 +55,28 @@ export function RegistrarViajeScreen() {
       await powerSync.execute(
         `INSERT INTO viajes (id, tipo_viaje, destino_origen, notas, fecha_viaje_inicio, estado) 
          VALUES (?, ?, ?, ?, ?, 'en_progreso')`,
-        [newId, tipoViaje, destinoOrigen.trim(), notas.trim(), now]
+        [newId, tipoViaje, tipoViaje !== 'entrega' ? destinoOrigen.trim() : null, notas.trim(), now]
       );
 
-      // Si es una entrega y hay pedidos, aquí deberíamos insertar en entregas_viaje.
-      // Quedará pendiente cuando implementemos el CRUD real de Pedidos.
-
+      // Quedará pendiente insertar en entregas_viaje si hay pedidosSeleccionados
+      
       Toast.show({
         type: 'success',
         text1: 'Viaje Iniciado',
         text2: 'El viaje ha comenzado exitosamente.',
       });
 
-      setTimeout(() => {
-        router.back();
-      }, 500);
+      setTimeout(() => router.back(), 500);
     } catch (error) {
       console.error('Error iniciando viaje:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Hubo un problema al intentar iniciar el viaje.',
-      });
+      Toast.show({ type: 'error', text1: 'Error', text2: 'Hubo un problema al intentar iniciar el viaje.' });
     }
   };
 
-  const isBotonDeshabilitado = tipoViaje === 'compra' 
-    ? (!destinoOrigen)
-    : (pedidosSeleccionados.length === 0);
+  const isBotonDeshabilitado = 
+    (tipoViaje === 'compra' && !destinoOrigen) ||
+    (tipoViaje === 'entrega' && pedidosSeleccionados.length === 0) ||
+    (tipoViaje === 'mixto' && (!destinoOrigen || pedidosSeleccionados.length === 0));
 
   return (
     <View style={styles.container}>
@@ -86,31 +85,21 @@ export function RegistrarViajeScreen() {
         <Appbar.Content title="Registrar Viaje" />
       </Appbar.Header>
 
-      <KeyboardAvoidingView 
-        style={styles.content} 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <KeyboardAvoidingView style={styles.content} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.formContainer}>
           <Text variant="titleMedium" style={styles.label}>Tipo de Viaje</Text>
           <SegmentedButtons
             value={tipoViaje}
             onValueChange={setTipoViaje}
             buttons={[
-              { value: 'entrega', label: 'Entrega a Cliente', icon: 'truck-delivery' },
-              { value: 'compra', label: 'Compra de Bobinas', icon: 'inbox-arrow-down' },
+              { value: 'entrega', label: 'Entregas', icon: 'truck-delivery' },
+              { value: 'compra', label: 'Compras', icon: 'inbox-arrow-down' },
+              { value: 'mixto', label: 'Mixto', icon: 'swap-vertical' },
             ]}
             style={styles.segmented}
           />
 
-          {tipoViaje === 'compra' ? (
-            <TextInput
-              mode="outlined"
-              label="Proveedor Origen"
-              value={destinoOrigen}
-              onChangeText={setDestinoOrigen}
-              style={styles.input}
-            />
-          ) : (
+          {(tipoViaje === 'entrega' || tipoViaje === 'mixto') && (
             <View style={styles.pedidosContainer}>
               <Text variant="titleMedium" style={styles.label}>Pedidos a Transportar</Text>
               {pedidosPendientes.map((pedido) => {
@@ -131,6 +120,16 @@ export function RegistrarViajeScreen() {
             </View>
           )}
 
+          {(tipoViaje === 'compra' || tipoViaje === 'mixto') && (
+            <TextInput
+              mode="outlined"
+              label="Proveedor Origen (Retorno)"
+              value={destinoOrigen}
+              onChangeText={setDestinoOrigen}
+              style={styles.input}
+            />
+          )}
+
           <TextInput
             mode="outlined"
             label="Notas de Carga (Opcional)"
@@ -140,7 +139,6 @@ export function RegistrarViajeScreen() {
             numberOfLines={3}
             style={styles.input}
           />
-
         </ScrollView>
       </KeyboardAvoidingView>
 

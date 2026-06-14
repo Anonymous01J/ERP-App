@@ -93,8 +93,8 @@ export function ViajesDashboardScreen() {
 
   const filterToQuery = {
     'Todos': '',
-    'Compras (Bobinas)': "AND tipo_viaje = 'compra'",
-    'Entregas (Pedidos)': "AND tipo_viaje = 'entrega'"
+    'Compras (Bobinas)': "AND tipo_viaje IN ('compra', 'mixto')",
+    'Entregas (Pedidos)': "AND tipo_viaje IN ('entrega', 'mixto')"
   };
 
   const { data: viajesActivos = [] } = useQuery(
@@ -147,12 +147,26 @@ export function ViajesDashboardScreen() {
       });
     } catch (error) {
       console.error('Error avanzando viaje:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'No se pudo actualizar el viaje.',
-      });
+      Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo actualizar el viaje.' });
     }
+  };
+
+  const getViajeIcon = (tipo: string) => {
+    if (tipo === 'mixto') return 'swap-vertical';
+    if (tipo === 'compra') return 'inbox-arrow-down';
+    return 'truck-delivery';
+  };
+
+  const getViajeColor = (tipo: string) => {
+    if (tipo === 'mixto') return theme.colors.secondary;
+    if (tipo === 'compra') return theme.colors.primary;
+    return theme.colors.tertiary;
+  };
+
+  const getViajeTitle = (viaje: any) => {
+    if (viaje.tipo_viaje === 'mixto') return `Mixto: Pedidos ➔ ${viaje.destino_origen || 'Retorno'}`;
+    if (viaje.tipo_viaje === 'compra') return `Compra: ${viaje.destino_origen || 'No definido'}`;
+    return `Entrega: Pedidos (Múltiples)`;
   };
 
   return (
@@ -160,13 +174,7 @@ export function ViajesDashboardScreen() {
       <View style={styles.filtersContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {filtros.map(f => (
-            <Chip
-              key={f}
-              selected={filtro === f}
-              onPress={() => setFiltro(f)}
-              style={styles.chip}
-              showSelectedOverlay
-            >
+            <Chip key={f} selected={filtro === f} onPress={() => setFiltro(f)} style={styles.chip} showSelectedOverlay>
               {f}
             </Chip>
           ))}
@@ -184,9 +192,9 @@ export function ViajesDashboardScreen() {
               return (
                 <List.Accordion
                   key={viaje.id}
-                  title={viaje.tipo_viaje === 'compra' ? `Compra: ${viaje.destino_origen || 'No definido'}` : `Entrega: Pedidos (Múltiples)`}
+                  title={getViajeTitle(viaje)}
                   description={`${formatFecha(viaje.fecha_viaje_inicio)} • ${formatearEstadoUi(viaje.estado)}`}
-                  left={props => <List.Icon {...props} icon={viaje.tipo_viaje === 'compra' ? 'inbox-arrow-down' : 'truck-delivery'} color={viaje.tipo_viaje === 'compra' ? theme.colors.primary : theme.colors.tertiary} />}
+                  left={props => <List.Icon {...props} icon={getViajeIcon(viaje.tipo_viaje)} color={getViajeColor(viaje.tipo_viaje)} />}
                   style={styles.accordion}
                   titleStyle={{ fontWeight: 'bold' }}
                 >
@@ -221,9 +229,9 @@ export function ViajesDashboardScreen() {
             {viajesPasados.map((viaje) => (
               <List.Accordion
                 key={viaje.id}
-                title={viaje.tipo_viaje === 'compra' ? `Compra: ${viaje.destino_origen || 'No definido'}` : `Entrega: Pedidos`}
+                title={getViajeTitle(viaje)}
                 description={`${formatFecha(viaje.fecha_viaje_inicio)} • Completado`}
-                left={props => <List.Icon {...props} icon={viaje.tipo_viaje === 'compra' ? 'inbox-arrow-down' : 'truck-delivery'} color="#888" />}
+                left={props => <List.Icon {...props} icon={getViajeIcon(viaje.tipo_viaje)} color="#888" />}
                 style={styles.accordion}
                 titleStyle={{ fontWeight: 'bold', color: '#555' }}
               >

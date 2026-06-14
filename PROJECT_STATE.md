@@ -50,7 +50,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - **Reestructuración de Esquema:** Se modificó la tabla `viajes` para permitir fechas de llegada relativas (nullable) y campos `destino_origen` y `notas`.
   - **Dashboard en Tiempo Real:** `ViajesDashboardScreen` implementa una lista unificada de viajes alimentada por PowerSync.
   - **Sistema de Estados de Avance Automático:** Los viajes avanzan su ciclo de vida (`en_progreso` -> `en_destino` -> `retornando` -> `completado`) mediante botones de acción que estampan de forma invisible la fecha correspondiente.
-  - **Registro Dinámico:** `RegistrarViajeScreen` permite ingresar viajes de compra o entrega a través de un formulario segmentado.
+  - **Registro Dinámico:** `RegistrarViajeScreen` permite ingresar viajes de compra, entrega o mixtos (ida y vuelta) a través de un formulario segmentado. Los viajes mixtos agrupan ambos propósitos logísticos.
 
 **Nota de uso continuo:** 
 Este documento sirve como ancla contextual para futuros prompts. Si se crean nuevas pantallas, componentes o utilidades estructurales, **deben adherirse a esta misma arquitectura basada en Features y documentarse idealmente en un lugar similar**. No mezclar rutas en `app/` con la lógica principal.
