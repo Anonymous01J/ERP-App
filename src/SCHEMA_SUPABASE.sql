@@ -29,7 +29,8 @@ CREATE TABLE public.productos_presentacion (
   rollos_por_paquete int,
   stock_unidades_sueltas int,
   precio_USD numeric(10,2) NOT NULL DEFAULT 0.00,
-  tiempo_x_paquete_min real
+  tiempo_x_paquete_min real,
+  estado text NOT NULL DEFAULT 'activo' CHECK (estado IN ('activo', 'inactivo'))
 );
 
 CREATE TABLE public.viajes (

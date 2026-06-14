@@ -22,7 +22,8 @@ const productos_presentacion = new Table({
   rollos_por_paquete: column.integer,
   stock_unidades_sueltas: column.integer,
   precio_USD: column.real,
-  tiempo_x_paquete_min: column.real
+  tiempo_x_paquete_min: column.real,
+  estado: column.text
 });
 
 const viajes = new Table({

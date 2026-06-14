@@ -11,11 +11,11 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 
 ## 2. Backend & Data Layer
 - **Backend como Servicio (BaaS):** **Supabase** ha sido implementado como el backend principal.
-  - La base de datos PostgreSQL en Supabase ha sido configurada utilizando el esquema de `src/SCHEMA.sql` y los procedimientos de `src/STORED_PROCEDURES.sql`.
+  - La base de datos PostgreSQL en Supabase ha sido configurada utilizando el esquema de `src/SCHEMA_SUPABASE.sql` (adaptado de `src/SCHEMA.sql`).
   - Se ha creado un cliente de Supabase en `src/core/supabase/client.ts` para interactuar con la API.
-- **Sincronización Offline-First:** **PowerSync** está integrado para la sincronización de datos entre la base de datos de Supabase y una base de datos SQLite local en el dispositivo.
-  - Un conector de PowerSync (`src/core/powersync/connector.ts`) gestiona la conexión y la sincronización.
-  - Esto permite que la aplicación funcione sin conexión a internet.
+- **Sincronización Offline-First:** **PowerSync** está integrado para la sincronización de datos bidireccional mediante SQLite.
+  - **Upload de Datos:** El conector (`src/core/powersync/connector.ts`) gestiona la conexión enviando las mutaciones a Supabase mediante una **Edge Function** llamada `powersync`.
+  - **Ciclo de Conexión:** PowerSync depende estrictamente del JWT (access_token) de Supabase Auth para autenticar la sincronización.
 
 ## 3. Autenticación
 - **Flujo de Autenticación Completo:** Se ha implementado un sistema de autenticación robusto gestionado por **Supabase Auth**.
@@ -26,15 +26,23 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - Un `AuthProvider` (`src/core/auth/AuthProvider.tsx`) envuelve la aplicación.
   - Gestiona el estado de la sesión del usuario (logueado o no).
   - Redirige automáticamente a los usuarios entre la pantalla de `login` y el `dashboard` principal (`(tabs)`) según su estado de autenticación.
-- **Pantallas:**
-  - `src/features/auth/screens/LoginScreen.tsx`: Contiene la UI y la lógica para ambos métodos de inicio de sesión.
-  - `app/login.tsx`: La ruta que renderiza la pantalla de login.
 
 ## 4. Estructura de Rutas (app/)
 - **`(tabs)`:** Contiene las pantallas principales de la aplicación para usuarios autenticados.
 - **`login.tsx`:** Pantalla de inicio de sesión.
 - **`_layout.tsx`:** Layout raíz que implementa el `AuthProvider` para proteger las rutas.
 - **`(screens)`:** Directorio para pantallas que se presentan como modales o fuera del navegador de pestañas principal.
+
+## 5. Módulos y Features Funcionales
+- **Clientes (`src/features/clientes`):**
+  - **CRUD Funcional Offline-First:** Conectado exitosamente con PowerSync a través del hook `usePowerSync()`.
+  - **Listado y Filtros:** Búsqueda en tiempo real implementada junto a segmentación por estado (`activo`/`inactivo`).
+  - **Eliminación Lógica:** Soporte de desactivación/activación de clientes desde la tarjeta UI.
+  - **Creación/Edición:** Formulario dinámico y adaptativo sin dependencias de mockups locales.
+- **Inventario - Presentaciones (`src/features/inventario`):**
+  - **CRUD Funcional Offline-First:** Conectado con PowerSync mediante `usePowerSync()`.
+  - **Single Screen CRUD:** Unificación del listado y el formulario de creación/edición en una sola pantalla (`GestionarPresentacionesScreen`).
+  - **Eliminación Lógica:** Se alteró el esquema de base de datos para soportar la eliminación lógica (campo `estado`) de las presentaciones de rollos, usando un menú de 3 puntos.
 
 ---
 
