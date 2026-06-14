@@ -69,16 +69,6 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="clientes"
-        options={{
-          title: 'Directorio de Clientes',
-          tabBarLabel: 'Clientes',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="account-group" size={size} color={color} />
-          ),
-        }}
-      />
     </Tabs>
   );
 }
