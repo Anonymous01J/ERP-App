@@ -2,19 +2,23 @@ import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text, Button, Appbar, useTheme, TextInput, SegmentedButtons } from 'react-native-paper';
 import { useRouter } from 'expo-router';
+import { usePowerSync } from '@powersync/react';
+import Toast from 'react-native-toast-message';
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
 
 export function RegistrarViajeScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const powerSync = usePowerSync();
 
   const [tipoViaje, setTipoViaje] = useState('entrega');
   const [destinoOrigen, setDestinoOrigen] = useState('');
-  const [conductor, setConductor] = useState('');
   const [notas, setNotas] = useState('');
 
   const [pedidosSeleccionados, setPedidosSeleccionados] = useState<string[]>([]);
 
-  // Mock pedidos pendientes
+  // Mock pedidos pendientes - Esto se reemplazará más adelante por consultas reales a 'pedidos'
   const pedidosPendientes = [
     { id: '1', titulo: 'Pedido #001 - Librería Escolar' },
     { id: '2', titulo: 'Pedido #002 - Papelera Central' },
@@ -29,13 +33,50 @@ export function RegistrarViajeScreen() {
     }
   };
 
-  const handleGuardar = () => {
-    console.log('Iniciar Viaje:', { tipoViaje, destinoOrigen, conductor, notas, pedidosSeleccionados });
-    router.back();
+  const handleGuardar = async () => {
+    if (tipoViaje === 'compra' && !destinoOrigen.trim()) {
+      Toast.show({
+        type: 'error',
+        text1: 'Datos incompletos',
+        text2: 'Debes indicar el proveedor de origen.',
+      });
+      return;
+    }
+
+    try {
+      const newId = uuidv4();
+      const now = new Date().toISOString();
+
+      await powerSync.execute(
+        `INSERT INTO viajes (id, tipo_viaje, destino_origen, notas, fecha_viaje_inicio, estado) 
+         VALUES (?, ?, ?, ?, ?, 'en_progreso')`,
+        [newId, tipoViaje, destinoOrigen.trim(), notas.trim(), now]
+      );
+
+      // Si es una entrega y hay pedidos, aquí deberíamos insertar en entregas_viaje.
+      // Quedará pendiente cuando implementemos el CRUD real de Pedidos.
+
+      Toast.show({
+        type: 'success',
+        text1: 'Viaje Iniciado',
+        text2: 'El viaje ha comenzado exitosamente.',
+      });
+
+      setTimeout(() => {
+        router.back();
+      }, 500);
+    } catch (error) {
+      console.error('Error iniciando viaje:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Hubo un problema al intentar iniciar el viaje.',
+      });
+    }
   };
 
   const isBotonDeshabilitado = tipoViaje === 'compra' 
-    ? (!destinoOrigen || !conductor)
+    ? (!destinoOrigen)
     : (pedidosSeleccionados.length === 0);
 
   return (
@@ -62,22 +103,13 @@ export function RegistrarViajeScreen() {
           />
 
           {tipoViaje === 'compra' ? (
-            <>
-              <TextInput
-                mode="outlined"
-                label="Proveedor Origen"
-                value={destinoOrigen}
-                onChangeText={setDestinoOrigen}
-                style={styles.input}
-              />
-              <TextInput
-                mode="outlined"
-                label="Conductor Asignado"
-                value={conductor}
-                onChangeText={setConductor}
-                style={styles.input}
-              />
-            </>
+            <TextInput
+              mode="outlined"
+              label="Proveedor Origen"
+              value={destinoOrigen}
+              onChangeText={setDestinoOrigen}
+              style={styles.input}
+            />
           ) : (
             <View style={styles.pedidosContainer}>
               <Text variant="titleMedium" style={styles.label}>Pedidos a Transportar</Text>

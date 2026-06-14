@@ -29,6 +29,8 @@ const productos_presentacion = new Table({
 
 const viajes = new Table({
   tipo_viaje: column.text,
+  destino_origen: column.text,
+  notas: column.text,
   fecha_viaje_inicio: column.text,
   fecha_viaje_llegada_destino: column.text,
   fecha_viaje_retorno: column.text,

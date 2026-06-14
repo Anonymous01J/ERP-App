@@ -37,10 +37,12 @@ CREATE TABLE public.productos_presentacion (
 CREATE TABLE public.viajes (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   tipo_viaje text NOT NULL,
+  destino_origen text,
+  notas text,
   fecha_viaje_inicio timestamp with time zone NOT NULL,
-  fecha_viaje_llegada_destino timestamp with time zone NOT NULL,
-  fecha_viaje_retorno timestamp with time zone NOT NULL,
-  fecha_viaje_llegada_base timestamp with time zone NOT NULL,
+  fecha_viaje_llegada_destino timestamp with time zone,
+  fecha_viaje_retorno timestamp with time zone,
+  fecha_viaje_llegada_base timestamp with time zone,
   estado text NOT NULL DEFAULT 'en_progreso' CHECK (estado IN ('en_progreso','en_destino','retornando','completado'))
 );
 

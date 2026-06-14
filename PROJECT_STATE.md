@@ -43,10 +43,14 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - **Dashboard y CRUD:** Se refactorizó la interfaz imitando el módulo de clientes. `GestionarPresentacionesScreen` sirve como Dashboard interactivo con filtrado (Activos/Inactivos) y botón flotante (FAB).
   - **Pantalla de Registro:** La creación y edición se realiza ahora de manera independiente en `RegistrarPresentacionScreen.tsx`.
 - **Inventario - Potes (`src/features/inventario`):**
-  - **Dashboard y CRUD:** Se implementó `GestionarPotesScreen.tsx` para listar y gestionar los tipos de potes.
-  - **Corrección de Hook:** Se solucionó un error en el uso del hook `useQuery` de PowerSync, que ahora se importa directamente desde `@powersync/react` para obtener datos reactivos.
-
----
+  - **Dashboard y CRUD Independiente:** Se replicó la arquitectura de presentaciones para la gestión de potes. `GestionarPotesScreen` sirve como Dashboard interactivo con filtrado (Activos/Inactivos) y botón flotante (FAB).
+  - **Pantalla de Registro:** La creación y edición de potes se realiza de manera independiente en `RegistrarPoteScreen.tsx`.
+  - **Eliminación Lógica:** Soporte de desactivación a través de las tarjetas (campo `estado` en base de datos).
+- **Logística - Viajes (`src/features/viajes`):**
+  - **Reestructuración de Esquema:** Se modificó la tabla `viajes` para permitir fechas de llegada relativas (nullable) y campos `destino_origen` y `notas`.
+  - **Dashboard en Tiempo Real:** `ViajesDashboardScreen` implementa una lista unificada de viajes alimentada por PowerSync.
+  - **Sistema de Estados de Avance Automático:** Los viajes avanzan su ciclo de vida (`en_progreso` -> `en_destino` -> `retornando` -> `completado`) mediante botones de acción que estampan de forma invisible la fecha correspondiente.
+  - **Registro Dinámico:** `RegistrarViajeScreen` permite ingresar viajes de compra o entrega a través de un formulario segmentado.
 
 **Nota de uso continuo:** 
 Este documento sirve como ancla contextual para futuros prompts. Si se crean nuevas pantallas, componentes o utilidades estructurales, **deben adherirse a esta misma arquitectura basada en Features y documentarse idealmente en un lugar similar**. No mezclar rutas en `app/` con la lógica principal.

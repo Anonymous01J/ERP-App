@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { List, Text, Button, useTheme, Chip, IconButton, TextInput, Divider } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { CustomCard } from '@components/ui/CustomCard';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { usePowerSync } from '@powersync/react';
+import Toast from 'react-native-toast-message';
 
 // Subcomponente para el formulario de gastos dentro de un viaje activo
 const GastoViajeForm = ({ theme }: { theme: any }) => {
@@ -66,7 +68,13 @@ const GastoViajeForm = ({ theme }: { theme: any }) => {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.addBtn, { backgroundColor: '#4ade80' }]}>
+          <TouchableOpacity style={[styles.addBtn, { backgroundColor: '#4ade80' }]} onPress={() => {
+            Toast.show({
+              type: 'info',
+              text1: 'En desarrollo',
+              text2: 'El registro de gastos se conectará pronto.',
+            });
+          }}>
             <MaterialCommunityIcons name="plus" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
@@ -78,19 +86,74 @@ const GastoViajeForm = ({ theme }: { theme: any }) => {
 export function ViajesDashboardScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const powerSync = usePowerSync();
   const [filtro, setFiltro] = useState('Todos');
 
   const filtros = ['Todos', 'Compras (Bobinas)', 'Entregas (Pedidos)'];
 
-  // Mock data minimalist approach
-  const viajes = [
-    { id: '1', tipo: 'compra', origen: 'Distribuidora Central', estado: 'En Curso', fecha: 'Hoy, 08:30 AM', items: '2 Bobinas (1500kg)' },
-    { id: '3', tipo: 'entrega', destino: 'Papelera Norte', estado: 'En Curso', fecha: 'Hoy, 10:00 AM', items: '300 Rollos (600g)' },
-    { id: '2', tipo: 'entrega', destino: 'Librería Escolar', estado: 'Entregado', fecha: 'Ayer, 02:15 PM', items: '150 Rollos (1kg)' },
-  ];
+  const filterToQuery = {
+    'Todos': '',
+    'Compras (Bobinas)': "AND tipo_viaje = 'compra'",
+    'Entregas (Pedidos)': "AND tipo_viaje = 'entrega'"
+  };
 
-  const viajesActivos = viajes.filter(v => v.estado === 'En Curso');
-  const viajesPasados = viajes.filter(v => v.estado !== 'En Curso');
+  const { data: viajesActivos } = powerSync.useQuery(
+    `SELECT * FROM viajes WHERE estado != 'completado' ${filterToQuery[filtro as keyof typeof filterToQuery]} ORDER BY fecha_viaje_inicio DESC`
+  );
+
+  const { data: viajesPasados } = powerSync.useQuery(
+    `SELECT * FROM viajes WHERE estado = 'completado' ${filterToQuery[filtro as keyof typeof filterToQuery]} ORDER BY fecha_viaje_inicio DESC`
+  );
+
+  const formatFecha = (fechaStr: string) => {
+    if (!fechaStr) return 'Fecha desconocida';
+    const date = new Date(fechaStr);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  };
+
+  const formatearEstadoUi = (estado: string) => {
+    switch(estado) {
+      case 'en_progreso': return 'En Tránsito (Ida)';
+      case 'en_destino': return 'En Destino';
+      case 'retornando': return 'Retornando a Base';
+      case 'completado': return 'Completado';
+      default: return estado;
+    }
+  };
+
+  const getNextStateInfo = (estadoActual: string) => {
+    switch(estadoActual) {
+      case 'en_progreso': return { next: 'en_destino', label: 'Llegué a Destino', field: 'fecha_viaje_llegada_destino' };
+      case 'en_destino': return { next: 'retornando', label: 'Iniciar Retorno', field: 'fecha_viaje_retorno' };
+      case 'retornando': return { next: 'completado', label: 'Llegué a Base (Fin)', field: 'fecha_viaje_llegada_base' };
+      default: return null;
+    }
+  };
+
+  const handleAvanzarEstado = async (id: string, estadoActual: string) => {
+    const info = getNextStateInfo(estadoActual);
+    if (!info) return;
+
+    try {
+      const now = new Date().toISOString();
+      await powerSync.execute(
+        `UPDATE viajes SET estado = ?, ${info.field} = ? WHERE id = ?`,
+        [info.next, now, id]
+      );
+      Toast.show({
+        type: 'success',
+        text1: 'Estado actualizado',
+        text2: `Viaje marcado como: ${formatearEstadoUi(info.next)}.`,
+      });
+    } catch (error) {
+      console.error('Error avanzando viaje:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'No se pudo actualizar el viaje.',
+      });
+    }
+  };
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -116,63 +179,68 @@ export function ViajesDashboardScreen() {
         {viajesActivos.length > 0 && (
           <List.Section>
             <Text variant="titleMedium" style={styles.sectionHeader}>Viajes en Curso</Text>
-            {viajesActivos.map((viaje) => (
-              <List.Accordion
-                key={viaje.id}
-                title={viaje.tipo === 'compra' ? `Compra: ${viaje.origen}` : `Entrega: ${viaje.destino}`}
-                description={`${viaje.fecha} • ${viaje.estado}`}
-                left={props => <List.Icon {...props} icon={viaje.tipo === 'compra' ? 'inbox-arrow-down' : 'truck-delivery'} color={viaje.tipo === 'compra' ? theme.colors.primary : theme.colors.tertiary} />}
-                style={styles.accordion}
-                titleStyle={{ fontWeight: 'bold' }}
-              >
-                <View style={styles.accordionContent}>
-                  <Text variant="bodyMedium" style={styles.detailText}>Carga: <Text style={{fontWeight:'bold'}}>{viaje.items}</Text></Text>                  
-                  {/* Formulario de Gastos */}
-                  <View style={{ marginTop: 16 }}>
-                    <GastoViajeForm theme={theme} />
+            {viajesActivos.map((viaje) => {
+              const nextStateInfo = getNextStateInfo(viaje.estado);
+              return (
+                <List.Accordion
+                  key={viaje.id}
+                  title={viaje.tipo_viaje === 'compra' ? `Compra: ${viaje.destino_origen || 'No definido'}` : `Entrega: Pedidos (Múltiples)`}
+                  description={`${formatFecha(viaje.fecha_viaje_inicio)} • ${formatearEstadoUi(viaje.estado)}`}
+                  left={props => <List.Icon {...props} icon={viaje.tipo_viaje === 'compra' ? 'inbox-arrow-down' : 'truck-delivery'} color={viaje.tipo_viaje === 'compra' ? theme.colors.primary : theme.colors.tertiary} />}
+                  style={styles.accordion}
+                  titleStyle={{ fontWeight: 'bold' }}
+                >
+                  <View style={styles.accordionContent}>
+                    {viaje.notas ? (
+                      <Text variant="bodyMedium" style={styles.detailText}>Notas: <Text style={{fontWeight:'bold'}}>{viaje.notas}</Text></Text>
+                    ) : null}
+                    
+                    {/* Formulario de Gastos */}
+                    <View style={{ marginTop: 16 }}>
+                      <GastoViajeForm theme={theme} />
+                    </View>
+                    
+                    <View style={styles.actionRow}>
+                      {nextStateInfo && (
+                        <Button mode="contained" onPress={() => handleAvanzarEstado(viaje.id, viaje.estado)} style={styles.actionButton}>
+                          {nextStateInfo.label}
+                        </Button>
+                      )}
+                    </View>
                   </View>
-                  
-                  <View style={styles.actionRow}>
-                    <Button mode="contained" onPress={() => console.log('Completar Viaje')} style={styles.actionButton}>
-                      Finalizar Viaje
-                    </Button>
-                    <Button mode="outlined" onPress={() => console.log('Ver Detalles')} style={styles.actionButton}>
-                      Ver Completo
-                    </Button>
-                  </View>
-                </View>
-              </List.Accordion>
-            ))}
+                </List.Accordion>
+              );
+            })}
           </List.Section>
         )}
 
         {/* HISTORIAL DE VIAJES */}
         {viajesPasados.length > 0 && (
           <List.Section>
-            <Text variant="titleMedium" style={[styles.sectionHeader, { marginTop: 16 }]}>Historial</Text>
+            <Text variant="titleMedium" style={[styles.sectionHeader, { marginTop: 16 }]}>Historial Completado</Text>
             {viajesPasados.map((viaje) => (
               <List.Accordion
                 key={viaje.id}
-                title={viaje.tipo === 'compra' ? `Compra: ${viaje.origen}` : `Entrega: ${viaje.destino}`}
-                description={`${viaje.fecha} • ${viaje.estado}`}
-                left={props => <List.Icon {...props} icon={viaje.tipo === 'compra' ? 'inbox-arrow-down' : 'truck-delivery'} color="#888" />}
+                title={viaje.tipo_viaje === 'compra' ? `Compra: ${viaje.destino_origen || 'No definido'}` : `Entrega: Pedidos`}
+                description={`${formatFecha(viaje.fecha_viaje_inicio)} • Completado`}
+                left={props => <List.Icon {...props} icon={viaje.tipo_viaje === 'compra' ? 'inbox-arrow-down' : 'truck-delivery'} color="#888" />}
                 style={styles.accordion}
                 titleStyle={{ fontWeight: 'bold', color: '#555' }}
               >
                 <View style={styles.accordionContent}>
-                  <Text variant="bodyMedium" style={styles.detailText}>Carga: <Text style={{fontWeight:'bold'}}>{viaje.items}</Text></Text>
-
-                  <View style={styles.actionRow}>
-                    <Button mode="outlined" onPress={() => console.log('Ver Detalles')} style={styles.actionButton}>
-                      Ver Detalles
-                    </Button>
-                  </View>
+                  {viaje.notas ? (
+                    <Text variant="bodyMedium" style={styles.detailText}>Notas: <Text style={{fontWeight:'bold'}}>{viaje.notas}</Text></Text>
+                  ) : null}
+                  <Text variant="bodySmall" style={styles.detailText}>Llegada a base: {formatFecha(viaje.fecha_viaje_llegada_base)}</Text>
                 </View>
               </List.Accordion>
             ))}
           </List.Section>
         )}
 
+        {viajesActivos.length === 0 && viajesPasados.length === 0 && (
+          <Text style={{ textAlign: 'center', marginTop: 40, color: '#888' }}>No hay viajes registrados en esta categoría.</Text>
+        )}
       </ScrollView>
 
       <IconButton
