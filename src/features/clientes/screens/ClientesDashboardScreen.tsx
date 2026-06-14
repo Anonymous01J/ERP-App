@@ -27,13 +27,23 @@ export function ClientesDashboardScreen() {
     try {
       Toast.show({ type: 'info', text1: 'Sincronizando...', text2: 'Comprobando cambios locales y remotos...' });
 
-      // Simular tiempo para que los procesos en segundo plano de PowerSync puedan asentar su estado
       await new Promise(resolve => setTimeout(resolve, 1500));
 
       const status = powerSync.syncStatus;
 
+      // FIX: Add a guard clause to prevent crash if syncStatus is not ready
+      if (!status) {
+        Toast.show({
+          type: 'info',
+          text1: 'Estado no Disponible',
+          text2: 'La información de sincronización aún no está lista.'
+        });
+        setRefreshing(false);
+        return;
+      }
+
       if (status.error) {
-        Toast.show({ type: 'error', text1: 'Error de Sincronización', text2: 'No se pudo sincronizar. Verifica tu conexión.' });
+        Toast.show({ type: 'error', text1: 'Error de Sincronización', text2: status.error.message || 'No se pudo sincronizar.' });
       } else if (status.connected) {
         Toast.show({ type: 'success', text1: 'Sincronización Exitosa', text2: 'Los cambios han sido subidos y bajados correctamente.' });
       } else {
