@@ -1,95 +1,59 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
-import { Text, Button, Appbar, useTheme, TextInput, IconButton, List, Menu } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { Text, Appbar, useTheme, IconButton, Divider, SegmentedButtons, Menu, Avatar } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { usePowerSync } from '@powersync/react';
-
-// Generador de UUID v4 para la base de datos offline
-function uuidv4() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-}
+import { CustomCard } from '@components/ui/CustomCard';
+import Toast from 'react-native-toast-message';
 
 export function GestionarPresentacionesScreen() {
   const router = useRouter();
   const theme = useTheme();
   const powerSync = usePowerSync();
 
-  // Consultar las presentaciones activas
+  const [filtroEstado, setFiltroEstado] = useState('activo');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [menuVisibleId, setMenuVisibleId] = useState<string | null>(null);
+
+  // Consultar las presentaciones filtradas por estado
   const { data: presentaciones } = powerSync.useQuery(
-    `SELECT * FROM productos_presentacion WHERE estado = 'activo' ORDER BY nombre ASC`
+    `SELECT * FROM productos_presentacion WHERE estado = ? ORDER BY nombre ASC`,
+    [filtroEstado]
   );
 
-  const [nombre, setNombre] = useState('');
-  const [pesoNominal, setPesoNominal] = useState('');
-  const [pesoReal, setPesoReal] = useState('');
-  const [unidades, setUnidades] = useState('');
-  
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [menuVisibleId, setMenuVisibleId] = useState<string | null>(null);
+  const toggleExpand = (id: string) => {
+    setExpandedId(expandedId === id ? null : id);
+  };
 
   const toggleMenu = (id: string) => {
     setMenuVisibleId(menuVisibleId === id ? null : id);
   };
 
-  const resetForm = () => {
-    setNombre('');
-    setPesoNominal('');
-    setPesoReal('');
-    setUnidades('');
-    setEditingId(null);
+  const handleEdit = (id: string) => {
+    setMenuVisibleId(null);
+    router.push(`/(screens)/registrar-presentacion?id=${id}`);
   };
 
-  const handleEdit = (pres: any) => {
+  const handleToggleEstado = async (id: string, estadoActual: string) => {
     setMenuVisibleId(null);
-    setNombre(pres.nombre || '');
-    setPesoNominal(pres.peso_nominal_g ? pres.peso_nominal_g.toString() : '');
-    setPesoReal(pres.peso_real_g ? pres.peso_real_g.toString() : '');
-    setUnidades(pres.rollos_por_paquete ? pres.rollos_por_paquete.toString() : '');
-    setEditingId(pres.id);
-  };
-
-  const handleDeactivate = async (id: string) => {
-    setMenuVisibleId(null);
+    const nuevoEstado = estadoActual === 'activo' ? 'inactivo' : 'activo';
     try {
       await powerSync.execute(
-        `UPDATE productos_presentacion SET estado = 'inactivo' WHERE id = ?`,
-        [id]
+        `UPDATE productos_presentacion SET estado = ? WHERE id = ?`,
+        [nuevoEstado, id]
       );
+      Toast.show({
+        type: 'success',
+        text1: 'Actualizado',
+        text2: `La presentación ha sido ${nuevoEstado === 'activo' ? 'activada' : 'desactivada'}.`,
+      });
     } catch (error) {
-      console.error('Error desactivando presentación:', error);
-      Alert.alert('Error', 'No se pudo eliminar la presentación.');
-    }
-  };
-
-  const handleGuardar = async () => {
-    if (!nombre.trim() || !pesoNominal || !pesoReal || !unidades) {
-      Alert.alert('Error', 'Por favor completa todos los campos.');
-      return;
-    }
-
-    try {
-      if (editingId) {
-        await powerSync.execute(
-          `UPDATE productos_presentacion 
-           SET nombre = ?, peso_nominal_g = ?, peso_real_g = ?, rollos_por_paquete = ? 
-           WHERE id = ?`,
-          [nombre.trim(), parseInt(pesoNominal), parseInt(pesoReal), parseInt(unidades), editingId]
-        );
-      } else {
-        const newId = uuidv4();
-        await powerSync.execute(
-          `INSERT INTO productos_presentacion (id, nombre, peso_nominal_g, peso_real_g, rollos_por_paquete, estado) 
-           VALUES (?, ?, ?, ?, ?, 'activo')`,
-          [newId, nombre.trim(), parseInt(pesoNominal), parseInt(pesoReal), parseInt(unidades)]
-        );
-      }
-      resetForm();
-    } catch (error) {
-      console.error('Error guardando presentación:', error);
-      Alert.alert('Error', 'Hubo un problema al guardar la presentación.');
+      console.error('Error actualizando estado:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'No se pudo actualizar el estado de la presentación.',
+      });
     }
   };
 
@@ -100,91 +64,99 @@ export function GestionarPresentacionesScreen() {
         <Appbar.Content title="Tipos de Rollo (Presentaciones)" />
       </Appbar.Header>
 
-      <KeyboardAvoidingView 
-        style={styles.content} 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          <Text variant="titleMedium" style={styles.title}>
-            {editingId ? 'Editar Presentación' : 'Nueva Presentación'}
-          </Text>
-          <View style={styles.formContainer}>
-            <TextInput
-              mode="outlined"
-              label="Nombre (Ej. 600g)"
-              value={nombre}
-              onChangeText={setNombre}
-              style={styles.input}
-            />
-            <View style={styles.row}>
-              <TextInput
-                mode="outlined"
-                label="Peso Nominal (g)"
-                value={pesoNominal}
-                onChangeText={setPesoNominal}
-                keyboardType="numeric"
-                style={[styles.input, styles.half]}
-              />
-              <TextInput
-                mode="outlined"
-                label="Peso Real (g)"
-                value={pesoReal}
-                onChangeText={setPesoReal}
-                keyboardType="numeric"
-                style={[styles.input, styles.half]}
-              />
-            </View>
-            <TextInput
-              mode="outlined"
-              label="Unidades por Paquete"
-              value={unidades}
-              onChangeText={setUnidades}
-              keyboardType="numeric"
-              style={styles.input}
-            />
-            <View style={styles.actionButtons}>
-              {editingId && (
-                <Button mode="outlined" onPress={resetForm} style={[styles.button, { marginRight: 8 }]} textColor={theme.colors.error}>
-                  Cancelar
-                </Button>
-              )}
-              <Button mode="contained" onPress={handleGuardar} style={styles.button}>
-                {editingId ? 'Guardar Cambios' : 'Agregar Presentación'}
-              </Button>
-            </View>
-          </View>
+      <View style={styles.headerControls}>
+        <SegmentedButtons
+          value={filtroEstado}
+          onValueChange={setFiltroEstado}
+          buttons={[
+            { value: 'activo', label: 'Activos' },
+            { value: 'inactivo', label: 'Inactivos' },
+          ]}
+          style={styles.segmentedButtons}
+        />
+      </View>
 
-          <Text variant="titleMedium" style={styles.title}>Presentaciones Activas</Text>
-          {presentaciones.map(pres => (
-            <List.Item
-              key={pres.id}
-              title={`Rollo ${pres.nombre}`}
-              description={`Nominal: ${pres.peso_nominal_g}g | Real: ${pres.peso_real_g}g | ${pres.rollos_por_paquete} unds/paq`}
-              left={props => <List.Icon {...props} icon="package-variant-closed" />}
-              right={props => (
-                <Menu
-                  visible={menuVisibleId === pres.id}
-                  onDismiss={() => setMenuVisibleId(null)}
-                  anchor={
-                    <IconButton
-                      {...props}
-                      icon="dots-vertical"
-                      onPress={() => toggleMenu(pres.id)}
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {presentaciones.map(pres => {
+          const isExpanded = expandedId === pres.id;
+          const isMenuVisible = menuVisibleId === pres.id;
+          const isInactive = pres.estado === 'inactivo';
+
+          return (
+            <CustomCard key={pres.id} style={[styles.cardWrapper, isInactive && styles.cardInactive]}>
+              <TouchableOpacity onPress={() => toggleExpand(pres.id)} activeOpacity={0.7}>
+                <View style={styles.cardContent}>
+                  <View style={styles.avatarContainer}>
+                    <Avatar.Icon 
+                      size={48} 
+                      icon="package-variant-closed" 
+                      style={isInactive ? { backgroundColor: theme.colors.surfaceDisabled } : { backgroundColor: theme.colors.primaryContainer }}
+                      color={isInactive ? theme.colors.outline : theme.colors.primary}
                     />
-                  }
-                >
-                  <Menu.Item onPress={() => handleEdit(pres)} title="Editar" leadingIcon="pencil" />
-                  <Menu.Item onPress={() => handleDeactivate(pres.id)} title="Eliminar" leadingIcon="delete" titleStyle={{ color: theme.colors.error }} />
-                </Menu>
+                  </View>
+                  <View style={styles.textContainer}>
+                    <Text variant="titleMedium" style={[{ fontWeight: 'bold' }, isInactive && { color: theme.colors.outline }]}>
+                      Rollo {pres.nombre}
+                    </Text>
+                    <Text variant="bodyMedium" style={{ color: isInactive ? theme.colors.outline : '#666' }}>
+                      Nominal: {pres.peso_nominal_g}g | Real: {pres.peso_real_g}g
+                    </Text>
+                    <View style={styles.statusRow}>
+                      <Text variant="titleSmall" style={{ color: isInactive ? theme.colors.outline : theme.colors.primary }}>
+                        {pres.rollos_por_paquete} unidades / paquete
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Menu
+                    visible={isMenuVisible}
+                    onDismiss={() => setMenuVisibleId(null)}
+                    anchor={
+                      <IconButton
+                        icon="dots-vertical"
+                        size={24}
+                        onPress={() => toggleMenu(pres.id)}
+                      />
+                    }
+                  >
+                    <Menu.Item onPress={() => handleEdit(pres.id)} title="Editar" leadingIcon="pencil" />
+                    <Menu.Item 
+                      onPress={() => handleToggleEstado(pres.id, pres.estado)} 
+                      title={isInactive ? "Activar" : "Desactivar"} 
+                      leadingIcon={isInactive ? "check-circle" : "cancel"} 
+                      titleStyle={{ color: isInactive ? theme.colors.primary : theme.colors.error }}
+                    />
+                  </Menu>
+                </View>
+              </TouchableOpacity>
+
+              {isExpanded && (
+                <View style={styles.historyContainer}>
+                  <Divider style={styles.divider} />
+                  <Text variant="titleSmall" style={styles.historyTitle}>Historial de Producción Reciente</Text>
+                  
+                  <Text variant="bodySmall" style={{ color: '#888', fontStyle: 'italic', marginBottom: 12 }}>
+                    Aquí se mostrarán los últimos registros de producción de este tipo de rollo.
+                  </Text>
+                </View>
               )}
-              style={styles.listItem}
-            />
-          ))}
-          {presentaciones.length === 0 && (
-            <Text style={styles.emptyText}>No hay presentaciones activas registradas.</Text>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
+            </CustomCard>
+          );
+        })}
+        {presentaciones.length === 0 && (
+          <Text style={styles.emptyText}>No hay presentaciones en este estado.</Text>
+        )}
+      </ScrollView>
+
+      <IconButton
+        icon="plus"
+        mode="contained"
+        containerColor={theme.colors.primary}
+        iconColor={theme.colors.onPrimary}
+        size={32}
+        style={styles.fab}
+        onPress={() => router.push('/(screens)/registrar-presentacion')}
+      />
     </View>
   );
 }
@@ -194,49 +166,66 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F7FA',
   },
-  content: {
-    flex: 1,
+  headerControls: {
+    padding: 16,
+    paddingBottom: 8,
+    backgroundColor: '#fff',
+  },
+  segmentedButtons: {
+    marginBottom: 8,
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
+    padding: 8,
+    paddingBottom: 100,
   },
-  title: {
-    fontWeight: 'bold',
-    marginBottom: 12,
-    marginTop: 8,
-  },
-  formContainer: {
-    backgroundColor: '#ffffff',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 24,
-  },
-  input: {
-    marginBottom: 12,
-  },
-  row: {
+  cardContent: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    padding: 16,
+    alignItems: 'center',
   },
-  half: {
-    width: '48%',
+  avatarContainer: {
+    marginRight: 16,
   },
-  actionButtons: {
-    flexDirection: 'row',
-    marginTop: 8,
-  },
-  button: {
+  textContainer: {
     flex: 1,
   },
-  listItem: {
-    backgroundColor: '#ffffff',
+  statusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cardWrapper: {
+    marginBottom: 12,
+  },
+  cardInactive: {
+    opacity: 0.6,
+  },
+  historyContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  divider: {
+    marginBottom: 12,
+  },
+  historyTitle: {
+    fontWeight: 'bold',
     marginBottom: 8,
-    borderRadius: 8,
+    color: '#444',
   },
   emptyText: {
     textAlign: 'center',
-    marginTop: 20,
+    marginTop: 40,
     color: '#888',
   }
 });

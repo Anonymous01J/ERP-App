@@ -51,6 +51,7 @@ function RootLayoutNav() {
       <Stack.Screen name="(screens)/nuevo-pedido" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="(screens)/registrar-cliente" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="(screens)/gestionar-presentaciones" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="(screens)/registrar-presentacion" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="(screens)/registrar-viaje" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="(screens)/historial-bobinas" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="(screens)/historial-produccion" options={{ presentation: 'fullScreenModal' }} />

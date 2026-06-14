@@ -80,7 +80,7 @@ export function InventarioDashboardScreen() {
                   Historial
                 </Button>
                 <Button mode="text" onPress={() => router.push('/(screens)/gestionar-presentaciones')}>
-                  Ajustes
+                  Gestionar Rollos
                 </Button>
               </View>
             </View>
