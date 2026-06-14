@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Text, Appbar, useTheme, IconButton, Divider, SegmentedButtons, Menu, Avatar } from 'react-native-paper';
+import { Text, Appbar, useTheme, IconButton, Divider, SegmentedButtons, Menu, Avatar, ActivityIndicator } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { usePowerSync } from '@powersync/react';
+import { usePowerSync, useQuery } from '@powersync/react';
 import { CustomCard } from '@components/ui/CustomCard';
 import Toast from 'react-native-toast-message';
 
@@ -15,8 +15,8 @@ export function GestionarPresentacionesScreen() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [menuVisibleId, setMenuVisibleId] = useState<string | null>(null);
 
-  // Consultar las presentaciones filtradas por estado
-  const { data: presentaciones } = powerSync.useQuery(
+  // Consultar las presentaciones filtradas por estado usando el Hook 'useQuery'
+  const { data: presentaciones = [], isLoading } = useQuery(
     `SELECT * FROM productos_presentacion WHERE estado = ? ORDER BY nombre ASC`,
     [filtroEstado]
   );
@@ -35,6 +35,7 @@ export function GestionarPresentacionesScreen() {
   };
 
   const handleToggleEstado = async (id: string, estadoActual: string) => {
+    if (!powerSync) return;
     setMenuVisibleId(null);
     const nuevoEstado = estadoActual === 'activo' ? 'inactivo' : 'activo';
     try {
@@ -77,73 +78,76 @@ export function GestionarPresentacionesScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {presentaciones.map(pres => {
-          const isExpanded = expandedId === pres.id;
-          const isMenuVisible = menuVisibleId === pres.id;
-          const isInactive = pres.estado === 'inactivo';
+        {isLoading ? (
+          <ActivityIndicator style={{ marginTop: 50 }} />
+        ) : presentaciones.length > 0 ? (
+          presentaciones.map(pres => {
+            const isExpanded = expandedId === pres.id;
+            const isMenuVisible = menuVisibleId === pres.id;
+            const isInactive = pres.estado === 'inactivo';
 
-          return (
-            <CustomCard key={pres.id} style={[styles.cardWrapper, isInactive && styles.cardInactive]}>
-              <TouchableOpacity onPress={() => toggleExpand(pres.id)} activeOpacity={0.7}>
-                <View style={styles.cardContent}>
-                  <View style={styles.avatarContainer}>
-                    <Avatar.Icon 
-                      size={48} 
-                      icon="package-variant-closed" 
-                      style={isInactive ? { backgroundColor: theme.colors.surfaceDisabled } : { backgroundColor: theme.colors.primaryContainer }}
-                      color={isInactive ? theme.colors.outline : theme.colors.primary}
-                    />
-                  </View>
-                  <View style={styles.textContainer}>
-                    <Text variant="titleMedium" style={[{ fontWeight: 'bold' }, isInactive && { color: theme.colors.outline }]}>
-                      Rollo {pres.nombre}
-                    </Text>
-                    <Text variant="bodyMedium" style={{ color: isInactive ? theme.colors.outline : '#666' }}>
-                      Nominal: {pres.peso_nominal_g}g | Real: {pres.peso_real_g}g
-                    </Text>
-                    <View style={styles.statusRow}>
-                      <Text variant="titleSmall" style={{ color: isInactive ? theme.colors.outline : theme.colors.primary }}>
-                        {pres.rollos_por_paquete} unidades / paquete
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Menu
-                    visible={isMenuVisible}
-                    onDismiss={() => setMenuVisibleId(null)}
-                    anchor={
-                      <IconButton
-                        icon="dots-vertical"
-                        size={24}
-                        onPress={() => toggleMenu(pres.id)}
+            return (
+              <CustomCard key={pres.id} style={[styles.cardWrapper, isInactive && styles.cardInactive]}>
+                <TouchableOpacity onPress={() => toggleExpand(pres.id)} activeOpacity={0.7}>
+                  <View style={styles.cardContent}>
+                    <View style={styles.avatarContainer}>
+                      <Avatar.Icon 
+                        size={48} 
+                        icon="package-variant-closed" 
+                        style={isInactive ? { backgroundColor: theme.colors.surfaceDisabled } : { backgroundColor: theme.colors.primaryContainer }}
+                        color={isInactive ? theme.colors.outline : theme.colors.primary}
                       />
-                    }
-                  >
-                    <Menu.Item onPress={() => handleEdit(pres.id)} title="Editar" leadingIcon="pencil" />
-                    <Menu.Item 
-                      onPress={() => handleToggleEstado(pres.id, pres.estado)} 
-                      title={isInactive ? "Activar" : "Desactivar"} 
-                      leadingIcon={isInactive ? "check-circle" : "cancel"} 
-                      titleStyle={{ color: isInactive ? theme.colors.primary : theme.colors.error }}
-                    />
-                  </Menu>
-                </View>
-              </TouchableOpacity>
+                    </View>
+                    <View style={styles.textContainer}>
+                      <Text variant="titleMedium" style={[{ fontWeight: 'bold' }, isInactive && { color: theme.colors.outline }]}>
+                        Rollo {pres.nombre}
+                      </Text>
+                      <Text variant="bodyMedium" style={{ color: isInactive ? theme.colors.outline : '#666' }}>
+                        Nominal: {pres.peso_nominal_g}g | Real: {pres.peso_real_g}g
+                      </Text>
+                      <View style={styles.statusRow}>
+                        <Text variant="titleSmall" style={{ color: isInactive ? theme.colors.outline : theme.colors.primary }}>
+                          {pres.rollos_por_paquete} unidades / paquete
+                        </Text>
+                      </View>
+                    </View>
 
-              {isExpanded && (
-                <View style={styles.historyContainer}>
-                  <Divider style={styles.divider} />
-                  <Text variant="titleSmall" style={styles.historyTitle}>Historial de Producción Reciente</Text>
-                  
-                  <Text variant="bodySmall" style={{ color: '#888', fontStyle: 'italic', marginBottom: 12 }}>
-                    Aquí se mostrarán los últimos registros de producción de este tipo de rollo.
-                  </Text>
-                </View>
-              )}
-            </CustomCard>
-          );
-        })}
-        {presentaciones.length === 0 && (
+                    <Menu
+                      visible={isMenuVisible}
+                      onDismiss={() => setMenuVisibleId(null)}
+                      anchor={
+                        <IconButton
+                          icon="dots-vertical"
+                          size={24}
+                          onPress={() => toggleMenu(pres.id)}
+                        />
+                      }
+                    >
+                      <Menu.Item onPress={() => handleEdit(pres.id)} title="Editar" leadingIcon="pencil" />
+                      <Menu.Item 
+                        onPress={() => handleToggleEstado(pres.id, pres.estado)} 
+                        title={isInactive ? "Activar" : "Desactivar"} 
+                        leadingIcon={isInactive ? "check-circle" : "cancel"} 
+                        titleStyle={{ color: isInactive ? theme.colors.primary : theme.colors.error }}
+                      />
+                    </Menu>
+                  </View>
+                </TouchableOpacity>
+
+                {isExpanded && (
+                  <View style={styles.historyContainer}>
+                    <Divider style={styles.divider} />
+                    <Text variant="titleSmall" style={styles.historyTitle}>Historial de Producción Reciente</Text>
+                    
+                    <Text variant="bodySmall" style={{ color: '#888', fontStyle: 'italic', marginBottom: 12 }}>
+                      Aquí se mostrarán los últimos registros de producción de este tipo de rollo.
+                    </Text>
+                  </View>
+                )}
+              </CustomCard>
+            );
+          })
+        ) : (
           <Text style={styles.emptyText}>No hay presentaciones en este estado.</Text>
         )}
       </ScrollView>
@@ -197,7 +201,7 @@ const styles = StyleSheet.create({
   },
   fab: {
     position: 'absolute',
-    bottom: 16,
+    bottom: 86,
     right: 16,
     width: 64,
     height: 64,

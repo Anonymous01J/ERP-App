@@ -4,14 +4,8 @@ import { Button, Appbar, useTheme, TextInput } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { usePowerSync } from '@powersync/react';
 import Toast from 'react-native-toast-message';
-
-// Generador simple de UUID v4 para la base de datos offline
-function uuidv4() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-}
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
 
 export function RegistrarClienteScreen() {
   const router = useRouter();

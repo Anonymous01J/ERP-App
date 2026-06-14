@@ -75,7 +75,7 @@ export function InventarioDashboardScreen() {
           <View>
             <View style={styles.headerRow}>
               <Text variant="titleLarge" style={styles.sectionTitle}>Rollos Empaquetados</Text>
-              <View style={{ flexDirection: 'row' }}>
+              <View style={{ alignItems: 'flex-center' }}>
                 <Button mode="text" onPress={() => router.push('/(screens)/historial-produccion')}>
                   Historial
                 </Button>
