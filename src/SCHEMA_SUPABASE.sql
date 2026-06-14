@@ -137,3 +137,56 @@ CREATE TABLE public.movimientos (
   id_viaje uuid REFERENCES public.viajes(id) ON DELETE SET NULL,
   tipo text CHECK (tipo IN ('ingreso','egreso'))
 );
+
+-- RLS Policies
+ALTER TABLE public.clientes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.clientes;
+CREATE POLICY "Allow all for authenticated users" ON public.clientes FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.inventario_potes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.inventario_potes;
+CREATE POLICY "Allow all for authenticated users" ON public.inventario_potes FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.productos_presentacion ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.productos_presentacion;
+CREATE POLICY "Allow all for authenticated users" ON public.productos_presentacion FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.proveedores ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.proveedores;
+CREATE POLICY "Allow all for authenticated users" ON public.proveedores FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.viajes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.viajes;
+CREATE POLICY "Allow all for authenticated users" ON public.viajes FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.pedidos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.pedidos;
+CREATE POLICY "Allow all for authenticated users" ON public.pedidos FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.abonos_pagos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.abonos_pagos;
+CREATE POLICY "Allow all for authenticated users" ON public.abonos_pagos FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.bobinas_grandes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.bobinas_grandes;
+CREATE POLICY "Allow all for authenticated users" ON public.bobinas_grandes FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.produccion_diaria ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.produccion_diaria;
+CREATE POLICY "Allow all for authenticated users" ON public.produccion_diaria FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.consumo_bobinas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.consumo_bobinas;
+CREATE POLICY "Allow all for authenticated users" ON public.consumo_bobinas FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.detalles_pedido ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.detalles_pedido;
+CREATE POLICY "Allow all for authenticated users" ON public.detalles_pedido FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.entregas_viaje ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.entregas_viaje;
+CREATE POLICY "Allow all for authenticated users" ON public.entregas_viaje FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.movimientos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.movimientos;
+CREATE POLICY "Allow all for authenticated users" ON public.movimientos FOR ALL TO authenticated USING (true) WITH CHECK (true);
