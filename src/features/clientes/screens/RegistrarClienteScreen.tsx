@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Button, Appbar, useTheme, TextInput } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { usePowerSync } from '@powersync/react';
+import Toast from 'react-native-toast-message';
 
 // Generador simple de UUID v4 para la base de datos offline
 function uuidv4() {
@@ -37,7 +38,7 @@ export function RegistrarClienteScreen() {
           }
         } catch (error) {
           console.error('Error cargando cliente:', error);
-          Alert.alert('Error', 'No se pudieron cargar los datos del cliente.');
+          Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudieron cargar los datos del cliente.' });
         }
       };
       cargarCliente();
@@ -46,7 +47,7 @@ export function RegistrarClienteScreen() {
 
   const handleGuardar = async () => {
     if (!nombre.trim()) {
-      Alert.alert('Error', 'El nombre o razón social es obligatorio.');
+      Toast.show({ type: 'error', text1: 'Campo Requerido', text2: 'El nombre o razón social es obligatorio.' });
       return;
     }
 
@@ -69,10 +70,18 @@ export function RegistrarClienteScreen() {
         );
       }
       
-      router.back();
+      Toast.show({
+        type: 'success',
+        text1: isEditing ? 'Cliente Actualizado' : 'Cliente Guardado Localmente',
+        text2: 'Sincronizando con el servidor...'
+      });
+
+      // Volver atrás después de un breve momento para ver el toast
+      setTimeout(() => router.back(), 800);
+
     } catch (error) {
       console.error('Error guardando cliente:', error);
-      Alert.alert('Error', 'Hubo un problema al guardar el cliente. Por favor intente de nuevo.');
+      Toast.show({ type: 'error', text1: 'Error al Guardar', text2: 'Hubo un problema al guardar el cliente.' });
     } finally {
       setLoading(false);
     }

@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { Text, Avatar, useTheme, IconButton, Divider, Button, Searchbar, SegmentedButtons, Menu } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { CustomCard } from '@components/ui/CustomCard';
-import { StatusBarBadge, StatusType } from '@components/ui/StatusBarBadge';
-import { usePowerSync } from '@powersync/react';
+import { usePowerSync, useQuery } from '@powersync/react';
+import Toast from 'react-native-toast-message';
 
 export function ClientesDashboardScreen() {
   const theme = useTheme();
@@ -15,13 +15,25 @@ export function ClientesDashboardScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('activo');
   const [menuVisibleId, setMenuVisibleId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch clients from PowerSync
-  // Assuming table name is 'clientes'
-  const { data: clientes } = powerSync.useQuery(
+  const { data: clientes = [] } = useQuery(
     `SELECT * FROM clientes WHERE estado = ? ORDER BY razon_social ASC`, 
     [filtroEstado]
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      Toast.show({ type: 'info', text1: 'Sincronizando...', text2: 'Buscando nuevos datos del servidor.' });
+      await powerSync.connector?.triggerSync();
+    } catch (e) {
+      console.error('Error al forzar la sincronización:', e);
+      Toast.show({ type: 'error', text1: 'Error de Sincronización', text2: 'No se pudo conectar con el servidor.' });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [powerSync]);
 
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
@@ -41,8 +53,14 @@ export function ClientesDashboardScreen() {
     const nuevoEstado = estadoActual === 'activo' ? 'inactivo' : 'activo';
     try {
       await powerSync.execute('UPDATE clientes SET estado = ? WHERE id = ?', [nuevoEstado, id]);
+      Toast.show({
+        type: 'success',
+        text1: `Cliente ${nuevoEstado === 'activo' ? 'Activado' : 'Desactivado'}`,
+        text2: 'El estado del cliente ha sido actualizado.'
+      });
     } catch (error) {
       console.error('Error actualizando estado del cliente:', error);
+      Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo actualizar el estado del cliente.' });
     }
   };
 
@@ -72,13 +90,15 @@ export function ClientesDashboardScreen() {
         />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {filteredClientes.map(cliente => {
           const isExpanded = expandedId === cliente.id;
           const isMenuVisible = menuVisibleId === cliente.id;
-          // Calculate debt based on your logic, for now using saldo_a_favor_usd (if negative it would be debt)
-          // Defaulting to 0 for UI purposes if not specified in your actual schema rules
-          const deuda = 0; 
           const isInactive = cliente.estado === 'inactivo';
 
           return (
@@ -130,7 +150,6 @@ export function ClientesDashboardScreen() {
               {isExpanded && (
                 <View style={styles.historyContainer}>
                   <Divider style={styles.divider} />
-                  {/* Historial mockeado temporalmente hasta que se implemente la tabla de movimientos/pedidos por cliente */}
                   <Text variant="bodySmall" style={{ color: '#888', fontStyle: 'italic', marginBottom: 12 }}>
                     El historial de transacciones se mostrará aquí.
                   </Text>
@@ -236,4 +255,3 @@ const styles = StyleSheet.create({
     color: '#888',
   }
 });
-

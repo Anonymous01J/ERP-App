@@ -6,6 +6,8 @@ import { MD3LightTheme, PaperProvider } from 'react-native-paper';
 import { PowerSyncContext } from '@powersync/react';
 import { db, setupPowerSync } from '../src/core/powersync/system';
 import { AuthProvider, useAuth } from '../src/state/AuthProvider';
+import Toast from 'react-native-toast-message';
+import { SyncStatusNotifier } from '../src/components/ui/SyncStatusNotifier';
 
 // Custom theme for the paper rewinding business
 const theme = {
@@ -81,6 +83,8 @@ export default function RootLayout() {
       <PowerSyncContext.Provider value={db}>
         <PaperProvider theme={theme}>
           <RootLayoutNav />
+          <SyncStatusNotifier />
+          <Toast />
         </PaperProvider>
       </PowerSyncContext.Provider>
     </AuthProvider>

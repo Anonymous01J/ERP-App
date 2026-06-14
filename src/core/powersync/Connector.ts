@@ -1,65 +1,79 @@
-import { PowerSyncBackendConnector, AbstractPowerSyncDatabase, UpdateType } from '@powersync/react-native';
+import { AbstractPowerSyncDatabase, PowerSyncBackendConnector } from '@powersync/react-native';
 import { supabase } from '../supabase/client';
 
+/**
+ * Custom Supabase Connector for PowerSync.
+ * Handles authentication and data upload.
+ */
 export class SupabaseConnector implements PowerSyncBackendConnector {
+  /**
+   * Fetches the authentication credentials for PowerSync.
+   * This is called automatically when required.
+   */
   async fetchCredentials() {
-    const { data: { session }, error } = await supabase.auth.getSession();
-    
-    if (error || !session) {
-      throw new Error('No user session found. Make sure user is logged in.');
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session) {
+      console.warn('[Connector] No active Supabase session. PowerSync will not connect yet.');
+      return {}; // Returning empty, PowerSync will retry later
     }
 
-    // Configura la URL desde las variables de entorno (.env)
+    const powersyncUrl = process.env.EXPO_PUBLIC_POWERSYNC_URL;
+    if (!powersyncUrl) {
+      throw new Error('EXPO_PUBLIC_POWERSYNC_URL environment variable is not set.');
+    }
+
     return {
-      endpoint: process.env.EXPO_PUBLIC_POWERSYNC_URL || '',
-      token: session.access_token,
-      // Opcionalmente puedes definir un tiempo de expiración
+      endpoint: powersyncUrl,
+      token: session.access_token
     };
   }
 
-  async uploadData(database: AbstractPowerSyncDatabase) {
-    const transaction = await database.getNextCrudTransaction();
+  /**
+   * Uploads local changes to Supabase via an Edge Function.
+   */
+  async uploadData(database: AbstractPowerSyncDatabase): Promise<void> {
+    // --- START OF FINAL FIX ---
+    // First, check if the user is actually logged in.
+    const { data: { session } } = await supabase.auth.getSession();
 
+    if (!session) {
+      // This is the key: If there's no session, we don't even try to upload.
+      // This happens on app start before the user has logged in.
+      // We log it and exit gracefully. PowerSync will try again later.
+      console.log('[Connector] Upload requested, but no active session. Aborting until login.');
+      return; 
+    }
+    // --- END OF FINAL FIX ---
+
+    const transaction = await database.getNextCrudTransaction();
     if (!transaction) {
-      return; // No hay cambios pendientes
+      return; // Nothing to upload
     }
 
-    try {
-      for (let op of transaction.crud) {
-        const table = op.table;
-        // El id que usaremos en Supabase
-        const id = op.id;
+    console.log(`[Connector] Attempting to upload ${transaction.crud.length} changes...`);
 
-        switch (op.op) {
-          case UpdateType.PUT:
-            // PUT es para INSERTS y UPDATES
-            // Usamos upsert de supabase para simplificar
-            await supabase
-              .from(table)
-              .upsert({ ...op.opData, id });
-            break;
-          case UpdateType.PATCH:
-            // PATCH es solo actualización parcial
-            await supabase
-              .from(table)
-              .update(op.opData)
-              .eq('id', id);
-            break;
-          case UpdateType.DELETE:
-            // Borrado
-            await supabase
-              .from(table)
-              .delete()
-              .eq('id', id);
-            break;
+    try {
+      const { access_token } = session;
+
+      const { error } = await supabase.functions.invoke('powersync', {
+        body: { operations: transaction.crud },
+        headers: {
+          'Authorization': `Bearer ${access_token}`
         }
+      });
+
+      if (error) {
+        throw error; // Let PowerSync handle the retry
       }
 
-      // Confirmar a PowerSync que todo subió correctamente
+      // If the upload was successful, mark the transaction as complete
       await transaction.complete();
+      console.log('[Connector] Upload successful.');
     } catch (error) {
-      console.error('Error subiendo datos a Supabase', error);
-      throw error; // Esto reintentará más tarde
+      console.error('[Connector] Error during data upload:', error);
+      // Re-throw the error so PowerSync knows to retry the transaction later
+      throw error;
     }
   }
 }
