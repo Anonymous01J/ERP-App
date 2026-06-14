@@ -13,8 +13,4 @@ export const db = new PowerSyncDatabase({
 export const setupPowerSync = async () => {
   // Configurar e inicializar
   await db.init();
-
-  // Conectar con Supabase a través del Connector
-  const connector = new SupabaseConnector();
-  await db.connect(connector);
 };

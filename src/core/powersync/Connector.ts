@@ -14,8 +14,8 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
     const { data: { session } } = await supabase.auth.getSession();
 
     if (!session) {
-      console.warn('[Connector] No active Supabase session. PowerSync will not connect yet.');
-      return {}; // Returning empty, PowerSync will retry later
+      console.log('[Connector] No active Supabase session. PowerSync will not connect yet.');
+      return null; // Returning null puts PowerSync in disconnected state
     }
 
     const powersyncUrl = process.env.EXPO_PUBLIC_POWERSYNC_URL;

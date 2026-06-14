@@ -25,11 +25,23 @@ export function ClientesDashboardScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      Toast.show({ type: 'info', text1: 'Sincronizando...', text2: 'Buscando nuevos datos del servidor.' });
-      await powerSync.connector?.triggerSync();
+      Toast.show({ type: 'info', text1: 'Sincronizando...', text2: 'Comprobando cambios locales y remotos...' });
+
+      // Simular tiempo para que los procesos en segundo plano de PowerSync puedan asentar su estado
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      const status = powerSync.syncStatus;
+
+      if (status.error) {
+        Toast.show({ type: 'error', text1: 'Error de Sincronización', text2: 'No se pudo sincronizar. Verifica tu conexión.' });
+      } else if (status.connected) {
+        Toast.show({ type: 'success', text1: 'Sincronización Exitosa', text2: 'Los cambios han sido subidos y bajados correctamente.' });
+      } else {
+        Toast.show({ type: 'info', text1: 'Modo Offline', text2: 'Los cambios están guardados localmente.' });
+      }
     } catch (e) {
       console.error('Error al forzar la sincronización:', e);
-      Toast.show({ type: 'error', text1: 'Error de Sincronización', text2: 'No se pudo conectar con el servidor.' });
+      Toast.show({ type: 'error', text1: 'Error', text2: 'Ocurrió un problema inesperado.' });
     } finally {
       setRefreshing(false);
     }

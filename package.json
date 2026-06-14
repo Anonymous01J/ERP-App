@@ -13,6 +13,7 @@
     "@journeyapps/react-native-quick-sqlite": "^2.5.2",
     "@powersync/react": "^1.1.2",
     "@powersync/react-native": "^1.4.5",
+    "@react-native-async-storage/async-storage": "1.23.1",
     "@react-native-google-signin/google-signin": "^16.1.2",
     "@supabase/supabase-js": "^2.39.3",
     "base64-arraybuffer": "^1.0.2",
