@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MD3LightTheme, PaperProvider } from 'react-native-paper';
 import { PowerSyncContext } from '@powersync/react';
 import { db, setupPowerSync } from '../src/core/powersync/system';
+import { AuthProvider, useAuth } from '../src/state/AuthProvider';
 
 // Custom theme for the paper rewinding business
 const theme = {
@@ -19,6 +20,41 @@ const theme = {
     surface: '#FFFFFF',
   },
 };
+
+function RootLayoutNav() {
+  const { session, isLoading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const inAuthGroup = segments[0] === 'login';
+
+    if (!session && !inAuthGroup) {
+      // Redirigir al login si no hay sesión y no estamos ya en login
+      router.replace('/login');
+    } else if (session && inAuthGroup) {
+      // Redirigir al inicio si hay sesión y estamos intentando ver el login
+      router.replace('/(tabs)');
+    }
+  }, [session, isLoading, segments]);
+
+  return (
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }}>
+      <Stack.Screen name="login" />
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="(screens)/registrar-produccion" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="(screens)/registrar-gasto" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="(screens)/nuevo-pedido" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="(screens)/registrar-cliente" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="(screens)/gestionar-presentaciones" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="(screens)/registrar-viaje" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="(screens)/historial-bobinas" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="(screens)/historial-produccion" options={{ presentation: 'fullScreenModal' }} />
+    </Stack>
+  );
+}
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -41,44 +77,12 @@ export default function RootLayout() {
   }
 
   return (
-    <PowerSyncContext.Provider value={db}>
-      <PaperProvider theme={theme}>
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }}>
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen 
-            name="(screens)/registrar-produccion" 
-            options={{ presentation: 'fullScreenModal' }} 
-          />
-          <Stack.Screen 
-            name="(screens)/registrar-gasto" 
-            options={{ presentation: 'fullScreenModal' }} 
-          />
-          <Stack.Screen 
-            name="(screens)/nuevo-pedido" 
-            options={{ presentation: 'fullScreenModal' }} 
-          />
-          <Stack.Screen 
-            name="(screens)/registrar-cliente" 
-            options={{ presentation: 'fullScreenModal' }} 
-          />
-          <Stack.Screen 
-            name="(screens)/gestionar-presentaciones" 
-            options={{ presentation: 'fullScreenModal' }} 
-          />
-          <Stack.Screen 
-            name="(screens)/registrar-viaje" 
-            options={{ presentation: 'fullScreenModal' }} 
-          />
-          <Stack.Screen 
-            name="(screens)/historial-bobinas" 
-            options={{ presentation: 'fullScreenModal' }} 
-          />
-          <Stack.Screen 
-            name="(screens)/historial-produccion" 
-            options={{ presentation: 'fullScreenModal' }} 
-          />
-        </Stack>
-      </PaperProvider>
-    </PowerSyncContext.Provider>
+    <AuthProvider>
+      <PowerSyncContext.Provider value={db}>
+        <PaperProvider theme={theme}>
+          <RootLayoutNav />
+        </PaperProvider>
+      </PowerSyncContext.Provider>
+    </AuthProvider>
   );
 }

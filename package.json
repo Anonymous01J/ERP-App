@@ -32,7 +32,8 @@
         "@journeyapps/react-native-quick-sqlite": "^3.1.2",
         "@supabase/supabase-js": "^2.39.3",
         "react-native-url-polyfill": "^2.0.0",
-        "base64-arraybuffer": "^1.0.2"
+        "base64-arraybuffer": "^1.0.2",
+        "@react-native-google-signin/google-signin": "^13.1.0"
     },
     "devDependencies": {
         "@expo/ngrok": "^4.1.3",
