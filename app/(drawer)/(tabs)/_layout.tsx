@@ -1,8 +1,9 @@
 import { Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useTheme } from 'react-native-paper';
+import { useTheme, IconButton } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform } from 'react-native';
+import { DrawerToggleButton } from '@react-navigation/drawer';
 
 export default function TabLayout() {
   const theme = useTheme();
@@ -19,6 +20,7 @@ export default function TabLayout() {
         headerShown: true,
         headerStyle: { backgroundColor: theme.colors.primary },
         headerTintColor: theme.colors.onPrimary,
+        headerLeft: () => <DrawerToggleButton tintColor={theme.colors.onPrimary} />,
         tabBarStyle: {
           backgroundColor: '#ffffff',
           height: tabBarHeight,

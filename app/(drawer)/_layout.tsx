@@ -15,6 +15,7 @@ export default function DrawerLayout() {
       <Drawer.Screen
         name="(tabs)"
         options={{
+          headerShown: false,
           drawerLabel: 'Inicio',
           title: 'Panel de Control',
           drawerIcon: ({ color, size }) => (
