@@ -1,3 +1,4 @@
+tsx
 import { useEffect } from 'react';
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -37,15 +38,15 @@ function RootLayoutNav() {
       // Redirigir al login si no hay sesión y no estamos ya en login
       router.replace('/login');
     } else if (session && inAuthGroup) {
-      // Redirigir al inicio si hay sesión y estamos intentando ver el login
-      router.replace('/(drawer)');
+      // Redirigir al inicio (tabs dentro de drawer) si hay sesión y estamos intentando ver el login
+      router.replace('/(drawer)/(tabs)');
     }
   }, [session, isLoading, segments]);
 
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }}>
       <Stack.Screen name="login" />
-      <Stack.Screen name="(drawer)" />
+      <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
       <Stack.Screen name="(screens)/registrar-produccion" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="(screens)/registrar-gasto" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="(screens)/nuevo-pedido" options={{ presentation: 'fullScreenModal' }} />
