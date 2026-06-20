@@ -1,75 +1,222 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { List, Text, Button, useTheme, Chip, IconButton, TextInput, Divider } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { CustomCard } from '@components/ui/CustomCard';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { usePowerSync, useQuery } from '@powersync/react';
 import Toast from 'react-native-toast-message';
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
 
-// Subcomponente: Formulario de Gasto Rápido dentro del viaje
-const GastoViajeForm = ({ theme }: { theme: any }) => {
-  const [descripcion, setDescripcion] = useState('');
-  const [monto, setMonto] = useState('');
-  const [esIngreso, setEsIngreso] = useState(false);
-  const [moneda, setMoneda] = useState('VES');
+// Categorías disponibles con íconos
+const CATEGORIAS = [
+  { key: 'gasolina',      label: 'Gasolina',      icon: 'gas-station' },
+  { key: 'peaje',         label: 'Peaje',          icon: 'road' },
+  { key: 'viaticos',      label: 'Viáticos',       icon: 'food' },
+  { key: 'mantenimiento', label: 'Mant.',          icon: 'wrench' },
+  { key: 'operativos',    label: 'Operativos',     icon: 'briefcase-outline' },
+  { key: 'otros',         label: 'Otros',          icon: 'dots-horizontal' },
+] as const;
+
+type Categoria = typeof CATEGORIAS[number]['key'];
+
+// Subcomponente: Lista de movimientos de un viaje
+const MovimientosViaje = ({ idViaje, theme }: { idViaje: string; theme: any }) => {
+  const { data: movimientos = [] } = useQuery(
+    `SELECT * FROM movimientos WHERE id_viaje = ? ORDER BY fecha DESC`,
+    [idViaje]
+  );
+
+  if ((movimientos as any[]).length === 0) return null;
+
+  const totalEgresos = (movimientos as any[]).filter(m => m.tipo === 'egreso').reduce((a, m) => a + (m.monto || 0), 0);
+  const totalIngresos = (movimientos as any[]).filter(m => m.tipo === 'ingreso').reduce((a, m) => a + (m.monto || 0), 0);
 
   return (
-    <CustomCard style={styles.inputCard}>
-      <Text variant="titleSmall" style={{ marginBottom: 8, color: '#555', paddingHorizontal: 8 }}>
-        Registrar Gasto Rápido
-      </Text>
-      <View style={styles.inputRow}>
-        <TextInput
-          mode="flat"
-          placeholder="Descripción..."
-          value={descripcion}
-          onChangeText={setDescripcion}
-          style={[styles.textInput, { flex: 1, backgroundColor: 'transparent' }]}
-          underlineColor="transparent"
-          activeUnderlineColor="transparent"
-        />
-        <Button mode="outlined" icon="calendar" compact style={styles.dateBtn} labelStyle={{ marginHorizontal: 8 }}>
-          {new Date().toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' })}
-        </Button>
-      </View>
-      <Divider style={styles.divider} />
-      <View style={styles.inputRow}>
-        <TextInput
-          mode="flat"
-          placeholder={`Monto en ${moneda}`}
-          value={monto}
-          onChangeText={setMonto}
-          keyboardType="numeric"
-          style={[styles.textInput, { flex: 1, backgroundColor: 'transparent' }]}
-          underlineColor="transparent"
-          activeUnderlineColor="transparent"
-        />
-        <View style={styles.actionButtonsRow}>
-          <TouchableOpacity
-            style={[styles.toggleBtn, { backgroundColor: esIngreso ? '#4ade80' : '#f87171' }]}
-            onPress={() => setEsIngreso(!esIngreso)}
-          >
-            <Text style={{ fontWeight: 'bold', color: '#fff', fontSize: 12 }}>
-              {esIngreso ? '+ Ingreso' : '- Egreso'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleBtn, { backgroundColor: theme.colors.surfaceVariant }]}
-            onPress={() => setMoneda(moneda === 'VES' ? 'USD' : 'VES')}
-          >
-            <Text style={{ fontWeight: 'bold', color: theme.colors.onSurfaceVariant, fontSize: 12 }}>
-              {moneda}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.addBtn, { backgroundColor: '#4ade80' }]} onPress={() => {
-            Toast.show({ type: 'info', text1: 'En desarrollo', text2: 'El registro de gastos se conectará pronto.' });
-          }}>
-            <MaterialCommunityIcons name="plus" size={24} color="#fff" />
-          </TouchableOpacity>
+    <View style={styles.movimientosContainer}>
+      {/* Resumen */}
+      <View style={styles.movResumen}>
+        <View style={styles.movResumenItem}>
+          <Text variant="labelSmall" style={{ color: '#9ca3af' }}>EGRESOS</Text>
+          <Text variant="bodyMedium" style={{ color: theme.colors.error, fontWeight: 'bold' }}>
+            −{totalEgresos.toFixed(2)}
+          </Text>
+        </View>
+        <View style={[styles.movResumenItem, { alignItems: 'center' }]}> 
+          <Text variant="labelSmall" style={{ color: '#9ca3af' }}>BALANCE</Text>
+          <Text variant="bodyMedium" style={{ fontWeight: 'bold', color: (totalIngresos - totalEgresos) >= 0 ? '#16a34a' : theme.colors.error }}>
+            {(totalIngresos - totalEgresos) >= 0 ? '+' : ''}{(totalIngresos - totalEgresos).toFixed(2)}
+          </Text>
+        </View>
+        <View style={[styles.movResumenItem, { alignItems: 'flex-end' }]}>
+          <Text variant="labelSmall" style={{ color: '#9ca3af' }}>INGRESOS</Text>
+          <Text variant="bodyMedium" style={{ color: '#16a34a', fontWeight: 'bold' }}>
+            +{totalIngresos.toFixed(2)}
+          </Text>
         </View>
       </View>
-    </CustomCard>
+
+      <Divider style={{ marginBottom: 8 }} />
+
+      {(movimientos as any[]).map((mov: any) => {
+        const cat = CATEGORIAS.find(c => c.key === mov.categoria);
+        const esIngreso = mov.tipo === 'ingreso';
+        return (
+          <View key={mov.id} style={styles.movRow}>
+            <View style={[styles.movIconBox, { backgroundColor: esIngreso ? '#dcfce7' : '#fee2e2' }]}>
+              <MaterialCommunityIcons
+                name={(cat?.icon ?? 'dots-horizontal') as any}
+                size={16}
+                color={esIngreso ? '#16a34a' : theme.colors.error}
+              />
+            </View>
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text variant="bodySmall" style={{ fontWeight: 'bold', color: '#1f2937' }}>
+                {mov.descripcion || cat?.label || 'Sin descripción'}
+              </Text>
+              <Text variant="bodySmall" style={{ color: '#9ca3af' }}>
+                {cat?.label} · {mov.moneda}
+              </Text>
+            </View>
+            <Text variant="bodyMedium" style={{ fontWeight: 'bold', color: esIngreso ? '#16a34a' : theme.colors.error }}>
+              {esIngreso ? '+' : '−'}{mov.monto?.toFixed(2)}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+};
+
+// Subcomponente: Formulario de Ingreso/Gasto Rápido
+const GastoViajeForm = ({ idViaje, theme }: { idViaje: string; theme: any }) => {
+  const powerSync = usePowerSync();
+  const [tipo, setTipo] = useState<'egreso' | 'ingreso'>('egreso');
+  const [categoria, setCategoria] = useState<Categoria>('gasolina');
+  const [descripcion, setDescripcion] = useState('');
+  const [monto, setMonto] = useState('');
+  const [moneda, setMoneda] = useState<'VES' | 'USD'>('VES');
+  const [saving, setSaving] = useState(false);
+
+  const handleGuardar = async () => {
+    const montoNum = parseFloat(monto);
+    if (isNaN(montoNum) || montoNum <= 0) {
+      Toast.show({ type: 'error', text1: 'Monto inválido', text2: 'Ingresa un monto mayor a 0.' });
+      return;
+    }
+    setSaving(true);
+    try {
+      await powerSync.execute(
+        `INSERT INTO movimientos (id, descripcion, monto, moneda, tasa_cambio, categoria, fecha, id_viaje, tipo)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [uuidv4(), descripcion.trim() || null, montoNum, moneda, 1, categoria, new Date().toISOString(), idViaje, tipo]
+      );
+      Toast.show({
+        type: 'success',
+        text1: tipo === 'egreso' ? 'Gasto Registrado' : 'Ingreso Registrado',
+        text2: `${montoNum.toFixed(2)} ${moneda} · ${CATEGORIAS.find(c => c.key === categoria)?.label}`,
+      });
+      setMonto('');
+      setDescripcion('');
+    } catch (e) {
+      console.error('Error guardando movimiento:', e);
+      Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo registrar el movimiento.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <View>
+      <Text variant="labelMedium" style={styles.formSectionLabel}>REGISTRAR MOVIMIENTO</Text>
+
+      {/* Tipo: Egreso / Ingreso */}
+      <View style={styles.tipoRow}>
+        <TouchableOpacity
+          style={[styles.tipoBtn, tipo === 'egreso' && { backgroundColor: theme.colors.error }]}
+          onPress={() => setTipo('egreso')}
+        >
+          <MaterialCommunityIcons name="arrow-up-circle" size={16} color={tipo === 'egreso' ? '#fff' : '#9ca3af'} />
+          <Text style={[styles.tipoBtnText, tipo === 'egreso' && { color: '#fff' }]}>Gasto</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tipoBtn, tipo === 'ingreso' && { backgroundColor: '#16a34a' }]}
+          onPress={() => setTipo('ingreso')}
+        >
+          <MaterialCommunityIcons name="arrow-down-circle" size={16} color={tipo === 'ingreso' ? '#fff' : '#9ca3af'} />
+          <Text style={[styles.tipoBtnText, tipo === 'ingreso' && { color: '#fff' }]}>Ingreso</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Categorías */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriasScroll}>
+        {CATEGORIAS.map(cat => (
+          <TouchableOpacity
+            key={cat.key}
+            style={[
+              styles.categoriaBtn,
+              categoria === cat.key && { backgroundColor: theme.colors.primary },
+            ]}
+            onPress={() => setCategoria(cat.key)}
+          >
+            <MaterialCommunityIcons
+              name={cat.icon as any}
+              size={18}
+              color={categoria === cat.key ? '#fff' : '#6b7280'}
+            />
+            <Text style={[styles.categoriaBtnText, categoria === cat.key && { color: '#fff' }]}>
+              {cat.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Monto + Moneda */}
+      <View style={styles.montoRow}>
+        <TextInput
+          mode="outlined"
+          label={`Monto en ${moneda}`}
+          value={monto}
+          onChangeText={setMonto}
+          keyboardType="decimal-pad"
+          style={[styles.montoInput, { flex: 1 }]}
+          left={<TextInput.Icon icon={moneda === 'USD' ? 'currency-usd' : 'currency-brl'} />}
+          outlineStyle={{ borderRadius: 10 }}
+        />
+        <TouchableOpacity
+          style={[styles.monedaToggle, { backgroundColor: moneda === 'USD' ? '#1d4ed8' : theme.colors.primaryContainer }]}
+          onPress={() => setMoneda(moneda === 'VES' ? 'USD' : 'VES')}
+        >
+          <Text style={[styles.monedaText, { color: moneda === 'USD' ? '#fff' : theme.colors.primary }]}>
+            {moneda}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Descripción opcional */}
+      <TextInput
+        mode="outlined"
+        label="Descripción (opcional)"
+        value={descripcion}
+        onChangeText={setDescripcion}
+        style={styles.descripcionInput}
+        outlineStyle={{ borderRadius: 10 }}
+      />
+
+      {/* Botón guardar */}
+      <Button
+        mode="contained"
+        onPress={handleGuardar}
+        loading={saving}
+        disabled={saving || !monto}
+        style={[styles.guardarBtn, { backgroundColor: tipo === 'egreso' ? theme.colors.error : '#16a34a' }]}
+        contentStyle={{ paddingVertical: 4 }}
+        icon={tipo === 'egreso' ? 'cash-minus' : 'cash-plus'}
+      >
+        {tipo === 'egreso' ? 'Registrar Gasto' : 'Registrar Ingreso'}
+      </Button>
+    </View>
   );
 };
 
@@ -415,7 +562,7 @@ function ViajeActivoItem({
   return (
     <List.Accordion
       title={getViajeTitle(viaje)}
-      description={`${formatFecha(viaje.fecha_viaje_inicio)} • ${formatearEstadoUi(viaje.estado)}`}
+      description={`${formatFecha(viaje.fecha_viaje_inicio)} \u2022 ${formatearEstadoUi(viaje.estado)}`}
       left={props => <List.Icon {...props} icon={getViajeIcon(viaje.tipo_viaje)} color={getViajeColor(viaje.tipo_viaje)} />}
       style={styles.accordion}
       titleStyle={{ fontWeight: 'bold' }}
@@ -432,9 +579,12 @@ function ViajeActivoItem({
           <ParadasViaje idViaje={viaje.id} theme={theme} powerSync={powerSync} />
         )}
 
-        {/* Formulario de gastos rápidos */}
-        <View style={{ marginTop: 16 }}>
-          <GastoViajeForm theme={theme} />
+        {/* Historial de movimientos de este viaje */}
+        <MovimientosViaje idViaje={viaje.id} theme={theme} />
+
+        {/* Formulario de ingreso/gasto rápido */}
+        <View style={styles.formCard}>
+          <GastoViajeForm idViaje={viaje.id} theme={theme} />
         </View>
 
         {/* Botón de acción principal */}
@@ -479,16 +629,57 @@ const styles = StyleSheet.create({
     width: 64, height: 64, borderRadius: 32,
     justifyContent: 'center', alignItems: 'center',
   },
-  // Estilos del GastoViajeForm
-  inputCard: {
-    backgroundColor: '#ffffff', padding: 8, borderRadius: 16,
-    marginBottom: 8, borderWidth: 1, borderColor: '#e0e0e0', elevation: 0, shadowOpacity: 0,
+  // Estilos del nuevo GastoViajeForm
+  formCard: {
+    marginTop: 16,
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
-  inputRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
-  textInput: { height: 48, fontSize: 14 },
-  dateBtn: { borderRadius: 8, borderColor: '#e0e0e0' },
-  divider: { height: 1, backgroundColor: '#f0f0f0', marginVertical: 4, marginHorizontal: 8 },
-  actionButtonsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  toggleBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  addBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  formSectionLabel: {
+    color: '#9ca3af', fontWeight: 'bold', letterSpacing: 0.5, marginBottom: 10,
+  },
+  tipoRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  tipoBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: '#f3f4f6', borderWidth: 1, borderColor: '#e5e7eb',
+  },
+  tipoBtnText: { fontWeight: 'bold', fontSize: 13, color: '#9ca3af' },
+  categoriasScroll: { marginBottom: 12 },
+  categoriaBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: '#f3f4f6', marginRight: 8,
+    borderWidth: 1, borderColor: '#e5e7eb',
+  },
+  categoriaBtnText: { fontSize: 12, fontWeight: '600', color: '#6b7280' },
+  montoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  montoInput: { marginBottom: 0 },
+  monedaToggle: {
+    width: 52, height: 52, borderRadius: 10,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  monedaText: { fontWeight: 'bold', fontSize: 13 },
+  descripcionInput: { marginBottom: 12 },
+  guardarBtn: { borderRadius: 10 },
+  // Estilos de MovimientosViaje
+  movimientosContainer: {
+    marginTop: 8, marginBottom: 4,
+    backgroundColor: '#ffffff', borderRadius: 12,
+    borderWidth: 1, borderColor: '#e5e7eb', padding: 12,
+  },
+  movResumen: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  movResumenItem: { flex: 1, alignItems: 'flex-start', gap: 2 },
+  movRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f3f4f6',
+  },
+  movIconBox: {
+    width: 30, height: 30, borderRadius: 8,
+    justifyContent: 'center', alignItems: 'center',
+  },
 });
+

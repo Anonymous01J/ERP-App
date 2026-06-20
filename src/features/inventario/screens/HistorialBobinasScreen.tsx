@@ -1,132 +1,194 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Text, Appbar, useTheme, Divider } from 'react-native-paper';
+import { Text, Appbar, useTheme, Divider, Chip } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { CustomCard } from '@components/ui/CustomCard';
+import { useQuery } from '@powersync/react';
+import { CustomCard } from '@ui/CustomCard';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 export function HistorialBobinasScreen() {
   const router = useRouter();
   const theme = useTheme();
 
-  // Mock data of consumed bobinas
-  const historial = [
-    {
-      id: '1',
-      codigo: 'BOB-045',
-      tipo: 'Papel A',
-      pesoOriginal: 340,
-      fechaIngreso: '10/05/2026',
-      fechaInicio: '28/05/2026',
-      fechaAgotada: '05/06/2026',
-      produccion: [
-        { presentacion: '600g', cantidad: 1200 },
-        { presentacion: '1kg', cantidad: 450 },
-      ],
-      merma: 2.3, // kg
-      pesoMuerto: 3,
-    },
-    {
-      id: '2',
-      codigo: 'BOB-044',
-      tipo: 'Papel B',
-      pesoOriginal: 345,
-      fechaIngreso: '01/05/2026',
-      fechaInicio: '15/05/2026',
-      fechaAgotada: '01/06/2026',
-      produccion: [
-        { presentacion: '1kg', cantidad: 600 },
-        { presentacion: '2.5kg', cantidad: 60 },
-      ],
-      merma: 4, // kg
-      pesoMuerto: 1.8,
-    },
-  ];
+  const { data: bobinasAgotadas = [] } = useQuery(`
+    SELECT bg.id, bg.tipo_papel, bg.peso_inicial_kg, bg.peso_actual_kg,
+           bg.merma_core_kg, bg.peso_muerto_kg, bg.costo_bobina,
+           bg.fecha_llegada, bg.fecha_uso, bg.fecha_gasto
+    FROM bobinas_grandes bg
+    WHERE bg.estado = 'agotada'
+    ORDER BY bg.fecha_gasto DESC
+  `);
+
+  const formatFecha = (f: string | null) => {
+    if (!f) return '—';
+    return new Date(f).toLocaleDateString('es-VE');
+  };
 
   return (
     <View style={styles.container}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
-        <Appbar.Content title="Historial de Bobinas Consumidas" />
+        <Appbar.Content title="Historial de Bobinas" subtitle="Bobinas consumidas" />
       </Appbar.Header>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {historial.map((bobina) => (
-          <CustomCard key={bobina.id} style={styles.card}>
-            <View style={styles.cardContent}>
-              <View style={styles.headerRow}>
-                <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>
-                  {bobina.codigo} - {bobina.tipo}
-                </Text>
-              </View>
-              
-              <Text variant="bodySmall" style={{ color: '#555', marginBottom: 2 }}>
-                <Text style={{fontWeight: 'bold'}}>Llegó al deposito:</Text> {bobina.fechaIngreso}
-              </Text>
-              <Text variant="bodySmall" style={{ color: '#555', marginBottom: 2 }}>
-                <Text style={{fontWeight: 'bold'}}>Se empezó a usar:</Text> {bobina.fechaInicio}
-              </Text>
-              <Text variant="bodySmall" style={{ color: '#555', marginBottom: 8 }}>
-                <Text style={{fontWeight: 'bold'}}>Se gastó por completo:</Text> {bobina.fechaAgotada}
-              </Text>
-              
-              <Text variant="bodyMedium" style={{ marginBottom: 8 }}>
-                Peso Inicial: {bobina.pesoOriginal} kg
-              </Text>
+        {(bobinasAgotadas as any[]).length === 0 ? (
+          <View style={styles.emptyState}>
+            <MaterialCommunityIcons name="archive-check-outline" size={56} color="#d1d5db" />
+            <Text variant="bodyLarge" style={styles.emptyText}>
+              No hay bobinas agotadas aún.
+            </Text>
+            <Text variant="bodySmall" style={{ color: '#9ca3af', textAlign: 'center', marginTop: 4 }}>
+              Aparecerán aquí cuando se consuman por completo desde el inventario.
+            </Text>
+          </View>
+        ) : (
+          (bobinasAgotadas as any[]).map((bobina: any, index: number) => {
+            const mermaTotal = (bobina.merma_core_kg ?? 0) + (bobina.peso_muerto_kg ?? 0);
+            const rendimientoUtil = (bobina.peso_inicial_kg ?? 0) - mermaTotal;
+            const eficiencia = bobina.peso_inicial_kg > 0
+              ? (rendimientoUtil / bobina.peso_inicial_kg * 100).toFixed(1)
+              : '—';
 
-              <Divider style={{ marginVertical: 8 }} />
+            return (
+              <CustomCard key={bobina.id} style={styles.card}>
+                <View style={styles.cardContent}>
+                  {/* Header */}
+                  <View style={styles.headerRow}>
+                    <View style={styles.tipoContainer}>
+                      <View style={[
+                        styles.tipoBadge,
+                        { backgroundColor: bobina.tipo_papel === 'A' ? '#6366f1' : '#f59e0b' }
+                      ]}>
+                        <Text style={styles.tipoBadgeText}>Tipo {bobina.tipo_papel}</Text>
+                      </View>
+                      <Text variant="titleMedium" style={styles.titulo}>
+                        Bobina #{(bobinasAgotadas as any[]).length - index}
+                      </Text>
+                    </View>
+                    <Chip
+                      icon="check-circle"
+                      mode="flat"
+                      style={{ backgroundColor: '#f3f4f6' }}
+                      textStyle={{ color: '#6b7280', fontSize: 11 }}
+                    >
+                      Agotada
+                    </Chip>
+                  </View>
 
-              <Text variant="bodyMedium" style={{ fontWeight: 'bold', marginBottom: 4 }}>
-                Rendimiento Obtenido:
-              </Text>
-              
-              {bobina.produccion.map((prod, index) => (
-                <View key={index} style={styles.prodRow}>
-                  <Text variant="bodySmall">• Rollos de {prod.presentacion}:</Text>
-                  <Text variant="bodySmall" style={{ fontWeight: 'bold' }}>{prod.cantidad} unds</Text>
+                  {/* Fechas */}
+                  <View style={styles.fechasRow}>
+                    <View style={styles.fechaItem}>
+                      <Text variant="labelSmall" style={styles.fechaLabel}>LLEGADA</Text>
+                      <Text variant="bodySmall">{formatFecha(bobina.fecha_llegada)}</Text>
+                    </View>
+                    {bobina.fecha_uso && (
+                      <View style={styles.fechaItem}>
+                        <Text variant="labelSmall" style={styles.fechaLabel}>EN USO</Text>
+                        <Text variant="bodySmall">{formatFecha(bobina.fecha_uso)}</Text>
+                      </View>
+                    )}
+                    <View style={styles.fechaItem}>
+                      <Text variant="labelSmall" style={styles.fechaLabel}>AGOTADA</Text>
+                      <Text variant="bodySmall">{formatFecha(bobina.fecha_gasto)}</Text>
+                    </View>
+                  </View>
+
+                  <Divider style={{ marginVertical: 12 }} />
+
+                  {/* Métricas de rendimiento */}
+                  <Text variant="labelMedium" style={styles.metricsHeader}>BALANCE DE PESO</Text>
+
+                  <View style={styles.metricRow}>
+                    <Text variant="bodySmall" style={{ color: '#374151' }}>Peso inicial</Text>
+                    <Text variant="bodyMedium" style={{ fontWeight: 'bold' }}>
+                      {bobina.peso_inicial_kg?.toFixed(1)} kg
+                    </Text>
+                  </View>
+
+                  {mermaTotal > 0 && (
+                    <>
+                      {bobina.merma_core_kg > 0 && (
+                        <View style={styles.metricRow}>
+                          <Text variant="bodySmall" style={{ color: theme.colors.error }}>
+                            Merma (papel roto/sobrante)
+                          </Text>
+                          <Text variant="bodySmall" style={{ color: theme.colors.error }}>
+                            −{bobina.merma_core_kg.toFixed(1)} kg
+                          </Text>
+                        </View>
+                      )}
+                      {bobina.peso_muerto_kg > 0 && (
+                        <View style={styles.metricRow}>
+                          <Text variant="bodySmall" style={{ color: theme.colors.error }}>
+                            Peso muerto / Core
+                          </Text>
+                          <Text variant="bodySmall" style={{ color: theme.colors.error }}>
+                            −{bobina.peso_muerto_kg.toFixed(1)} kg
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  )}
+
+                  <Divider style={{ marginVertical: 8 }} />
+
+                  <View style={styles.metricRow}>
+                    <Text variant="bodySmall" style={{ fontWeight: 'bold' }}>Rendimiento útil</Text>
+                    <Text variant="bodyMedium" style={{ fontWeight: 'bold', color: '#16a34a' }}>
+                      {rendimientoUtil.toFixed(1)} kg
+                    </Text>
+                  </View>
+
+                  {/* Eficiencia */}
+                  <View style={[styles.eficienciaBox, {
+                    backgroundColor: parseFloat(eficiencia) >= 95
+                      ? '#dcfce7'
+                      : parseFloat(eficiencia) >= 90
+                      ? '#fef9c3'
+                      : '#fee2e2'
+                  }]}>
+                    <MaterialCommunityIcons
+                      name={parseFloat(eficiencia) >= 95 ? 'trending-up' : parseFloat(eficiencia) >= 90 ? 'trending-neutral' : 'trending-down'}
+                      size={16}
+                      color={parseFloat(eficiencia) >= 95 ? '#16a34a' : parseFloat(eficiencia) >= 90 ? '#d97706' : theme.colors.error}
+                    />
+                    <Text variant="bodySmall" style={{ marginLeft: 6, fontWeight: 'bold' }}>
+                      Eficiencia: {eficiencia}% de la bobina convertida en producto útil
+                    </Text>
+                  </View>
+
+                  {bobina.costo_bobina > 0 && (
+                    <Text variant="bodySmall" style={{ color: '#9ca3af', marginTop: 8, textAlign: 'right' }}>
+                      Costo: ${bobina.costo_bobina?.toFixed(2)} USD
+                    </Text>
+                  )}
                 </View>
-              ))}
-
-              <View style={[styles.prodRow, { marginTop: 8 }]}>
-                <Text variant="bodySmall" style={{ color: theme.colors.error }}>Merma Registrada:</Text>
-                <Text variant="bodySmall" style={{ color: theme.colors.error, fontWeight: 'bold' }}>{bobina.merma} kg</Text>
-              </View>
-              <View style={[styles.prodRow, {}]}>
-                <Text variant="bodySmall" style={{ color: theme.colors.error }}>Peso Muerto:</Text>
-                <Text variant="bodySmall" style={{ color: theme.colors.error, fontWeight: 'bold' }}>{bobina.pesoMuerto} kg</Text>
-              </View>
-
-            </View>
-          </CustomCard>
-        ))}
+              </CustomCard>
+            );
+          })
+        )}
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F7FA',
-  },
-  scrollContent: {
-    padding: 16,
-  },
-  card: {
-    marginBottom: 12,
-  },
-  cardContent: {
-    padding: 16,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  prodRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingLeft: 8,
-    paddingVertical: 2,
-  },
+  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  scrollContent: { padding: 12, paddingBottom: 32 },
+  card: { marginBottom: 12, borderRadius: 16 },
+  cardContent: { padding: 16 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  tipoContainer: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  tipoBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  tipoBadgeText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
+  titulo: { fontWeight: 'bold', color: '#1f2937' },
+  fechasRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 4 },
+  fechaItem: { alignItems: 'center', gap: 2 },
+  fechaLabel: { color: '#9ca3af', letterSpacing: 0.5 },
+  metricsHeader: { color: '#9ca3af', letterSpacing: 0.5, marginBottom: 8 },
+  metricRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  eficienciaBox: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, padding: 10, marginTop: 8 },
+  emptyState: { alignItems: 'center', marginTop: 60, padding: 24 },
+  emptyText: { color: '#9ca3af', marginTop: 16, textAlign: 'center' },
 });
