@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, Alert } from 'react-native';
-import { Text, Button, Appbar, useTheme, Divider } from 'react-native-paper';
+import { Text, Button, Appbar, useTheme, Divider, TextInput } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { usePowerSync } from '@powersync/react';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
-import { NumericInput } from '@ui/NumericInput';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 interface FilaBobina {
@@ -126,7 +125,7 @@ export function CargarBobinasViajeScreen() {
 
       <KeyboardAvoidingView style={styles.content} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
-          
+
           <Text variant="bodyMedium" style={styles.instruccion}>
             Agrega una fila por cada bobina grande que estás cargando al camión.
           </Text>
@@ -177,12 +176,13 @@ export function CargarBobinasViajeScreen() {
                   </View>
 
                   {/* Peso */}
-                  <NumericInput
+                  <TextInput
+                    mode="outlined"
                     label="Kg"
                     value={fila.pesoKg}
                     onChangeText={(val) => handleCambiarPeso(fila.key, val)}
                     style={styles.pesoInput}
-                    decimal
+                    keyboardType="decimal-pad"
                   />
                 </View>
 
