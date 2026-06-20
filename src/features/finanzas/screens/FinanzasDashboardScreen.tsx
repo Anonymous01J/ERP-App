@@ -102,7 +102,7 @@ export function FinanzasDashboardScreen() {
     };
   }, [deudas, flujoCaja]);
 
-  const formatUsd = (val: number) => \`$\${val.toFixed(2)}\`;
+  const formatUsd = (val: number) => `$${val.toFixed(2)}`;
 
   return (
     <View style={styles.container}>
