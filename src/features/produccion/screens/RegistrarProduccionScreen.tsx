@@ -230,7 +230,7 @@ export function RegistrarProduccionScreen() {
         );
       }
 
-      Toast.show({ type: 'success', text1: 'Producción Registrada', text2: \`Se consumieron \${totalKgConsumidos.toFixed(2)}kg teóricos.\` });
+      Toast.show({ type: 'success', text1: 'Producción Registrada', text2: `Se consumieron ${totalKgConsumidos.toFixed(2)}kg teóricos.` });
       router.back();
     } catch (e) {
       console.error('Error guardando producción:', e);
@@ -267,7 +267,7 @@ export function RegistrarProduccionScreen() {
                     contentStyle={{ flexDirection: 'row-reverse' }}
                   >
                     {bobinaSeleccionada 
-                      ? \`Bobina Tipo \${bobinaSeleccionada.tipo_papel} (\${(bobinaSeleccionada.peso_actual_kg ?? bobinaSeleccionada.peso_inicial_kg).toFixed(1)}kg)\` 
+                      ? `Bobina Tipo ${bobinaSeleccionada.tipo_papel} (${(bobinaSeleccionada.peso_actual_kg ?? bobinaSeleccionada.peso_inicial_kg).toFixed(1)}kg)` 
                       : 'Seleccionar Bobina'}
                   </Button>
                 }
@@ -276,7 +276,7 @@ export function RegistrarProduccionScreen() {
                   <Menu.Item 
                     key={bob.id}
                     onPress={() => { setBobinaSeleccionada(bob); setMenuVisible(false); }} 
-                    title={\`Tipo \${bob.tipo_papel} (\${(bob.peso_actual_kg ?? bob.peso_inicial_kg).toFixed(1)}kg disponibles)\`}
+                    title={`Tipo ${bob.tipo_papel} (${(bob.peso_actual_kg ?? bob.peso_inicial_kg).toFixed(1)}kg disponibles)`}
                   />
                 ))}
                 {(bobinas as any[]).length === 0 && (

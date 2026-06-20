@@ -38,7 +38,7 @@ export function HistorialProduccionScreen() {
       if (!agrupados[key]) {
         agrupados[key] = {
           fecha: key,
-          bobina: row.tipo_papel ? \`Tipo \${row.tipo_papel}\` : 'Desconocida',
+          bobina: row.tipo_papel ? `Tipo ${row.tipo_papel}` : 'Desconocida',
           bobina_id: row.bobina_id?.split('-')[0] || '---',
           totalKg: 0,
           resultado: []
@@ -49,7 +49,7 @@ export function HistorialProduccionScreen() {
         id: row.id,
         presentacion: row.presentacion,
         cantidad: row.cantidad_rollos_total,
-        destino: row.id_pedido_destino ? \`Pedido: \${row.cliente}\` : 'Stock General',
+        destino: row.id_pedido_destino ? `Pedido: ${row.cliente}` : 'Stock General',
         esStock: !row.id_pedido_destino
       });
     }
