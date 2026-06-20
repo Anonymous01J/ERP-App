@@ -107,7 +107,10 @@ const detalles_pedido = new Table({
 const entregas_viaje = new Table({
   id_viaje: column.text,
   id_pedido: column.text,
-  nota_entrega_numero: column.text
+  nota_entrega_numero: column.text,
+  hora_llegada: column.text,
+  estado: column.text,
+  orden: column.integer
 });
 
 const movimientos = new Table({

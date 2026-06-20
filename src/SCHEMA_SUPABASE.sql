@@ -123,8 +123,16 @@ CREATE TABLE public.entregas_viaje (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   id_viaje uuid NOT NULL REFERENCES public.viajes(id) ON DELETE CASCADE,
   id_pedido uuid NOT NULL REFERENCES public.pedidos(id) ON DELETE CASCADE,
-  nota_entrega_numero text NOT NULL
+  nota_entrega_numero text,
+  hora_llegada timestamp with time zone,
+  estado text NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'entregado')),
+  orden int NOT NULL DEFAULT 1
 );
+
+-- MIGRATION: Si la tabla ya existe, ejecutar en Supabase SQL Editor:
+-- ALTER TABLE public.entregas_viaje ADD COLUMN IF NOT EXISTS hora_llegada timestamp with time zone;
+-- ALTER TABLE public.entregas_viaje ADD COLUMN IF NOT EXISTS estado text NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'entregado'));
+-- ALTER TABLE public.entregas_viaje ADD COLUMN IF NOT EXISTS orden int NOT NULL DEFAULT 1;
 
 CREATE TABLE public.movimientos (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,

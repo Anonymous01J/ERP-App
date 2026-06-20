@@ -33,31 +33,79 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 ## 4. UI y Componentes Reutilizables
 - **Componentes Genéricos (`src/components/ui/`):**
   - `CustomCard`: Componente de tarjeta base con estilos personalizables.
-  - `NumericInput`: Campo de texto optimizado para entrada numérica.
+  - `NumericInput`: Campo de texto optimizado para entrada numérica (incluyendo soporte decimal).
   - `DatePickerInput`: Selector de fecha reutilizable.
   - `StatusBarBadge`: Indicador de estado para mostrar en las tarjetas (ej. "Activo"/"Inactivo").
 - **Componentes Específicos:** Otros componentes de UI más específicos (ej. `SyncStatusNotifier`) están ubicados dentro de sus respectivos `features`.
 
 ## 5. Módulos y Features Funcionales
-- **Clientes (`src/features/clientes`):**
-  - **CRUD Funcional Offline-First:** Conectado exitosamente con PowerSync a través del hook `usePowerSync()`.
-  - **Listado y Filtros:** Búsqueda en tiempo real implementada junto a segmentación por estado (`activo`/`inactivo`).
-  - **Eliminación Lógica:** Soporte de desactivación/activación de clientes desde la tarjeta UI.
-  - **Creación/Edición:** Formulario dinámico y adaptativo sin dependencias de mockups locales.
-- **Inventario - Presentaciones (`src/features/inventario`):**
-  - **Dashboard y CRUD:** Se refactorizó la interfaz imitando el módulo de clientes. `GestionarPresentacionesScreen` sirve como Dashboard interactivo con filtrado (Activos/Inactivos) y botón flotante (FAB).
-  - **Pantalla de Registro:** La creación y edición se realiza ahora de manera independiente en `RegistrarPresentacionScreen.tsx`.
-- **Inventario - Potes (`src/features/inventario`):**
-  - **Dashboard y CRUD Independiente:** Se replicó la arquitectura de presentaciones para la gestión de potes. `GestionarPotesScreen` sirve como Dashboard interactivo con filtrado (Activos/Inactivos) y botón flotante (FAB).
-  - **Pantalla de Registro:** La creación y edición de potes se realiza de manera independiente en `RegistrarPoteScreen.tsx`.
-  - **Eliminación Lógica:** Soporte de desactivación a través de las tarjetas (campo `estado` en base de datos).
-- **Proveedores (`src/features/proveedores`):**
-  - **CRUD Completo:** Pantalla de dashboard para listar proveedores activos/inactivos, con funcionalidad de búsqueda. `RegistrarProveedorScreen` para creación y edición de datos de la empresa.
-- **Logística - Viajes (`src/features/viajes`):**
-  - **Reestructuración de Esquema:** Se modificó la tabla `viajes` para permitir fechas de llegada relativas (nullable) y campos `destino_origen` y `notas`.
-  - **Dashboard en Tiempo Real:** `ViajesDashboardScreen` implementa una lista unificada de viajes alimentada por PowerSync.
-  - **Sistema de Estados de Avance Automático:** Los viajes avanzan su ciclo de vida (`en_progreso` -> `en_destino` -> `retornando` -> `completado`) mediante botones de acción que estampan de forma invisible la fecha correspondiente.
-  - **Registro Dinámico:** `RegistrarViajeScreen` permite ingresar viajes de compra, entrega o mixtos (ida y vuelta) a través de un formulario segmentado. Los viajes mixtos agrupan ambos propósitos logísticos.
 
-**Nota de uso continuo:** 
+### Clientes (`src/features/clientes`)
+- **CRUD Funcional Offline-First:** Conectado exitosamente con PowerSync a través del hook `usePowerSync()`.
+- **Listado y Filtros:** Búsqueda en tiempo real implementada junto a segmentación por estado (`activo`/`inactivo`).
+- **Eliminación Lógica:** Soporte de desactivación/activación de clientes desde la tarjeta UI.
+- **Creación/Edición:** Formulario dinámico y adaptativo sin dependencias de mockups locales.
+- **Ruta en Drawer:** Disponible desde el menú lateral (`app/(drawer)/clientes.tsx`).
+- **Ruta Modal:** `app/(screens)/registrar-cliente.tsx` como `fullScreenModal`.
+
+### Proveedores (`src/features/proveedores`)
+- **CRUD Completo Offline-First:** Dashboard con listado activos/inactivos, búsqueda en tiempo real y filtro segmentado.
+- **Creación/Edición:** `RegistrarProveedorScreen` con formulario de nombre_empresa, teléfono, dirección y notas.
+- **Eliminación Lógica:** Desactivación/reactivación desde el menú de opciones de cada tarjeta.
+- **Ruta en Drawer:** Disponible desde el menú lateral (`app/(drawer)/proveedores.tsx`).
+- **Ruta Modal:** `app/(screens)/registrar-proveedor.tsx` como `fullScreenModal`.
+
+### Inventario - Presentaciones (`src/features/inventario`)
+- **Dashboard y CRUD:** `GestionarPresentacionesScreen` con filtrado (Activos/Inactivos) y botón flotante (FAB).
+- **Pantalla de Registro:** Creación y edición en `RegistrarPresentacionScreen.tsx`.
+
+### Inventario - Potes (`src/features/inventario`)
+- **Dashboard y CRUD Independiente:** `GestionarPotesScreen` con filtrado (Activos/Inactivos) y botón flotante (FAB).
+- **Pantalla de Registro:** Creación y edición en `RegistrarPoteScreen.tsx`.
+- **Eliminación Lógica:** Soporte de desactivación a través de las tarjetas (campo `estado` en base de datos).
+
+### Logística - Viajes (`src/features/viajes`)
+- **Reestructuración de Esquema:** La tabla `viajes` soporta fechas nullable y campo `notas`. La tabla `entregas_viaje` fue extendida con campos `hora_llegada`, `estado` (`pendiente`/`entregado`) y `orden`.
+- **Dashboard en Tiempo Real:** `ViajesDashboardScreen` implementa:
+  - Lista de viajes activos con **paradas individuales interactivas** (visible dentro de cada acordeón de viaje de entrega/mixto).
+  - Cada parada muestra el nombre del cliente, su número de orden, y un botón "Entregado" que registra la `hora_llegada`.
+  - **Botones de acción contextuales** según tipo de viaje y estado actual (ver tabla abajo).
+- **Sistema de Estados:**
+
+  | Tipo | Estado | Acción |
+  |---|---|---|
+  | `compra` | `en_progreso` | → Llegué al Proveedor |
+  | `compra` | `en_destino` | → **Cargar Bobinas y Retornar** (abre modal) |
+  | `compra` | `retornando` | → Llegué a Base (Fin) |
+  | `entrega` | `en_progreso` | Marcar paradas individualmente |
+  | `entrega` | (todas entregadas) | → Cerrar Viaje |
+  | `mixto` | `en_progreso` | Marcar paradas → Ir al Proveedor |
+  | `mixto` | `en_destino` | → **Cargar Bobinas y Retornar** |
+  | `mixto` | `retornando` | → Llegué a Base (Fin) |
+
+- **Registro de Viaje (`RegistrarViajeScreen`):** Formulario completamente conectado a PowerSync:
+  - Selección de tipo (Entregas / Compras / Mixto).
+  - Pedidos reales de la BD (estado `listo` primero, luego `en_produccion`), con selección de orden de paradas.
+  - Selector de proveedor para viajes de compra/mixto.
+  - Al guardar, inserta el viaje y todas las `entregas_viaje` con su orden.
+- **Carga de Bobinas (`CargarBobinasViajeScreen`):** Nueva pantalla modal:
+  - Filas dinámicas de bobinas (añadir/eliminar).
+  - Cada fila: Tipo A/B + Peso en Kg.
+  - Muestra el total en Kg en tiempo real.
+  - Al confirmar: inserta bobinas en `bobinas_grandes` y avanza viaje a `retornando`.
+  - Opción **"Retornar Sin Carga"** con confirmación (por si el proveedor no tenía stock).
+- **Formulario de Gasto Rápido:** Sub-componente embebido en cada viaje activo (pendiente de conexión real a `movimientos`).
+
+## 6. Schema de Base de Datos (`src/SCHEMA_SUPABASE.sql` + `AppSchema.ts`)
+- Todas las tablas definidas con UUID, RLS habilitado y políticas `FOR ALL TO authenticated`.
+- **Pendiente de migración manual en Supabase** (ejecutar en SQL Editor):
+  ```sql
+  ALTER TABLE public.entregas_viaje ADD COLUMN IF NOT EXISTS hora_llegada timestamp with time zone;
+  ALTER TABLE public.entregas_viaje ADD COLUMN IF NOT EXISTS estado text NOT NULL DEFAULT 'pendiente';
+  ALTER TABLE public.entregas_viaje ADD COLUMN IF NOT EXISTS orden int NOT NULL DEFAULT 1;
+  ```
+
+---
+
+**Nota de uso continuo:**
 Este documento sirve como ancla contextual para futuros prompts. Si se crean nuevas pantallas, componentes o utilidades estructurales, **deben adherirse a esta misma arquitectura basada en Features y documentarse idealmente en un lugar similar**. No mezclar rutas en `app/` con la lógica principal.
