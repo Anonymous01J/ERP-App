@@ -1,14 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import { View, StyleSheet, ScrollView, Dimensions } from 'react-native';
-import { Text, useTheme, Avatar, SegmentedButtons } from 'react-native-paper';
+import { Text, useTheme, Avatar, SegmentedButtons, FAB } from 'react-native-paper';
 import { CustomCard } from '@components/ui/CustomCard';
 import { LineChart } from 'react-native-gifted-charts';
 import { useQuery } from '@powersync/react';
+import { useRouter } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 export function DashboardScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const [chartPeriod, setChartPeriod] = useState('Día');
+  const [fabOpen, setFabOpen] = useState(false);
 
   // 1. Pedidos (Contadores)
   const { data: pedidosStats = [] } = useQuery(`
@@ -175,6 +178,41 @@ export function DashboardScreen() {
         
         <Text variant="headlineMedium" style={{ fontWeight: 'bold', marginBottom: 16, color: '#1f2937' }}>Visión Global</Text>
 
+        {/* Tarjetas de Métricas Operativas (Arriba y más compactas) */}
+        <View style={styles.grid}>
+          <CustomCard style={styles.gridItem}>
+            <View style={styles.gridItemContent}>
+              <MaterialCommunityIcons name="clock-outline" size={24} color={theme.colors.primary} />
+              <Text variant="titleLarge" style={styles.gridItemNumber}>{metrics.pedidosPorProducir}</Text>
+              <Text variant="labelSmall" style={styles.gridItemLabel}>Pedidos Pendientes</Text>
+            </View>
+          </CustomCard>
+
+          <CustomCard style={styles.gridItem}>
+            <View style={styles.gridItemContent}>
+              <MaterialCommunityIcons name="check-all" size={24} color="#16a34a" />
+              <Text variant="titleLarge" style={styles.gridItemNumber}>{metrics.pedidosListos}</Text>
+              <Text variant="labelSmall" style={styles.gridItemLabel}>Pedidos Listos</Text>
+            </View>
+          </CustomCard>
+
+          <CustomCard style={styles.gridItem}>
+            <View style={styles.gridItemContent}>
+              <MaterialCommunityIcons name="roll-cylinder" size={24} color="#d97706" />
+              <Text variant="titleLarge" style={styles.gridItemNumber}>{metrics.bobinasKg.toFixed(0)} kg</Text>
+              <Text variant="labelSmall" style={styles.gridItemLabel}>Papel Disponible</Text>
+            </View>
+          </CustomCard>
+
+          <CustomCard style={styles.gridItem}>
+            <View style={styles.gridItemContent}>
+              <MaterialCommunityIcons name="bottle-tonic" size={24} color="#0284c7" />
+              <Text variant="titleLarge" style={styles.gridItemNumber}>{metrics.potesTotal}</Text>
+              <Text variant="labelSmall" style={styles.gridItemLabel}>Potes en Stock</Text>
+            </View>
+          </CustomCard>
+        </View>
+
         {/* Alertas Financieras */}
         {(metrics.pagosPorVencer > 0 || metrics.pagosVencidos > 0) && (
           <CustomCard style={{ backgroundColor: '#FFF3E0', marginBottom: 16 }}>
@@ -255,43 +293,24 @@ export function DashboardScreen() {
              </View>
           </View>
         </CustomCard>
-
-        {/* Tarjetas de Métricas Operativas */}
-        <View style={styles.grid}>
-          <CustomCard style={styles.gridItem}>
-            <View style={styles.gridItemContent}>
-              <MaterialCommunityIcons name="clock-outline" size={28} color={theme.colors.primary} />
-              <Text variant="headlineSmall" style={styles.gridItemNumber}>{metrics.pedidosPorProducir}</Text>
-              <Text variant="bodySmall" style={styles.gridItemLabel}>Pedidos Pendientes</Text>
-            </View>
-          </CustomCard>
-
-          <CustomCard style={styles.gridItem}>
-            <View style={styles.gridItemContent}>
-              <MaterialCommunityIcons name="check-all" size={28} color="#16a34a" />
-              <Text variant="headlineSmall" style={styles.gridItemNumber}>{metrics.pedidosListos}</Text>
-              <Text variant="bodySmall" style={styles.gridItemLabel}>Pedidos Listos</Text>
-            </View>
-          </CustomCard>
-
-          <CustomCard style={styles.gridItem}>
-            <View style={styles.gridItemContent}>
-              <MaterialCommunityIcons name="roll-cylinder" size={28} color="#d97706" />
-              <Text variant="headlineSmall" style={styles.gridItemNumber}>{metrics.bobinasKg.toFixed(0)} kg</Text>
-              <Text variant="bodySmall" style={styles.gridItemLabel}>Papel Disponible</Text>
-            </View>
-          </CustomCard>
-
-          <CustomCard style={styles.gridItem}>
-            <View style={styles.gridItemContent}>
-              <MaterialCommunityIcons name="bottle-tonic" size={28} color="#0284c7" />
-              <Text variant="headlineSmall" style={styles.gridItemNumber}>{metrics.potesTotal}</Text>
-              <Text variant="bodySmall" style={styles.gridItemLabel}>Potes en Stock</Text>
-            </View>
-          </CustomCard>
-        </View>
-
       </ScrollView>
+
+      <FAB.Group
+        open={fabOpen}
+        visible
+        icon={fabOpen ? 'close' : 'plus'}
+        actions={[
+          { icon: 'plus-box-outline', label: 'Nuevo Pedido', onPress: () => router.push('/(screens)/nuevo-pedido') },
+          { icon: 'roll-cylinder', label: 'Registrar Producción', onPress: () => router.push('/(screens)/registrar-produccion') },
+          { icon: 'truck', label: 'Registrar Viaje', onPress: () => router.push('/(screens)/registrar-viaje') },
+        ]}
+        onStateChange={({ open }) => setFabOpen(open)}
+        onPress={() => {
+          if (fabOpen) {
+            // Se cerrará automáticamente
+          }
+        }}
+      />
     </View>
   );
 }
@@ -306,9 +325,9 @@ const styles = StyleSheet.create({
   legendRow: { flexDirection: 'row', justifyContent: 'center', gap: 16, paddingBottom: 16 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
   gridItem: { flexBasis: '48%', flexGrow: 1 },
-  gridItemContent: { padding: 16, alignItems: 'center' },
-  gridItemNumber: { fontWeight: 'bold', marginTop: 8, color: '#1f2937' },
-  gridItemLabel: { color: '#6b7280', textAlign: 'center' },
+  gridItemContent: { padding: 12, alignItems: 'center' },
+  gridItemNumber: { fontWeight: 'bold', marginTop: 4, color: '#1f2937' },
+  gridItemLabel: { color: '#6b7280', textAlign: 'center', marginTop: 2 },
 });
