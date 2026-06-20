@@ -254,8 +254,8 @@ export function DashboardScreen() {
               data={lineDataIngresos}
               data2={lineDataEgresos}
               height={220}
-              width={Dimensions.get('window').width - 90}
-              spacing={lineDataIngresos.length > 1 ? (Dimensions.get('window').width - 90 - 30) / (lineDataIngresos.length - 1) : 45}
+              width={Dimensions.get('window').width - 120}
+              spacing={lineDataIngresos.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataIngresos.length - 1) : 45}
               initialSpacing={15}
               endSpacing={15}
               
@@ -321,7 +321,7 @@ const styles = StyleSheet.create({
   alertContent: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 16 },
   textContainer: { flex: 1 },
   chartHeader: { padding: 16, paddingBottom: 0 },
-  chartContainer: { paddingLeft: 0, paddingRight: 16, paddingTop: 16, paddingBottom: 16, alignItems: 'center' },
+  chartContainer: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16, alignItems: 'center', overflow: 'hidden' },
   legendRow: { flexDirection: 'row', justifyContent: 'center', gap: 16, paddingBottom: 16 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
