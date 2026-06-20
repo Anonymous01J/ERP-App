@@ -231,7 +231,14 @@ const ParadasViaje = ({
   powerSync: any;
 }) => {
   const { data: paradas = [] } = useQuery(
-    `SELECT ev.id, ev.orden, ev.estado, ev.hora_llegada, c.razon_social
+    `SELECT ev.id, ev.id_pedido, ev.orden, ev.estado, ev.hora_llegada, c.razon_social,
+        (
+          SELECT GROUP_CONCAT(dp.cantidad_solicitada || 'x ' || COALESCE(pp.nombre, 'Pote ' || ip.capacidad), ', ')
+          FROM detalles_pedido dp
+          LEFT JOIN productos_presentacion pp ON pp.id = dp.id_producto
+          LEFT JOIN inventario_potes ip ON ip.id = dp.id_pote
+          WHERE dp.id_pedido = ev.id_pedido
+        ) as productos
      FROM entregas_viaje ev
      JOIN pedidos p ON p.id = ev.id_pedido
      JOIN clientes c ON c.id = p.id_cliente
@@ -240,13 +247,19 @@ const ParadasViaje = ({
     [idViaje]
   );
 
-  const handleMarcarEntregado = async (idParada: string, razonSocial: string) => {
+  const handleMarcarEntregado = async (idParada: string, idPedido: string, razonSocial: string) => {
     try {
       const now = new Date().toISOString();
-      await powerSync.execute(
-        `UPDATE entregas_viaje SET estado = 'entregado', hora_llegada = ? WHERE id = ?`,
-        [now, idParada]
-      );
+      await powerSync.writeTransaction(async (tx: any) => {
+        await tx.executeAsync(
+          `UPDATE entregas_viaje SET estado = 'entregado', hora_llegada = ? WHERE id = ?`,
+          [now, idParada]
+        );
+        await tx.executeAsync(
+          `UPDATE pedidos SET estado = 'entregado' WHERE id = ?`,
+          [idPedido]
+        );
+      });
       Toast.show({ type: 'success', text1: 'Parada Completada', text2: `Entrega a ${razonSocial} registrada.` });
     } catch (error) {
       console.error('Error marcando parada:', error);
@@ -273,9 +286,14 @@ const ParadasViaje = ({
               <Text variant="bodyMedium" style={{ fontWeight: entregado ? 'normal' : 'bold', color: entregado ? '#9ca3af' : '#1f2937' }}>
                 {parada.razon_social}
               </Text>
+              {parada.productos ? (
+                <Text variant="bodySmall" style={{ color: entregado ? '#9ca3af' : '#6b7280', marginTop: 2 }}>
+                  Entregar: {parada.productos}
+                </Text>
+              ) : null}
               {entregado && parada.hora_llegada && (
-                <Text variant="bodySmall" style={{ color: '#9ca3af' }}>
-                  Entregado: {new Date(parada.hora_llegada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                <Text variant="bodySmall" style={{ color: '#9ca3af', marginTop: 2 }}>
+                  ✓ Entregado a las {new Date(parada.hora_llegada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </Text>
               )}
             </View>
@@ -283,7 +301,7 @@ const ParadasViaje = ({
               <Button
                 mode="contained-tonal"
                 compact
-                onPress={() => handleMarcarEntregado(parada.id, parada.razon_social)}
+                onPress={() => handleMarcarEntregado(parada.id, parada.id_pedido, parada.razon_social)}
                 style={{ borderRadius: 8 }}
                 labelStyle={{ fontSize: 11 }}
               >

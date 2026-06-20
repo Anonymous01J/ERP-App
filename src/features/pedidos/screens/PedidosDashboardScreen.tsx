@@ -70,10 +70,11 @@ export function PedidosDashboardScreen() {
 
   // --- Queries ---
   const filtrosLogSQL: Record<string, string> = {
-    'Todos': "AND p.estado IN ('pendiente','en_produccion','listo')",
+    'Todos': "AND p.estado IN ('pendiente','en_produccion','listo','entregado')",
     'Pendiente': "AND p.estado = 'pendiente'",
     'En Producción': "AND p.estado = 'en_produccion'",
     'Listo': "AND p.estado = 'listo'",
+    'Entregado': "AND p.estado = 'entregado'",
   };
 
   const { data: pedidosLog = [] } = useQuery(`
@@ -198,7 +199,7 @@ export function PedidosDashboardScreen() {
       <View style={styles.filtersContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {(vista === 'logistica'
-            ? ['Todos', 'Pendiente', 'En Producción', 'Listo']
+            ? ['Todos', 'Pendiente', 'En Producción', 'Listo', 'Entregado']
             : ['Todos', 'Al Día', 'Por Vencer', 'Atrasado']
           ).map(f => (
             <Chip
