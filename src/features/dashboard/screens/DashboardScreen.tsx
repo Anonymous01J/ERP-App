@@ -166,8 +166,9 @@ export function DashboardScreen() {
       return lbl.split(' ')[0]; // Para mes (Semanas), mostrar 'Sem 1', etc.
     };
 
-    const outIngresos = labelsEnOrden.map(lbl => ({ value: dataIngresosMap[lbl], label: formatLabel(lbl) }));
-    const outEgresos = labelsEnOrden.map(lbl => ({ value: dataEgresosMap[lbl] })); // Solo necesitamos las labels en la línea 1
+    const outIngresos = labelsEnOrden.map(lbl => ({ value: dataIngresosMap[lbl], label: formatLabel(lbl), dataLabel: formatLabel(lbl) }));
+    const outEgresos = labelsEnOrden.map(lbl => ({ value: dataEgresosMap[lbl], dataLabel: formatLabel(lbl) })); // Solo necesitamos las labels en la línea 1
+
 
     return { lineDataIngresos: outIngresos, lineDataEgresos: outEgresos };
   }, [flujoCaja, chartPeriod]);
@@ -258,6 +259,43 @@ export function DashboardScreen() {
               spacing={lineDataIngresos.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataIngresos.length - 1) : 45}
               initialSpacing={15}
               endSpacing={15}
+              pointerConfig={{
+                pointerStripHeight: 160,
+                pointerStripColor: 'lightgray',
+                pointerStripWidth: 2,
+                pointerColor: 'lightgray',
+                radius: 6,
+                pointerLabelWidth: 100,
+                pointerLabelHeight: 90,
+                activatePointersOnLongPress: false,
+                autoAdjustPointerLabelPosition: true,
+                pointerLabelComponent: (items: any) => {
+                  const item1 = items[0];
+                  const item2 = items.length > 1 ? items[1] : null;
+                  return (
+                    <View
+                      style={{
+                        padding: 8,
+                        backgroundColor: '#1f2937',
+                        borderRadius: 8,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                      }}>
+                      <Text style={{color: '#d1d5db', fontSize: 12, marginBottom: 4}}>{item1?.dataLabel || ''}</Text>
+                      <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 2}}>
+                        <View style={{width: 8, height: 8, borderRadius: 4, backgroundColor: '#16a34a', marginRight: 6}} />
+                        <Text style={{color: '#fff', fontSize: 12, fontWeight: 'bold'}}>${item1?.value?.toFixed(2) || '0.00'}</Text>
+                      </View>
+                      {item2 && (
+                        <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                          <View style={{width: 8, height: 8, borderRadius: 4, backgroundColor: '#dc2626', marginRight: 6}} />
+                          <Text style={{color: '#fff', fontSize: 12, fontWeight: 'bold'}}>${item2?.value?.toFixed(2) || '0.00'}</Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                },
+              }}
               
               // Estilo Ingresos (Verde)
               color1="#16a34a"
@@ -275,10 +313,15 @@ export function DashboardScreen() {
 
               yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
               xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
-              hideRules
+              yAxisLabelPrefix="$"
               yAxisThickness={0}
               xAxisThickness={1}
               xAxisColor="#e5e7eb"
+              rulesColor="#f3f4f6"
+              rulesType="dashed"
+              showVerticalLines
+              verticalLinesColor="#f3f4f6"
+              verticalLinesType="dashed"
               noOfSections={4}
             />
           </View>
