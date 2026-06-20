@@ -107,6 +107,30 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 
 ---
 
+### 🏭 Producción Diaria (`src/features/produccion`)
+- **Formulario (`RegistrarProduccionScreen`)** conectado a PowerSync:
+  - Selecciona la bobina de origen a descontar (de las disponibles o en uso).
+  - Ingreso de la cantidad de rollos producidos por cada presentación activa.
+  - **Cálculo automático de kg consumidos** (usando el peso real `peso_real_g` de la presentación).
+  - Asignación inteligente: Selección manual de pedidos a abastecer mediante checkboxes.
+  - **Botón "Auto-Asignar":** Rellena automáticamente los pedidos pendientes priorizando los más urgentes (ordenados por fecha de entrega).
+  - Alerta visual en rojo para pedidos urgentes (fecha de entrega a menos de 3 días).
+  - El excedente de producción o producción sin pedido destino va automáticamente al stock general (`productos_presentacion.stock_unidades_sueltas`).
+  - Actualización automática del estado del pedido a `listo` si se completan todos los productos requeridos.
+- **Historial (`HistorialProduccionScreen`)**:
+  - Muestra un timeline de lotes agrupados por la fecha exacta de inserción.
+  - Detalla cuántos kg se le descontaron a la bobina, los rollos producidos y su destino (Stock General o Pedido Específico).
+
+---
+
+### 💰 Finanzas / Flujo de Caja (`src/features/finanzas`)
+- **Dashboard General (`FinanzasDashboardScreen`)** accesible globalmente desde las pestañas inferiores:
+  - **KPIs Financieros (Conversión USD Dinámica):** Calcula y consolida la deudas pendientes de ventas (Cuentas por Cobrar), así como el total de Ingresos y Egresos del mes actual utilizando la tasa de cambio histórica (VES->USD) almacenada individualmente en cada transacción.
+  - **Estado de la Deuda:** Barra gráfica que segmenta porcentualmente si la cartera de crédito está "Al Día", "Por Vencer" (a menos de 5 días) o "Atrasada" (créditos con fecha vencida de 30 días).
+  - **Flujo de Caja Histórico (Timeline):** Unifica en una sola vista cronológica todas las entradas (pagos, abonos y adelantos de clientes en `abonos_pagos`) y las salidas (gastos logísticos, peajes, gasolina, etc., en `movimientos`), reflejando montos en moneda original y su equivalente convertido.
+
+---
+
 ### 🚚 Viajes (`src/features/viajes`)
 
 #### Sistema de Estados por Tipo de Viaje
@@ -155,7 +179,6 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 
 | Módulo | Estado | Prioridad |
 |---|---|---|
-| Producción Diaria | No iniciado | Alta (depende de pedidos y bobinas — ya disponibles) |
 | Gastos generales (fuera de viaje) | No iniciado | Media |
 | Dashboard de KPIs | No iniciado | Media |
 | Asignación FIFO de stock a pedidos | Pospuesto | Baja |

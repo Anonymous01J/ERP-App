@@ -1,30 +1,93 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
-import { Text, Button, Appbar, useTheme, Switch, Divider, Menu, SegmentedButtons, Checkbox } from 'react-native-paper';
+import React, { useState, useMemo } from 'react';
+import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { Text, Button, Appbar, useTheme, Switch, Divider, Menu, Checkbox } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { NumericInput } from '@components/ui/NumericInput';
 import { CustomCard } from '@components/ui/CustomCard';
+import { usePowerSync, useQuery } from '@powersync/react';
+import Toast from 'react-native-toast-message';
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
 
 export function RegistrarProduccionScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const powerSync = usePowerSync();
 
-  // Form state
   const [menuVisible, setMenuVisible] = useState(false);
-  const [bobinaSeleccionada, setBobinaSeleccionada] = useState<string | null>(null);
+  const [bobinaSeleccionada, setBobinaSeleccionada] = useState<any>(null);
   
-  const [rollos600g, setRollos600g] = useState(0);
-  const [rollos1kg, setRollos1kg] = useState(0);
-  const [rollos2kg, setRollos2kg] = useState(0);
-  const [rollos5kg, setRollos5kg] = useState(0); // Added 5kg
+  // Estado de cantidades por presentación: { id_producto: cantidad }
+  const [cantidades, setCantidades] = useState<Record<string, number>>({});
   
   const [vincularPedido, setVincularPedido] = useState(false);
   const [pedidosVinculados, setPedidosVinculados] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
 
-  const mockPedidosPendientes = [
-    { id: '1', cliente: 'Distribuidora Norte', req: '300x 2.5kg (Papel A)' },
-    { id: '5', cliente: 'Almacén Don Pepe', req: '500x 600g (Kraft)' },
-  ];
+  // Consultas PowerSync
+  const { data: bobinas = [] } = useQuery(`
+    SELECT id, tipo_papel, peso_actual_kg, peso_inicial_kg, estado
+    FROM bobinas_grandes 
+    WHERE estado IN ('disponible', 'en_uso')
+    ORDER BY fecha_llegada ASC
+  `);
+
+  const { data: presentaciones = [] } = useQuery(`
+    SELECT id, nombre, peso_real_g 
+    FROM productos_presentacion 
+    WHERE estado = 'activo'
+    ORDER BY peso_nominal_g ASC
+  `);
+
+  // Obtener pedidos pendientes o en producción con sus detalles
+  const { data: pedidosData = [] } = useQuery(`
+    SELECT 
+      p.id as id_pedido, 
+      c.razon_social, 
+      p.estado,
+      p.fecha_entrega_estimada,
+      dp.id_producto, 
+      dp.cantidad_solicitada, 
+      dp.cantidad_producida,
+      prod.nombre as producto_nombre
+    FROM pedidos p
+    JOIN clientes c ON c.id = p.id_cliente
+    JOIN detalles_pedido dp ON dp.id_pedido = p.id
+    LEFT JOIN productos_presentacion prod ON prod.id = dp.id_producto
+    WHERE p.estado IN ('pendiente', 'en_produccion') AND dp.id_producto IS NOT NULL
+    ORDER BY p.fecha_entrega_estimada ASC
+  `);
+
+  // Procesar pedidos para mostrar opciones agrupadas, ya vienen ordenados por fecha
+  const pedidosPendientes = useMemo(() => {
+    const agrupados: Record<string, any> = {};
+    for (const row of pedidosData as any[]) {
+      if (!agrupados[row.id_pedido]) {
+        agrupados[row.id_pedido] = {
+          id: row.id_pedido,
+          cliente: row.razon_social,
+          fecha_entrega: row.fecha_entrega_estimada,
+          detalles: [],
+          necesidades: {} // { id_producto: faltante }
+        };
+      }
+      const faltante = Math.max(0, row.cantidad_solicitada - (row.cantidad_producida || 0));
+      if (faltante > 0) {
+        agrupados[row.id_pedido].detalles.push(`${faltante}x ${row.producto_nombre}`);
+        agrupados[row.id_pedido].necesidades[row.id_producto] = faltante;
+      }
+    }
+    // Convertir a arreglo y mantener el orden por fecha
+    return Object.values(agrupados)
+      .filter(p => p.detalles.length > 0)
+      .sort((a, b) => new Date(a.fecha_entrega).getTime() - new Date(b.fecha_entrega).getTime());
+  }, [pedidosData]);
+
+  const totalRollos = Object.values(cantidades).reduce((acc, curr) => acc + curr, 0);
+
+  const handleCantidadesChange = (idProducto: string, val: number) => {
+    setCantidades(prev => ({ ...prev, [idProducto]: val }));
+  };
 
   const handleTogglePedido = (id: string) => {
     if (pedidosVinculados.includes(id)) {
@@ -34,17 +97,153 @@ export function RegistrarProduccionScreen() {
     }
   };
 
-  const handleGuardar = () => {
-    console.log('Guardar Producción:', { bobinaSeleccionada, rollos600g, rollos1kg, rollos2kg, rollos5kg, pedidosVinculados });
-    router.back();
+  const handleAutoAsignar = () => {
+    if (totalRollos === 0) {
+      Toast.show({ type: 'info', text1: 'Ingresa cantidades primero', text2: 'No hay rollos para asignar.' });
+      return;
+    }
+
+    // Simulamos el consumo para ver a qué pedidos llegamos a cubrir
+    const virtuales = { ...cantidades };
+    const seleccionados = new Set<string>();
+
+    for (const pedido of pedidosPendientes) {
+      let sirvio = false;
+      for (const idProd of Object.keys(pedido.necesidades)) {
+        if (virtuales[idProd] && virtuales[idProd] > 0) {
+          const asignar = Math.min(virtuales[idProd], pedido.necesidades[idProd]);
+          if (asignar > 0) {
+            virtuales[idProd] -= asignar;
+            sirvio = true;
+          }
+        }
+      }
+      if (sirvio) {
+        seleccionados.add(pedido.id);
+      }
+    }
+
+    setPedidosVinculados(Array.from(seleccionados));
+    Toast.show({ type: 'success', text1: 'Asignación Automática', text2: `Se seleccionaron ${seleccionados.size} pedidos prioritarios.` });
   };
 
-  const totalProducido = rollos600g + rollos1kg + rollos2kg + rollos5kg;
+  const handleGuardar = async () => {
+    if (!bobinaSeleccionada || totalRollos === 0) return;
+    setSaving(true);
+    
+    try {
+      const now = new Date().toISOString();
+      let totalKgConsumidos = 0;
+
+      // Iterar sobre cada presentación que se produjo
+      for (const prod of presentaciones as any[]) {
+        const qTotal = cantidades[prod.id] || 0;
+        if (qTotal <= 0) continue;
+
+        let qRestante = qTotal;
+
+        // 1. Asignar a Pedidos seleccionados (si aplica)
+        if (vincularPedido && pedidosVinculados.length > 0) {
+          for (const idPedido of pedidosVinculados) {
+            if (qRestante <= 0) break;
+            
+            // Buscar cuánto necesita este pedido de este producto
+            const pedidoRow = pedidosData.find((p: any) => p.id_pedido === idPedido && p.id_producto === prod.id);
+            if (pedidoRow) {
+              const faltante = Math.max(0, pedidoRow.cantidad_solicitada - (pedidoRow.cantidad_producida || 0));
+              const asignar = Math.min(qRestante, faltante);
+              
+              if (asignar > 0) {
+                // Actualizar detalle de pedido
+                await powerSync.execute(
+                  `UPDATE detalles_pedido SET cantidad_producida = COALESCE(cantidad_producida, 0) + ? WHERE id_pedido = ? AND id_producto = ?`,
+                  [asignar, idPedido, prod.id]
+                );
+
+                // Insertar registro de producción
+                const idProdDiaria = uuidv4();
+                await powerSync.execute(
+                  `INSERT INTO produccion_diaria (id, id_producto, id_pedido_destino, fecha, cantidad_rollos_total) VALUES (?, ?, ?, ?, ?)`,
+                  [idProdDiaria, prod.id, idPedido, now, asignar]
+                );
+
+                // Registrar consumo
+                const kgConsumidos = (asignar * (prod.peso_real_g || 0)) / 1000;
+                totalKgConsumidos += kgConsumidos;
+                await powerSync.execute(
+                  `INSERT INTO consumo_bobinas (id, id_produccion, id_bobina, kg_consumidos) VALUES (?, ?, ?, ?)`,
+                  [uuidv4(), idProdDiaria, bobinaSeleccionada.id, kgConsumidos]
+                );
+
+                qRestante -= asignar;
+
+                // Actualizar estado del pedido (evaluar si ya se completó en base a los nuevos datos)
+                // Usamos una subconsulta para ver si quedan detalles por producir
+                const { rows } = await powerSync.execute(
+                  `SELECT COUNT(*) as faltantes FROM detalles_pedido WHERE id_pedido = ? AND cantidad_producida < cantidad_solicitada`,
+                  [idPedido]
+                );
+                const faltantes = rows?.item(0)?.faltantes || 0;
+                const nuevoEstado = faltantes === 0 ? 'listo' : 'en_produccion';
+                await powerSync.execute(`UPDATE pedidos SET estado = ? WHERE id = ?`, [nuevoEstado, idPedido]);
+              }
+            }
+          }
+        }
+
+        // 2. Asignar el remanente al Stock General
+        if (qRestante > 0) {
+          // Actualizar stock de presentación
+          await powerSync.execute(
+            `UPDATE productos_presentacion SET stock_unidades_sueltas = COALESCE(stock_unidades_sueltas, 0) + ? WHERE id = ?`,
+            [qRestante, prod.id]
+          );
+
+          // Insertar registro de producción
+          const idProdDiaria = uuidv4();
+          await powerSync.execute(
+            `INSERT INTO produccion_diaria (id, id_producto, id_pedido_destino, fecha, cantidad_rollos_total) VALUES (?, ?, NULL, ?, ?)`,
+            [idProdDiaria, prod.id, now, qRestante]
+          );
+
+          // Registrar consumo
+          const kgConsumidos = (qRestante * (prod.peso_real_g || 0)) / 1000;
+          totalKgConsumidos += kgConsumidos;
+          await powerSync.execute(
+            `INSERT INTO consumo_bobinas (id, id_produccion, id_bobina, kg_consumidos) VALUES (?, ?, ?, ?)`,
+            [uuidv4(), idProdDiaria, bobinaSeleccionada.id, kgConsumidos]
+          );
+        }
+      }
+
+      // 3. Descontar kilos totales a la bobina
+      if (totalKgConsumidos > 0) {
+        const pesoActual = bobinaSeleccionada.peso_actual_kg ?? bobinaSeleccionada.peso_inicial_kg;
+        const nuevoPeso = Math.max(0, pesoActual - totalKgConsumidos);
+        const nuevoEstado = nuevoPeso <= 0 ? 'agotada' : 'en_uso';
+        const fechaUso = bobinaSeleccionada.estado === 'disponible' ? now : bobinaSeleccionada.fecha_uso;
+        const fechaGasto = nuevoEstado === 'agotada' ? now : bobinaSeleccionada.fecha_gasto;
+
+        await powerSync.execute(
+          `UPDATE bobinas_grandes SET peso_actual_kg = ?, estado = ?, fecha_uso = ?, fecha_gasto = ? WHERE id = ?`,
+          [nuevoPeso, nuevoEstado, fechaUso, fechaGasto, bobinaSeleccionada.id]
+        );
+      }
+
+      Toast.show({ type: 'success', text1: 'Producción Registrada', text2: \`Se consumieron \${totalKgConsumidos.toFixed(2)}kg teóricos.\` });
+      router.back();
+    } catch (e) {
+      console.error('Error guardando producción:', e);
+      Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo registrar la producción.' });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
-        <Appbar.BackAction onPress={() => router.back()} />
+        <Appbar.BackAction onPress={() => router.back()} disabled={saving} />
         <Appbar.Content title="Registrar Producción" />
       </Appbar.Header>
 
@@ -67,12 +266,22 @@ export function RegistrarProduccionScreen() {
                     icon="chevron-down"
                     contentStyle={{ flexDirection: 'row-reverse' }}
                   >
-                    {bobinaSeleccionada ? bobinaSeleccionada : 'Seleccionar Bobina'}
+                    {bobinaSeleccionada 
+                      ? \`Bobina Tipo \${bobinaSeleccionada.tipo_papel} (\${(bobinaSeleccionada.peso_actual_kg ?? bobinaSeleccionada.peso_inicial_kg).toFixed(1)}kg)\` 
+                      : 'Seleccionar Bobina'}
                   </Button>
                 }
               >
-                <Menu.Item onPress={() => { setBobinaSeleccionada('Bobina Papel A - 1500kg'); setMenuVisible(false); }} title="Bobina Papel A - 1500kg" />
-                <Menu.Item onPress={() => { setBobinaSeleccionada('Bobina Kraft - 800kg'); setMenuVisible(false); }} title="Bobina Kraft - 800kg" />
+                {(bobinas as any[]).map(bob => (
+                  <Menu.Item 
+                    key={bob.id}
+                    onPress={() => { setBobinaSeleccionada(bob); setMenuVisible(false); }} 
+                    title={\`Tipo \${bob.tipo_papel} (\${(bob.peso_actual_kg ?? bob.peso_inicial_kg).toFixed(1)}kg disponibles)\`}
+                  />
+                ))}
+                {(bobinas as any[]).length === 0 && (
+                  <Menu.Item title="No hay bobinas activas" disabled />
+                )}
               </Menu>
             </View>
           </CustomCard>
@@ -81,28 +290,21 @@ export function RegistrarProduccionScreen() {
             <View style={styles.cardContent}>
               <Text variant="titleMedium" style={styles.sectionTitle}>2. Rollos Producidos</Text>
               
-              <View style={styles.inputRow}>
-                <Text variant="bodyLarge">Rollos 600g</Text>
-                <NumericInput value={rollos600g} onChange={setRollos600g} />
-              </View>
-              <Divider style={styles.divider} />
-              
-              <View style={styles.inputRow}>
-                <Text variant="bodyLarge">Rollos 1kg</Text>
-                <NumericInput value={rollos1kg} onChange={setRollos1kg} />
-              </View>
-              <Divider style={styles.divider} />
-
-              <View style={styles.inputRow}>
-                <Text variant="bodyLarge">Rollos 2.5kg</Text>
-                <NumericInput value={rollos2kg} onChange={setRollos2kg} />
-              </View>
-              <Divider style={styles.divider} />
-
-              <View style={styles.inputRow}>
-                <Text variant="bodyLarge">Rollos 5kg</Text>
-                <NumericInput value={rollos5kg} onChange={setRollos5kg} />
-              </View>
+              {(presentaciones as any[]).map((prod, index) => (
+                <View key={prod.id}>
+                  <View style={styles.inputRow}>
+                    <View>
+                      <Text variant="bodyLarge">{prod.nombre}</Text>
+                      <Text variant="bodySmall" style={{ color: '#888' }}>{prod.peso_real_g}g reales</Text>
+                    </View>
+                    <NumericInput 
+                      value={cantidades[prod.id] || 0} 
+                      onChange={(val) => handleCantidadesChange(prod.id, val)} 
+                    />
+                  </View>
+                  {index < presentaciones.length - 1 && <Divider style={styles.divider} />}
+                </View>
+              ))}
             </View>
           </CustomCard>
 
@@ -119,30 +321,55 @@ export function RegistrarProduccionScreen() {
               
               {vincularPedido && (
                 <View style={{ marginTop: 16 }}>
-                  <Text variant="bodyMedium" style={{ marginBottom: 8, fontWeight: 'bold' }}>Selecciona los pedidos a cubrir:</Text>
-                  {mockPedidosPendientes.map(p => (
-                    <Checkbox.Item 
-                      key={p.id} 
-                      label={`${p.cliente} (${p.req})`} 
-                      status={pedidosVinculados.includes(p.id) ? 'checked' : 'unchecked'}
-                      onPress={() => handleTogglePedido(p.id)}
-                      mode="android"
-                      labelStyle={{ fontSize: 14 }}
-                    />
-                  ))}
-                  
-                  <View style={styles.infoBox}>
-                    <Text variant="bodySmall" style={{ color: '#555', textAlign: 'center' }}>
-                      Nota: La producción se asignará a los pedidos seleccionados hasta cubrir sus cuotas. Cualquier cantidad excedente pasará automáticamente al inventario libre.
+                  {pedidosPendientes.length === 0 ? (
+                    <Text variant="bodyMedium" style={{ color: '#888', fontStyle: 'italic', textAlign: 'center', marginTop: 8 }}>
+                      No hay pedidos pendientes actualmente.
                     </Text>
-                  </View>
+                  ) : (
+                    <>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <Text variant="bodyMedium" style={{ fontWeight: 'bold' }}>Pedidos Pendientes:</Text>
+                        <Button 
+                          mode="contained-tonal" 
+                          icon="magic-staff" 
+                          compact 
+                          onPress={handleAutoAsignar}
+                          style={{ borderRadius: 8 }}
+                          labelStyle={{ fontSize: 12 }}
+                        >
+                          Auto-Asignar
+                        </Button>
+                      </View>
+                      
+                      {pedidosPendientes.map((p: any) => {
+                        const d = new Date(p.fecha_entrega);
+                        const isUrgente = (d.getTime() - new Date().getTime()) < (3 * 24 * 60 * 60 * 1000); // < 3 días
+                        return (
+                          <Checkbox.Item 
+                            key={p.id} 
+                            label={`${p.cliente} - Entregar: ${d.toLocaleDateString('es-VE')} \n(Faltan: ${p.detalles.join(', ')})`}
+                            labelStyle={{ fontSize: 13, color: isUrgente ? theme.colors.error : '#333' }}
+                            status={pedidosVinculados.includes(p.id) ? 'checked' : 'unchecked'}
+                            onPress={() => handleTogglePedido(p.id)}
+                            mode="android"
+                          />
+                        );
+                      })}
+                      
+                      <View style={styles.infoBox}>
+                        <Text variant="bodySmall" style={{ color: '#555', textAlign: 'center' }}>
+                          Nota: La producción se asignará a los pedidos seleccionados hasta cubrir sus cuotas. Cualquier cantidad excedente pasará automáticamente al inventario libre.
+                        </Text>
+                      </View>
+                    </>
+                  )}
                 </View>
               )}
 
               {!vincularPedido && (
                 <View style={[styles.infoBox, { backgroundColor: '#f0fdf4' }]}>
                   <Text variant="bodySmall" style={{ color: '#16a34a', textAlign: 'center' }}>
-                    Esta producción irá completa al Inventario Libre (Rollos no vinculados).
+                    Esta producción irá completa al Inventario Libre (Rollos sueltos).
                   </Text>
                 </View>
               )}
@@ -158,7 +385,9 @@ export function RegistrarProduccionScreen() {
           onPress={handleGuardar} 
           style={styles.saveButton}
           contentStyle={styles.saveButtonContent}
-          disabled={!bobinaSeleccionada || totalProducido === 0}
+          disabled={!bobinaSeleccionada || totalRollos === 0 || saving}
+          loading={saving}
+          icon="check-circle"
         >
           Guardar Producción
         </Button>
@@ -168,59 +397,17 @@ export function RegistrarProduccionScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F7FA',
-  },
-  content: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 8,
-    paddingBottom: 24,
-    gap: 8,
-  },
-  cardContent: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontWeight: 'bold',
-    marginBottom: 16,
-    color: '#333',
-  },
-  menuAnchor: {
-    marginBottom: 8,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginVertical: 4,
-  },
-  divider: {
-    marginVertical: 8,
-  },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  infoBox: {
-    marginTop: 16,
-    padding: 16,
-    backgroundColor: '#E3F2FD',
-    borderRadius: 8,
-  },
-  footer: {
-    padding: 16,
-    backgroundColor: '#ffffff',
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-  },
-  saveButton: {
-    borderRadius: 8,
-  },
-  saveButtonContent: {
-    paddingVertical: 8,
-  },
+  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  content: { flex: 1 },
+  scrollContent: { padding: 8, paddingBottom: 24, gap: 8 },
+  cardContent: { padding: 16 },
+  sectionTitle: { fontWeight: 'bold', marginBottom: 16, color: '#333' },
+  menuAnchor: { marginBottom: 8 },
+  inputRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 4 },
+  divider: { marginVertical: 8 },
+  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  infoBox: { marginTop: 16, padding: 16, backgroundColor: '#E3F2FD', borderRadius: 8 },
+  footer: { padding: 16, backgroundColor: '#ffffff', borderTopWidth: 1, borderTopColor: '#e0e0e0' },
+  saveButton: { borderRadius: 8 },
+  saveButtonContent: { paddingVertical: 8 },
 });

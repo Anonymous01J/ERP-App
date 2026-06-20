@@ -71,6 +71,16 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="finanzas"
+        options={{
+          title: 'Finanzas',
+          tabBarLabel: 'Finanzas',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="finance" size={size} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }
