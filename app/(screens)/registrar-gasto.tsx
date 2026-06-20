@@ -1,6 +1,2 @@
-import React from 'react';
-import { RegistrarGastoScreen } from '@features/gastos/screens/RegistrarGastoScreen';
-
-export default function RegistrarGastoRoute() {
-  return <RegistrarGastoScreen />;
-}
+import { RegistrarGastoGeneralScreen } from '@features/finanzas/screens/RegistrarGastoGeneralScreen';
+export default RegistrarGastoGeneralScreen;

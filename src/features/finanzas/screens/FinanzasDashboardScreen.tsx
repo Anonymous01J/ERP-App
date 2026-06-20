@@ -1,14 +1,16 @@
 import React, { useMemo } from 'react';
 import { View, StyleSheet, ScrollView, Dimensions } from 'react-native';
-import { Text, Appbar, useTheme, Divider, Surface } from 'react-native-paper';
+import { Text, Appbar, useTheme, Divider, Surface, FAB } from 'react-native-paper';
 import { CustomCard } from '@components/ui/CustomCard';
 import { useQuery } from '@powersync/react';
+import { useRouter } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 const { width } = Dimensions.get('window');
 
 export function FinanzasDashboardScreen() {
   const theme = useTheme();
+  const router = useRouter();
 
   // 1. Consultar deudas pendientes (Cuentas por cobrar)
   const { data: deudas = [] } = useQuery(`
@@ -230,6 +232,13 @@ export function FinanzasDashboardScreen() {
         )}
 
       </ScrollView>
+
+      <FAB
+        icon="cash-plus"
+        label="Registrar"
+        style={styles.fab}
+        onPress={() => router.push('/(screens)/registrar-gasto')}
+      />
     </View>
   );
 }
@@ -250,4 +259,5 @@ const styles = StyleSheet.create({
   movCard: { marginBottom: 8, borderRadius: 12 },
   movContent: { padding: 12, flexDirection: 'row', alignItems: 'center' },
   iconContainer: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  fab: { position: 'absolute', margin: 16, right: 0, bottom: 0 },
 });

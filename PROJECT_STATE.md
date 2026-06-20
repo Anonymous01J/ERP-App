@@ -128,6 +128,18 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - **KPIs Financieros (Conversión USD Dinámica):** Calcula y consolida la deudas pendientes de ventas (Cuentas por Cobrar), así como el total de Ingresos y Egresos del mes actual utilizando la tasa de cambio histórica (VES->USD) almacenada individualmente en cada transacción.
   - **Estado de la Deuda:** Barra gráfica que segmenta porcentualmente si la cartera de crédito está "Al Día", "Por Vencer" (a menos de 5 días) o "Atrasada" (créditos con fecha vencida de 30 días).
   - **Flujo de Caja Histórico (Timeline):** Unifica en una sola vista cronológica todas las entradas (pagos, abonos y adelantos de clientes en `abonos_pagos`) y las salidas (gastos logísticos, peajes, gasolina, etc., en `movimientos`), reflejando montos en moneda original y su equivalente convertido.
+  - **Registro de Gastos Generales (`RegistrarGastoGeneralScreen`):** Formulario dedicado accesible a través de un botón flotante para registrar pagos de Nómina, Alquiler, Servicios, Suministros u Otros (exigiendo descripción para "Otros").
+
+---
+
+### 📊 Dashboard de Inicio (`src/features/dashboard`)
+- **Panel de Control Principal (`DashboardScreen`)** conectado 100% a la base de datos:
+  - **Alertas Críticas:** Detecta automáticamente si hay pagos de clientes por vencer en los próximos 5 días o si ya están vencidos, mostrando un banner amarillo disuasivo.
+  - **Gráfico Interactivo de Liquidez:** Muestra el flujo de Ingresos (verde) vs Egresos (rojo) en USD. Soporta agrupación dinámica por:
+    - **Día:** Últimos 7 días.
+    - **Semana:** Últimas 4 semanas.
+    - **Mes:** Últimos 6 meses.
+  - **Métricas Operativas:** Tarjetas con contadores en tiempo real de Pedidos Pendientes, Pedidos Listos para Despacho, Kilos Totales de Papel Disponible y Unidades de Potes en Stock.
 
 ---
 

@@ -1,58 +1,190 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, StyleSheet, ScrollView, Dimensions } from 'react-native';
-import { Text, FAB, useTheme, Avatar, SegmentedButtons } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { Text, useTheme, Avatar, SegmentedButtons } from 'react-native-paper';
 import { CustomCard } from '@components/ui/CustomCard';
 import { LineChart } from 'react-native-gifted-charts';
+import { useQuery } from '@powersync/react';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 export function DashboardScreen() {
-  const router = useRouter();
   const theme = useTheme();
-  const [fabOpen, setFabOpen] = useState(false);
-  const [chartPeriod, setChartPeriod] = useState('Semana');
+  const [chartPeriod, setChartPeriod] = useState('Día');
 
-  // Mock data
-  const metrics = {
-    pedidosPorProducir: 15,
-    produccionHoy: 450,
-    pedidosListos: 5,
-    pagosPorVencer: 2,
-    pagosVencidos: 1,
-  };
+  // 1. Pedidos (Contadores)
+  const { data: pedidosStats = [] } = useQuery(`
+    SELECT estado, COUNT(*) as count 
+    FROM pedidos 
+    WHERE estado IN ('pendiente', 'en_produccion', 'listo')
+    GROUP BY estado
+  `);
 
-  // Chart data mock
-  const lineData = [
-    { value: 100, label: 'Lun' },
-    { value: 200, label: 'Mar' },
-    { value: 150, label: 'Mie' },
-    { value: 300, label: 'Jue' },
-    { value: 250, label: 'Vie' },
-    { value: 400, label: 'Sab' },
-  ];
+  // 2. Alertas de Cobranza
+  const { data: creditosPendientes = [] } = useQuery(`
+    SELECT id, fecha_vencimiento_credito 
+    FROM pedidos 
+    WHERE estado_pago = 'pendiente' AND estado != 'cancelado'
+  `);
 
-  const lineData2 = [
-    { value: 50, label: 'Lun' },
-    { value: 150, label: 'Mar' },
-    { value: 100, label: 'Mie' },
-    { value: 200, label: 'Jue' },
-    { value: 180, label: 'Vie' },
-    { value: 250, label: 'Sab' },
-  ];
+  // 3. Inventario Bobinas
+  const { data: bobinasData = [] } = useQuery(`
+    SELECT COALESCE(SUM(peso_actual_kg), 0) as total_kg 
+    FROM bobinas_grandes 
+    WHERE estado IN ('disponible', 'en_uso')
+  `);
+
+  // 4. Stock Potes
+  const { data: potesData = [] } = useQuery(`
+    SELECT COALESCE(SUM(stock_actual), 0) as total_potes 
+    FROM inventario_potes
+  `);
+
+  // 5. Flujo de Caja (Para Gráficos)
+  const { data: flujoCaja = [] } = useQuery(`
+    SELECT fecha, tipo, 
+      CASE WHEN moneda = 'USD' THEN monto ELSE monto / COALESCE(tasa_cambio, 1) END as monto_usd
+    FROM movimientos
+    UNION ALL
+    SELECT fecha_pago as fecha, 'ingreso' as tipo, monto_equivalente_usd as monto_usd
+    FROM abonos_pagos
+  `);
+
+  // --- PROCESAMIENTO DE KPIs ---
+  const metrics = useMemo(() => {
+    let pedidosPorProducir = 0;
+    let pedidosListos = 0;
+
+    for (const p of pedidosStats as any[]) {
+      if (p.estado === 'listo') pedidosListos += p.count;
+      else pedidosPorProducir += p.count;
+    }
+
+    let pagosPorVencer = 0;
+    let pagosVencidos = 0;
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+
+    for (const c of creditosPendientes as any[]) {
+      if (c.fecha_vencimiento_credito) {
+        const venc = new Date(c.fecha_vencimiento_credito);
+        const diffTime = venc.getTime() - hoy.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays < 0) pagosVencidos++;
+        else if (diffDays <= 5) pagosPorVencer++;
+      }
+    }
+
+    return {
+      pedidosPorProducir,
+      pedidosListos,
+      pagosPorVencer,
+      pagosVencidos,
+      bobinasKg: bobinasData.length > 0 ? bobinasData[0].total_kg : 0,
+      potesTotal: potesData.length > 0 ? potesData[0].total_potes : 0,
+    };
+  }, [pedidosStats, creditosPendientes, bobinasData, potesData]);
+
+  // --- PROCESAMIENTO DE GRÁFICOS ---
+  const { lineDataIngresos, lineDataEgresos } = useMemo(() => {
+    const dataIngresosMap: Record<string, number> = {};
+    const dataEgresosMap: Record<string, number> = {};
+    const labelsEnOrden: string[] = [];
+
+    const hoy = new Date();
+    hoy.setHours(23, 59, 59, 999);
+
+    if (chartPeriod === 'Día') {
+      // Día actual (Hoy): Agrupado por bloques de 4 horas
+      const hourBlocks = [0, 4, 8, 12, 16, 20];
+      hourBlocks.forEach(h => {
+        const key = `${h.toString().padStart(2, '0')}:00`;
+        labelsEnOrden.push(key);
+        dataIngresosMap[key] = 0;
+        dataEgresosMap[key] = 0;
+      });
+
+      const hoyStr = hoy.toISOString().split('T')[0];
+      for (const row of flujoCaja as any[]) {
+        if (!row.fecha) continue;
+        const [fDate, fTime] = row.fecha.split('T');
+        if (fDate === hoyStr && fTime) {
+          const hour = parseInt(fTime.substring(0, 2), 10);
+          const block = hourBlocks.slice().reverse().find(b => hour >= b) || 0;
+          const key = `${block.toString().padStart(2, '0')}:00`;
+          if (row.tipo === 'ingreso') dataIngresosMap[key] += row.monto_usd;
+          else dataEgresosMap[key] += row.monto_usd;
+        }
+      }
+    } else if (chartPeriod === 'Semana') {
+      // Semana: Últimos 7 días
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(hoy.getTime() - i * 24 * 60 * 60 * 1000);
+        const key = d.toISOString().split('T')[0];
+        labelsEnOrden.push(key);
+        dataIngresosMap[key] = 0;
+        dataEgresosMap[key] = 0;
+      }
+      for (const row of flujoCaja as any[]) {
+        const f = row.fecha?.split('T')[0];
+        if (dataIngresosMap[f] !== undefined) {
+          if (row.tipo === 'ingreso') dataIngresosMap[f] += row.monto_usd;
+          else dataEgresosMap[f] += row.monto_usd;
+        }
+      }
+    } else {
+      // Mes: Últimas 4 semanas
+      for (let i = 3; i >= 0; i--) {
+        const start = new Date(hoy.getTime() - (i * 7 + 6) * 24 * 60 * 60 * 1000);
+        const startStr = start.toISOString().split('T')[0].slice(5); // Solo MM-DD
+        const key = `Sem ${4 - i} (${startStr})`;
+        labelsEnOrden.push(key);
+        dataIngresosMap[key] = 0;
+        dataEgresosMap[key] = 0;
+      }
+
+      for (const row of flujoCaja as any[]) {
+        if (!row.fecha) continue;
+        const d = new Date(row.fecha);
+        const diffDays = Math.floor((hoy.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays >= 0 && diffDays < 28) {
+          const semIndex = 3 - Math.floor(diffDays / 7);
+          const key = labelsEnOrden[semIndex];
+          if (row.tipo === 'ingreso') dataIngresosMap[key] += row.monto_usd;
+          else dataEgresosMap[key] += row.monto_usd;
+        }
+      }
+    }
+
+    const formatLabel = (lbl: string) => {
+      if (chartPeriod === 'Día') return lbl.substring(0, 5); // Ej: 08:00
+      if (chartPeriod === 'Semana') {
+        const [y, m, d] = lbl.split('-');
+        return `${d}/${m}`;
+      }
+      return lbl.split(' ')[0]; // Para mes (Semanas), mostrar 'Sem 1', etc.
+    };
+
+    const outIngresos = labelsEnOrden.map(lbl => ({ value: dataIngresosMap[lbl], label: formatLabel(lbl) }));
+    const outEgresos = labelsEnOrden.map(lbl => ({ value: dataEgresosMap[lbl] })); // Solo necesitamos las labels en la línea 1
+
+    return { lineDataIngresos: outIngresos, lineDataEgresos: outEgresos };
+  }, [flujoCaja, chartPeriod]);
 
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         
+        <Text variant="headlineMedium" style={{ fontWeight: 'bold', marginBottom: 16, color: '#1f2937' }}>Visión Global</Text>
+
         {/* Alertas Financieras */}
         {(metrics.pagosPorVencer > 0 || metrics.pagosVencidos > 0) && (
-          <CustomCard style={{ backgroundColor: '#FFF3E0' }}>
+          <CustomCard style={{ backgroundColor: '#FFF3E0', marginBottom: 16 }}>
             <View style={styles.alertContent}>
               <Avatar.Icon size={40} icon="alert" style={{ backgroundColor: '#FFB74D' }} color="#fff" />
               <View style={styles.textContainer}>
                 <Text variant="titleMedium" style={{ color: '#E65100', fontWeight: 'bold' }}>Alertas de Cobranza</Text>
                 <Text variant="bodyMedium" style={{ color: '#E65100' }}>
-                  {metrics.pagosPorVencer} pagos por vencer esta semana.
-                  {metrics.pagosVencidos > 0 && `\n${metrics.pagosVencidos} pagos VENCIDOS.`}
+                  {metrics.pagosPorVencer} pagos por vencer en los próximos 5 días.
+                  {metrics.pagosVencidos > 0 && `\n${metrics.pagosVencidos} pagos VENCIDOS actualmente.`}
                 </Text>
               </View>
             </View>
@@ -60,10 +192,10 @@ export function DashboardScreen() {
         )}
 
         {/* Gráfico Financiero */}
-        <CustomCard>
+        <CustomCard style={{ marginBottom: 16 }}>
           <View style={styles.chartHeader}>
-            <Text variant="titleMedium" style={{ fontWeight: 'bold', marginBottom: 16 }}>
-              Evolución de Liquidez ($)
+            <Text variant="titleMedium" style={{ fontWeight: 'bold', marginBottom: 16, color: '#374151' }}>
+              Ingresos vs Egresos ($)
             </Text>
             <SegmentedButtons
               value={chartPeriod}
@@ -81,226 +213,102 @@ export function DashboardScreen() {
             <LineChart
               areaChart
               curved
-              data={lineData}
-              data2={lineData2}
+              data={lineDataIngresos}
+              data2={lineDataEgresos}
               height={220}
-              width={Dimensions.get('window').width - 60}
-              spacing={50}
-              initialSpacing={20}
-              endSpacing={20}
+              width={Dimensions.get('window').width - 70}
+              spacing={Dimensions.get('window').width > 400 ? 55 : 45}
+              initialSpacing={15}
+              endSpacing={15}
               
-              // Estilo Entradas
-              color1={theme.colors.primary}
-              startFillColor1={theme.colors.primary}
-              endFillColor1={theme.colors.primary}
+              // Estilo Ingresos (Verde)
+              color1="#16a34a"
+              startFillColor1="#16a34a"
+              endFillColor1="#16a34a"
               startOpacity1={0.3}
               endOpacity1={0.05}
               
-              // Estilo Salidas
-              color2={theme.colors.error}
-              startFillColor2={theme.colors.error}
-              endFillColor2={theme.colors.error}
+              // Estilo Egresos (Rojo)
+              color2="#dc2626"
+              startFillColor2="#dc2626"
+              endFillColor2="#dc2626"
               startOpacity2={0.3}
               endOpacity2={0.05}
-              
-              thickness={3}
-              hideDataPoints
-              showVerticalLines={false}
+
+              yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
+              xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
               hideRules
-              
-              xAxisColor="transparent"
-              yAxisColor="transparent"
-              yAxisTextStyle={{ color: '#666', fontSize: 10 }}
-              xAxisLabelTextStyle={{ color: '#666', fontSize: 10, textAlign: 'center' }}
-              
-              disableScroll={false}
-              pointerConfig={{
-                pointerStripHeight: 160,
-                pointerStripColor: 'rgba(0,0,0,0.1)',
-                pointerStripWidth: 2,
-                pointerColor: theme.colors.primary,
-                radius: 6,
-                pointerLabelWidth: 120,
-                pointerLabelHeight: 90,
-                activatePointersOnLongPress: false,
-                autoAdjustPointerLabelPosition: true,
-                pointerLabelComponent: items => {
-                  if (!items || items.length === 0) return null;
-                  const item = items[0];
-                  // Asegurar que exista el segundo punto antes de renderizar
-                  const item2 = items.length > 1 ? items[1] : null;
-                  return (
-                    <View
-                      style={{
-                        backgroundColor: theme.colors.surface,
-                        padding: 10,
-                        borderRadius: 8,
-                        justifyContent: 'center',
-                        width: 120,
-                        shadowColor: "#000",
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.1,
-                        shadowRadius: 3,
-                        elevation: 3,
-                        borderWidth: 1,
-                        borderColor: theme.colors.outlineVariant,
-                      }}
-                    >
-                      <Text style={{fontWeight: 'bold', textAlign: 'center', color: theme.colors.onSurface, marginBottom: 4}}>{item.label || ''}</Text>
-                      <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 4}}>
-                          <View style={{height: 8, width: 8, borderRadius: 4, backgroundColor: theme.colors.primary, marginRight: 8}}/>
-                          <Text style={{color: theme.colors.onSurface, fontSize: 12}}>
-                              Entradas: ${item.value}
-                          </Text>
-                      </View>
-                      {item2 && (
-                        <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 4}}>
-                            <View style={{height: 8, width: 8, borderRadius: 4, backgroundColor: theme.colors.error, marginRight: 8}}/>
-                            <Text style={{color: theme.colors.onSurface, fontSize: 12}}>
-                                Salidas: ${item2.value}
-                            </Text>
-                        </View>
-                      )}
-                    </View>
-                  );
-                },
-              }}
+              yAxisThickness={0}
+              xAxisThickness={1}
+              xAxisColor="#e5e7eb"
+              noOfSections={4}
             />
-            <View style={styles.legendContainer}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: theme.colors.primary }]} />
-                <Text variant="bodySmall">Entradas</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: theme.colors.error }]} />
-                <Text variant="bodySmall">Salidas</Text>
-              </View>
-            </View>
+          </View>
+          <View style={styles.legendRow}>
+             <View style={styles.legendItem}>
+               <View style={[styles.legendDot, { backgroundColor: '#16a34a' }]} />
+               <Text variant="bodySmall">Ingresos</Text>
+             </View>
+             <View style={styles.legendItem}>
+               <View style={[styles.legendDot, { backgroundColor: '#dc2626' }]} />
+               <Text variant="bodySmall">Egresos</Text>
+             </View>
           </View>
         </CustomCard>
 
-        <CustomCard>
-          <View style={styles.cardContent}>
-            <Avatar.Icon size={48} icon="clipboard-list-outline" style={{ backgroundColor: theme.colors.primaryContainer }} color={theme.colors.onPrimaryContainer} />
-            <View style={styles.textContainer}>
-              <Text variant="titleMedium">Pedidos por Producir</Text>
-              <Text variant="headlineMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>{metrics.pedidosPorProducir}</Text>
+        {/* Tarjetas de Métricas Operativas */}
+        <View style={styles.grid}>
+          <CustomCard style={styles.gridItem}>
+            <View style={styles.gridItemContent}>
+              <MaterialCommunityIcons name="clock-outline" size={28} color={theme.colors.primary} />
+              <Text variant="headlineSmall" style={styles.gridItemNumber}>{metrics.pedidosPorProducir}</Text>
+              <Text variant="bodySmall" style={styles.gridItemLabel}>Pedidos Pendientes</Text>
             </View>
-          </View>
-        </CustomCard>
+          </CustomCard>
 
-        <CustomCard>
-          <View style={styles.cardContent}>
-            <Avatar.Icon size={48} icon="factory" style={{ backgroundColor: theme.colors.secondaryContainer }} color={theme.colors.onSecondaryContainer} />
-            <View style={styles.textContainer}>
-              <Text variant="titleMedium">Producción Hoy (Rollos)</Text>
-              <Text variant="headlineMedium" style={{ color: theme.colors.secondary, fontWeight: 'bold' }}>{metrics.produccionHoy}</Text>
+          <CustomCard style={styles.gridItem}>
+            <View style={styles.gridItemContent}>
+              <MaterialCommunityIcons name="check-all" size={28} color="#16a34a" />
+              <Text variant="headlineSmall" style={styles.gridItemNumber}>{metrics.pedidosListos}</Text>
+              <Text variant="bodySmall" style={styles.gridItemLabel}>Pedidos Listos</Text>
             </View>
-          </View>
-        </CustomCard>
+          </CustomCard>
 
-        <CustomCard>
-          <View style={styles.cardContent}>
-            <Avatar.Icon size={48} icon="package-check" style={{ backgroundColor: theme.colors.tertiaryContainer }} color={theme.colors.onTertiaryContainer} />
-            <View style={styles.textContainer}>
-              <Text variant="titleMedium">Pedidos Listos (Para Despacho)</Text>
-              <Text variant="headlineMedium" style={{ color: theme.colors.tertiary, fontWeight: 'bold' }}>{metrics.pedidosListos}</Text>
+          <CustomCard style={styles.gridItem}>
+            <View style={styles.gridItemContent}>
+              <MaterialCommunityIcons name="roll-cylinder" size={28} color="#d97706" />
+              <Text variant="headlineSmall" style={styles.gridItemNumber}>{metrics.bobinasKg.toFixed(0)} kg</Text>
+              <Text variant="bodySmall" style={styles.gridItemLabel}>Papel Disponible</Text>
             </View>
-          </View>
-        </CustomCard>
+          </CustomCard>
+
+          <CustomCard style={styles.gridItem}>
+            <View style={styles.gridItemContent}>
+              <MaterialCommunityIcons name="bottle-tonic" size={28} color="#0284c7" />
+              <Text variant="headlineSmall" style={styles.gridItemNumber}>{metrics.potesTotal}</Text>
+              <Text variant="bodySmall" style={styles.gridItemLabel}>Potes en Stock</Text>
+            </View>
+          </CustomCard>
+        </View>
+
       </ScrollView>
-
-      <FAB.Group
-        open={fabOpen}
-        visible
-        icon={fabOpen ? 'close' : 'plus'}
-        actions={[
-          {
-            icon: 'plus',
-            label: 'Nuevo Pedido',
-            onPress: () => router.push('/(screens)/nuevo-pedido'),
-          },
-          {
-            icon: 'account-plus',
-            label: 'Registrar Cliente',
-            onPress: () => router.push('/(screens)/registrar-cliente'),
-          },
-          {
-            icon: 'truck-plus',
-            label: 'Registrar Viaje',
-            onPress: () => router.push('/(screens)/registrar-viaje'),
-          },
-          {
-            icon: 'cash-plus',
-            label: 'Añadir Gasto',
-            onPress: () => router.push('/(screens)/registrar-gasto'),
-          },
-          {
-            icon: 'cog-refresh-outline',
-            label: 'Registrar Producción',
-            onPress: () => router.push('/(screens)/registrar-produccion'),
-          },
-        ]}
-        onStateChange={({ open }) => setFabOpen(open)}
-        onPress={() => {
-          if (fabOpen) {
-            // open actions
-          }
-        }}
-      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 8,
-    paddingBottom: 100, // Make room for FAB
-  },
-  cardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-  },
-  alertContent: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 16,
-  },
-  textContainer: {
-    marginLeft: 16,
-    flex: 1,
-  },
-  chartHeader: {
-    padding: 16,
-    flexDirection: 'column',
-    alignItems: 'stretch',
-  },
-  segmented: {
-    flex: 0.5,
-  },
-  chartContainer: {
-    paddingBottom: 16,
-    paddingRight: 16,
-    alignItems: 'center',
-  },
-  legendContainer: {
-    flexDirection: 'row',
-    marginTop: 16,
-    justifyContent: 'center',
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 12,
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 6,
-  },
+  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  scrollContent: { padding: 16, paddingBottom: 32 },
+  alertContent: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 16 },
+  textContainer: { flex: 1 },
+  chartHeader: { padding: 16, paddingBottom: 0 },
+  chartContainer: { paddingLeft: 0, paddingRight: 16, paddingTop: 16, paddingBottom: 16, alignItems: 'center' },
+  legendRow: { flexDirection: 'row', justifyContent: 'center', gap: 16, paddingBottom: 16 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  gridItem: { flexBasis: '48%', flexGrow: 1 },
+  gridItemContent: { padding: 16, alignItems: 'center' },
+  gridItemNumber: { fontWeight: 'bold', marginTop: 8, color: '#1f2937' },
+  gridItemLabel: { color: '#6b7280', textAlign: 'center' },
 });
