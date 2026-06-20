@@ -254,8 +254,8 @@ export function DashboardScreen() {
               data={lineDataIngresos}
               data2={lineDataEgresos}
               height={220}
-              width={Dimensions.get('window').width - 70}
-              spacing={Dimensions.get('window').width > 400 ? 55 : 45}
+              width={Dimensions.get('window').width - 90}
+              spacing={lineDataIngresos.length > 1 ? (Dimensions.get('window').width - 90 - 30) / (lineDataIngresos.length - 1) : 45}
               initialSpacing={15}
               endSpacing={15}
               
