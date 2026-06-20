@@ -47,8 +47,9 @@ export function RegistrarGastoGeneralScreen() {
     setSaving(true);
     try {
       const catLabel = CATEGORIAS.find(c => c.key === categoria)?.label || 'General';
-      const descripFinal = descripcion.trim() 
-        ? `${catLabel}: ${descripcion.trim()}` 
+      const descripToUse = categoria === 'otros' ? descripcion.trim() : '';
+      const descripFinal = descripToUse 
+        ? `${catLabel}: ${descripToUse}` 
         : `Gasto General: ${catLabel}`;
 
       await powerSync.execute(
@@ -157,14 +158,16 @@ export function RegistrarGastoGeneralScreen() {
               )}
 
               {/* DESCRIPCIÓN */}
-              <TextInput
-                mode="outlined"
-                label={categoria === 'otros' ? 'Descripción (Obligatorio)' : 'Descripción (Opcional)'}
-                value={descripcion}
-                onChangeText={setDescripcion}
-                style={styles.descripcionInput}
-                outlineStyle={{ borderRadius: 10 }}
-              />
+              {categoria === 'otros' && (
+                <TextInput
+                  mode="outlined"
+                  label="Descripción (Obligatorio)"
+                  value={descripcion}
+                  onChangeText={setDescripcion}
+                  style={styles.descripcionInput}
+                  outlineStyle={{ borderRadius: 10 }}
+                />
+              )}
 
               {/* BOTÓN GUARDAR */}
               <Button

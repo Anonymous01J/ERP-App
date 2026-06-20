@@ -37,14 +37,16 @@ export function FinanzasDashboardScreen() {
     FROM movimientos
     UNION ALL
     SELECT 
-      'Abono/Pago de Cliente' as descripcion, 
-      monto_equivalente_usd as monto, 
+      'Abono: ' || c.razon_social as descripcion, 
+      ap.monto_equivalente_usd as monto, 
       'USD' as moneda, 
       1 as tasa_cambio, 
-      fecha_pago as fecha, 
+      ap.fecha_pago as fecha, 
       'ingreso' as tipo, 
       'abono' as origen
-    FROM abonos_pagos
+    FROM abonos_pagos ap
+    JOIN pedidos p ON p.id = ap.id_pedido
+    JOIN clientes c ON c.id = p.id_cliente
     ORDER BY fecha DESC
   `);
 

@@ -250,16 +250,14 @@ const ParadasViaje = ({
   const handleMarcarEntregado = async (idParada: string, idPedido: string, razonSocial: string) => {
     try {
       const now = new Date().toISOString();
-      await powerSync.writeTransaction(async (tx: any) => {
-        await tx.executeAsync(
-          `UPDATE entregas_viaje SET estado = 'entregado', hora_llegada = ? WHERE id = ?`,
-          [now, idParada]
-        );
-        await tx.executeAsync(
-          `UPDATE pedidos SET estado = 'entregado' WHERE id = ?`,
-          [idPedido]
-        );
-      });
+      await powerSync.execute(
+        `UPDATE entregas_viaje SET estado = 'entregado', hora_llegada = ? WHERE id = ?`,
+        [now, idParada]
+      );
+      await powerSync.execute(
+        `UPDATE pedidos SET estado = 'entregado' WHERE id = ?`,
+        [idPedido]
+      );
       Toast.show({ type: 'success', text1: 'Parada Completada', text2: `Entrega a ${razonSocial} registrada.` });
     } catch (error) {
       console.error('Error marcando parada:', error);

@@ -101,10 +101,11 @@ export function PedidosDashboardScreen() {
   `);
 
   // Detalles de pedidos logística
-  const { data: detallesTodos = [] } = useQuery(`
     SELECT dp.id_pedido,
       COALESCE(pp.nombre, 'Pote ' || ip.capacidad) as nombre_item,
-      dp.cantidad_solicitada
+      pp.tipo_papel,
+      dp.cantidad_solicitada,
+      dp.cantidad_producida
     FROM detalles_pedido dp
     LEFT JOIN productos_presentacion pp ON pp.id = dp.id_producto
     LEFT JOIN inventario_potes ip ON ip.id = dp.id_pote
@@ -156,6 +157,14 @@ export function PedidosDashboardScreen() {
     }
     const tasa = parseFloat(tasaAbono) || 1;
     const montoUsd = monedaAbono === 'USD' ? monto : monto / tasa;
+
+    const abonadoPrevio = getAbonado(pedidoAbonar.id);
+    const saldo = pedidoAbonar.monto_total - abonadoPrevio;
+
+    if (montoUsd > saldo + 0.01) { // 0.01 tolerance for floating point errors
+      Toast.show({ type: 'error', text1: 'Monto excesivo', text2: `El saldo deudor es solo $${saldo.toFixed(2)} USD.` });
+      return;
+    }
 
     setSavingAbono(true);
     try {
@@ -246,11 +255,19 @@ export function PedidosDashboardScreen() {
                       </Text>
 
                       <View style={{ marginVertical: 8 }}>
-                        {detalles.length > 0 ? detalles.map((d: any, i: number) => (
-                          <Text key={i} variant="bodySmall" style={{ color: '#4b5563' }}>
-                            • {d.cantidad_solicitada} × {d.nombre_item}
-                          </Text>
-                        )) : (
+                        {detalles.length > 0 ? detalles.map((d: any, i: number) => {
+                          const producida = d.cantidad_producida || 0;
+                          const faltante = Math.max(0, d.cantidad_solicitada - producida);
+                          const isComplete = faltante === 0;
+                          return (
+                            <Text key={i} variant="bodySmall" style={{ color: isComplete ? '#16a34a' : '#4b5563', marginBottom: 2 }}>
+                              • {producida} / {d.cantidad_solicitada} {d.nombre_item}
+                              {d.tipo_papel ? ` (${d.tipo_papel})` : ''}
+                              {!isComplete && faltante > 0 && ` - Faltan ${faltante}`}
+                              {isComplete && ' ✓'}
+                            </Text>
+                          );
+                        }) : (
                           <Text variant="bodySmall" style={{ color: '#9ca3af' }}>Sin detalles cargados.</Text>
                         )}
                       </View>
@@ -261,14 +278,14 @@ export function PedidosDashboardScreen() {
                         <Text variant="bodyMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
                           ${pedido.monto_total?.toFixed(2)} USD
                         </Text>
-                        {pedido.estado !== 'listo' && (
+                        {pedido.estado === 'pendiente' && (
                           <Button
                             mode="contained-tonal"
                             compact
-                            onPress={() => handleAvanzarEstado(pedido.id, pedido.estado)}
+                            onPress={() => handleAvanzarEstado(pedido.id, 'pendiente')}
                             style={{ borderRadius: 8 }}
                           >
-                            {pedido.estado === 'pendiente' ? 'En Producción →' : 'Marcar Listo →'}
+                            En Producción →
                           </Button>
                         )}
                         {pedido.estado === 'listo' && (
