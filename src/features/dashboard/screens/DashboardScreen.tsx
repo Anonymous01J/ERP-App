@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 16 },
-  gridItem: { width: '48%', marginBottom: 12 },
+  gridItem: { width: '40%', marginBottom: 12 },
   gridItemContent: { padding: 12, alignItems: 'center' },
   gridItemNumber: { fontWeight: 'bold', marginTop: 4, color: '#1f2937' },
   gridItemLabel: { color: '#6b7280', textAlign: 'center', marginTop: 2 },
