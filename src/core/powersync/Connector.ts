@@ -51,12 +51,12 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
       return; // Nothing to upload
     }
 
-    console.log(`[Connector] Attempting to upload ${transaction.crud.length} changes...`);
+    console.log(`[Connector] Attempting to upload ${transaction.crud.length} changes:`, JSON.stringify(transaction.crud, null, 2));
 
     try {
       const { access_token } = session;
 
-      const { error } = await supabase.functions.invoke('powersync', {
+      const { data, error } = await supabase.functions.invoke('powersync', {
         body: { operations: transaction.crud },
         headers: {
           'Authorization': `Bearer ${access_token}`
@@ -64,6 +64,13 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
       });
 
       if (error) {
+        console.error('[Connector] Edge Function invocation error details:', {
+          message: error.message,
+          name: error.name,
+          status: (error as any).status,
+          context: (error as any).context,
+          data
+        });
         throw error; // Let PowerSync handle the retry
       }
 
