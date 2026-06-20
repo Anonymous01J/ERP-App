@@ -24,6 +24,16 @@ export default function DrawerLayout() {
         }}
       />
       <Drawer.Screen
+        name="clientes"
+        options={{
+          drawerLabel: 'Directorio de Clientes',
+          title: 'Clientes',
+          drawerIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="account-group" size={size} color={color} />
+          ),
+        }}
+      />
+      <Drawer.Screen
         name="proveedores"
         options={{
           drawerLabel: 'Proveedores',
