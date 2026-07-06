@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
+import { globalStyles } from '@core/theme/globalStyles';
+import {  View, StyleSheet, ScrollView , RefreshControl } from 'react-native';
 import { Text, Appbar, useTheme, Divider, Chip } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@powersync/react';
@@ -7,6 +9,7 @@ import { CustomCard } from '@components/ui/CustomCard';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 export function HistorialProduccionScreen() {
+  const { refreshing, onRefresh } = usePullToRefresh();
   const router = useRouter();
   const theme = useTheme();
 
@@ -69,13 +72,13 @@ export function HistorialProduccionScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.containerWhite}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Historial de Producción" subtitle="Lotes procesados" />
       </Appbar.Header>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
         {lotes.length === 0 ? (
           <View style={styles.emptyState}>
             <MaterialCommunityIcons name="clipboard-text-off-outline" size={56} color="#d1d5db" />
@@ -151,8 +154,8 @@ export function HistorialProduccionScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
-  scrollContent: { padding: 12, paddingBottom: 32 },
+  
+  
   card: { marginBottom: 12, borderRadius: 16 },
   cardContent: { padding: 16 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },

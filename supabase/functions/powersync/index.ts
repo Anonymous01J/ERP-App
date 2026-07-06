@@ -52,7 +52,10 @@ serve(async (req) => {
 
     // 3. Process each operation in the batch
     for (const op of operations) {
-      const { op: opType, table, id, opData } = op;
+      const opType = op.op;
+      const table = op.table || op.type; // PowerSync envía 'type' como nombre de tabla
+      const id = op.id;
+      const opData = op.opData || op.data; // PowerSync envía 'data' como el payload
 
       let query;
       switch (opType) {

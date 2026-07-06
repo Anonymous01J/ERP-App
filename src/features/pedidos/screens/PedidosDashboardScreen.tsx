@@ -1,5 +1,8 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
+import { globalStyles } from '@core/theme/globalStyles';
+import {  View, StyleSheet, ScrollView, Linking , RefreshControl } from 'react-native';
 import {
   Chip, Text, ProgressBar, Button, useTheme,
   SegmentedButtons, Divider, Dialog, Portal, TextInput,
@@ -11,6 +14,29 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { Pedido } from '../../core/powersync/types';
+
+interface PedidoLogisticaRow extends Pedido {
+  razon_social: string;
+}
+
+interface PedidoFinanzasRow extends Pedido {
+  razon_social: string;
+  telefono: string | null;
+}
+
+interface AbonoTotalRow {
+  id_pedido: string;
+  total_abonado: number;
+}
+
+interface DetallePedidoConNombresRow {
+  id_pedido: string;
+  nombre_item: string;
+  tipo_papel: string | null;
+  cantidad_solicitada: number;
+  cantidad_producida: number | null;
+}
 
 // Calcula el estado financiero de un pedido a partir de la fecha de vencimiento
 function calcularEstadoFinanciero(fechaVencimiento: string | null): 'al_dia' | 'por_vencer' | 'atrasado' {
@@ -52,6 +78,8 @@ function estadoFinLabel(estado: string) {
 }
 
 export function PedidosDashboardScreen() {
+  const { refreshing, onRefresh } = usePullToRefresh();
+  const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
   const powerSync = usePowerSync();
@@ -62,7 +90,7 @@ export function PedidosDashboardScreen() {
 
   // --- Dialog de abono ---
   const [dialogVisible, setDialogVisible] = useState(false);
-  const [pedidoAbonar, setPedidoAbonar] = useState<any>(null);
+  const [pedidoAbonar, setPedidoAbonar] = useState<PedidoFinanzasRow | null>(null);
   const [montoAbono, setMontoAbono] = useState('');
   const [monedaAbono, setMonedaAbono] = useState<'USD' | 'VES'>('USD');
   const [tasaAbono, setTasaAbono] = useState('');
@@ -77,7 +105,7 @@ export function PedidosDashboardScreen() {
     'Entregado': "AND p.estado = 'entregado'",
   };
 
-  const { data: pedidosLog = [] } = useQuery(`
+  const { data: pedidosLog = [] } = useQuery<PedidoLogisticaRow>(`
     SELECT p.id, p.estado, p.monto_total, p.fecha_entrega_estimada, c.razon_social
     FROM pedidos p
     JOIN clientes c ON c.id = p.id_cliente
@@ -85,8 +113,8 @@ export function PedidosDashboardScreen() {
     ORDER BY p.fecha_entrega_estimada ASC
   `);
 
-  const { data: pedidosFin = [] } = useQuery(`
-    SELECT p.id, p.estado, p.estado_pago, p.monto_total, p.fecha_vencimiento_credito, c.razon_social
+  const { data: pedidosFin = [] } = useQuery<PedidoFinanzasRow>(`
+    SELECT p.id, p.estado, p.estado_pago, p.monto_total, p.fecha_vencimiento_credito, c.razon_social, c.telefono
     FROM pedidos p
     JOIN clientes c ON c.id = p.id_cliente
     WHERE p.estado = 'entregado' AND p.estado_pago = 'pendiente'
@@ -94,13 +122,14 @@ export function PedidosDashboardScreen() {
   `);
 
   // Totales abonados por pedido
-  const { data: abonosTodos = [] } = useQuery(`
+  const { data: abonosTodos = [] } = useQuery<AbonoTotalRow>(`
     SELECT id_pedido, SUM(monto_equivalente_usd) as total_abonado
     FROM abonos_pagos
     GROUP BY id_pedido
   `);
 
   // Detalles de pedidos logística
+  const { data: detallesTodos = [] } = useQuery<DetallePedidoConNombresRow>(`
     SELECT dp.id_pedido,
       COALESCE(pp.nombre, 'Pote ' || ip.capacidad) as nombre_item,
       pp.tipo_papel,
@@ -112,15 +141,15 @@ export function PedidosDashboardScreen() {
   `);
 
   const getDetallesPedido = (idPedido: string) =>
-    (detallesTodos as any[]).filter(d => d.id_pedido === idPedido);
+    detallesTodos.filter(d => d.id_pedido === idPedido);
 
   const getAbonado = (idPedido: string): number => {
-    const row = (abonosTodos as any[]).find(a => a.id_pedido === idPedido);
+    const row = abonosTodos.find(a => a.id_pedido === idPedido);
     return row ? row.total_abonado : 0;
   };
 
   // --- Filtrar vista finanzas ---
-  const filteredFin = (pedidosFin as any[]).filter(p => {
+  const filteredFin = pedidosFin.filter(p => {
     const estado = calcularEstadoFinanciero(p.fecha_vencimiento_credito);
     if (filtroFin === 'Todos') return true;
     if (filtroFin === 'Al Día') return estado === 'al_dia';
@@ -140,8 +169,36 @@ export function PedidosDashboardScreen() {
     }
   };
 
+  // --- Recordatorio WhatsApp ---
+  const handleRecordatorioWhatsApp = (pedido: any, saldo: number, estadoFin: string) => {
+    if (!pedido.telefono) {
+      Toast.show({ type: 'error', text1: 'Sin teléfono', text2: 'El cliente no tiene teléfono registrado.' });
+      return;
+    }
+    // Clean phone number (remove spaces, -, etc)
+    const phone = pedido.telefono.replace(/[^0-9+]/g, '');
+    
+    let mensaje = '';
+    if (estadoFin === 'atrasado') {
+      mensaje = `Hola ${pedido.razon_social}, le escribimos para recordarle que su factura tiene un saldo pendiente de $${saldo.toFixed(2)} USD que se encuentra *VENCIDO*. Agradecemos su pronto pago.`;
+    } else if (estadoFin === 'por_vencer') {
+      mensaje = `Hola ${pedido.razon_social}, le escribimos para recordarle que su factura con saldo de $${saldo.toFixed(2)} USD está próxima a vencer.`;
+    } else {
+      mensaje = `Hola ${pedido.razon_social}, le adjuntamos el estado de su cuenta. Saldo actual: $${saldo.toFixed(2)} USD.`;
+    }
+
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(mensaje)}`;
+    Linking.canOpenURL(url).then(supported => {
+      if (supported) {
+        Linking.openURL(url);
+      } else {
+        Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir WhatsApp' });
+      }
+    });
+  };
+
   // --- Registrar abono ---
-  const handleAbrirAbono = (pedido: any) => {
+  const handleAbrirAbono = (pedido: PedidoFinanzasRow) => {
     setPedidoAbonar(pedido);
     setMontoAbono('');
     setMonedaAbono('USD');
@@ -158,6 +215,7 @@ export function PedidosDashboardScreen() {
     const tasa = parseFloat(tasaAbono) || 1;
     const montoUsd = monedaAbono === 'USD' ? monto : monto / tasa;
 
+    if (!pedidoAbonar) return;
     const abonadoPrevio = getAbonado(pedidoAbonar.id);
     const saldo = pedidoAbonar.monto_total - abonadoPrevio;
 
@@ -191,7 +249,7 @@ export function PedidosDashboardScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.container}>
       {/* Tabs principales */}
       <View style={styles.segmentContainer}>
         <SegmentedButtons
@@ -206,7 +264,7 @@ export function PedidosDashboardScreen() {
 
       {/* Filtros secundarios */}
       <View style={styles.filtersContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} horizontal showsHorizontalScrollIndicator={false}>
           {(vista === 'logistica'
             ? ['Todos', 'Pendiente', 'En Producción', 'Listo', 'Entregado']
             : ['Todos', 'Al Día', 'Por Vencer', 'Atrasado']
@@ -224,12 +282,12 @@ export function PedidosDashboardScreen() {
         </ScrollView>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={globalStyles.scrollContent}>
 
         {/* === VISTA LOGÍSTICA === */}
         {vista === 'logistica' && (
           <>
-            {(pedidosLog as any[]).length === 0 ? (
+            {pedidosLog.length === 0 ? (
               <View style={styles.emptyState}>
                 <MaterialCommunityIcons name="package-variant-closed" size={48} color="#d1d5db" />
                 <Text variant="bodyLarge" style={styles.emptyText}>No hay pedidos en este estado.</Text>
@@ -238,7 +296,7 @@ export function PedidosDashboardScreen() {
                 </Button>
               </View>
             ) : (
-              (pedidosLog as any[]).map(pedido => {
+              pedidosLog.map(pedido => {
                 const detalles = getDetallesPedido(pedido.id);
                 return (
                   <CustomCard key={pedido.id}>
@@ -255,7 +313,7 @@ export function PedidosDashboardScreen() {
                       </Text>
 
                       <View style={{ marginVertical: 8 }}>
-                        {detalles.length > 0 ? detalles.map((d: any, i: number) => {
+                        {detalles.length > 0 ? detalles.map((d, i: number) => {
                           const producida = d.cantidad_producida || 0;
                           const faltante = Math.max(0, d.cantidad_solicitada - producida);
                           const isComplete = faltante === 0;
@@ -311,7 +369,7 @@ export function PedidosDashboardScreen() {
                 <Text variant="bodyLarge" style={styles.emptyText}>No hay cuentas pendientes de cobro.</Text>
               </View>
             ) : (
-              filteredFin.map((pedido: any) => {
+              filteredFin.map((pedido) => {
                 const estadoFin = calcularEstadoFinanciero(pedido.fecha_vencimiento_credito);
                 const abonado = getAbonado(pedido.id);
                 const total = pedido.monto_total ?? 0;
@@ -352,15 +410,27 @@ export function PedidosDashboardScreen() {
                         <Text variant="bodyMedium" style={{ fontWeight: 'bold', color: '#374151' }}>
                           Total: ${total.toFixed(2)} USD
                         </Text>
-                        <Button
-                          mode="contained"
-                          compact
-                          onPress={() => handleAbrirAbono(pedido)}
-                          icon="cash-plus"
-                          style={{ borderRadius: 8 }}
-                        >
-                          Abonar
-                        </Button>
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <Button
+                            mode="outlined"
+                            compact
+                            onPress={() => handleRecordatorioWhatsApp(pedido, saldo, estadoFin)}
+                            icon="whatsapp"
+                            textColor="#25D366"
+                            style={{ borderColor: '#25D366', borderRadius: 8 }}
+                          >
+                            Cobrar
+                          </Button>
+                          <Button
+                            mode="contained"
+                            compact
+                            onPress={() => handleAbrirAbono(pedido)}
+                            icon="cash-plus"
+                            style={{ borderRadius: 8 }}
+                          >
+                            Abonar
+                          </Button>
+                        </View>
                       </View>
                     </View>
                   </CustomCard>
@@ -376,7 +446,7 @@ export function PedidosDashboardScreen() {
         <Button
           mode="contained"
           icon="plus"
-          style={styles.fab}
+          style={[globalStyles.fab, { bottom: Math.max(insets.bottom + 16, 16) }]}
           onPress={() => router.push('/(screens)/nuevo-pedido')}
         >
           Nuevo Pedido
@@ -436,14 +506,14 @@ export function PedidosDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  
   segmentContainer: { padding: 16, backgroundColor: '#ffffff' },
   filtersContainer: {
     paddingVertical: 10, paddingHorizontal: 8,
     backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
   },
   chip: { marginHorizontal: 4 },
-  scrollContent: { padding: 8, paddingBottom: 100, gap: 8 },
+  
   cardContent: { padding: 16 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
   clienteNombre: { fontWeight: 'bold', color: '#1f2937', flex: 1, marginRight: 8 },
@@ -455,8 +525,5 @@ const styles = StyleSheet.create({
   progressBar: { height: 8, borderRadius: 4 },
   emptyState: { alignItems: 'center', marginTop: 60, padding: 24 },
   emptyText: { color: '#9ca3af', marginTop: 12 },
-  fab: {
-    position: 'absolute', bottom: 16, right: 16,
-    borderRadius: 16, paddingHorizontal: 8,
-  },
+  
 });

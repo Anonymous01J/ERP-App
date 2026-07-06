@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, Alert } from 'react-native';
 import { TextInput, Button, Text, Surface, useTheme } from 'react-native-paper';
 import { supabase } from '../../../core/supabase/client';
@@ -61,7 +62,7 @@ export function LoginScreen() {
   };
 
   return (
-    <Surface style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <Surface style={[globalStyles.containerWhite, { backgroundColor: theme.colors.background }]}>
       <View style={styles.formContainer}>
         <Text variant="headlineMedium" style={styles.title}>ERP App</Text>
         <Text variant="bodyMedium" style={styles.subtitle}>Inicia sesión para continuar</Text>
@@ -118,11 +119,7 @@ export function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 20,
-  },
+  
   formContainer: {
     backgroundColor: 'white',
     padding: 24,

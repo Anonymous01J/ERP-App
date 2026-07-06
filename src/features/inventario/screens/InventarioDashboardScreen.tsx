@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
+import { globalStyles } from '@core/theme/globalStyles';
+import {  View, StyleSheet, ScrollView, Alert , RefreshControl } from 'react-native';
 import {
   SegmentedButtons, List, Text, Button, Divider,
   useTheme, Dialog, Portal, TextInput, ProgressBar,
@@ -9,8 +11,14 @@ import { CustomCard } from '@ui/CustomCard';
 import { usePowerSync, useQuery } from '@powersync/react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
+import { TipoPapel, ProductoPresentacion, InventarioPote, BobinaGrande } from '../../core/powersync/types';
+
+interface BobinaActivaRow extends BobinaGrande {
+  tipo_papel_nombre: string | null;
+}
 
 export function InventarioDashboardScreen() {
+  const { refreshing, onRefresh } = usePullToRefresh();
   const router = useRouter();
   const theme = useTheme();
   const powerSync = usePowerSync();
@@ -18,41 +26,50 @@ export function InventarioDashboardScreen() {
 
   // --- Dialog de merma ---
   const [dialogVisible, setDialogVisible] = useState(false);
-  const [bobinaSeleccionada, setBobinaSeleccionada] = useState<any>(null);
+  const [bobinaSeleccionada, setBobinaSeleccionada] = useState<BobinaActivaRow | null>(null);
   const [mermaKg, setMermaKg] = useState('');
   const [pesoMuertoKg, setPesoMuertoKg] = useState('');
   const [savingMerma, setSavingMerma] = useState(false);
 
   // --- Queries ---
-  const { data: bobinasActivas = [] } = useQuery(`
-    SELECT bg.id, bg.tipo_papel, bg.peso_inicial_kg, bg.peso_actual_kg,
+  const { data: bobinasActivas = [] } = useQuery<BobinaActivaRow>(`
+    SELECT bg.id, bg.id_tipo_papel, bg.peso_inicial_kg, bg.peso_actual_kg,
            bg.merma_core_kg, bg.peso_muerto_kg, bg.costo_bobina,
-           bg.fecha_llegada, bg.estado, bg.id_viaje_compra
+           bg.fecha_llegada, bg.estado, bg.id_viaje_compra,
+           tp.nombre as tipo_papel_nombre
     FROM bobinas_grandes bg
+    LEFT JOIN tipos_papel tp ON bg.id_tipo_papel = tp.id
     WHERE bg.estado IN ('disponible', 'en_uso')
     ORDER BY bg.fecha_llegada ASC
   `);
 
-  const { data: presentaciones = [] } = useQuery(`
+  const { data: tiposPapel = [] } = useQuery<TipoPapel>(`
+    SELECT id, nombre FROM tipos_papel WHERE estado = 'activo' ORDER BY nombre ASC
+  `);
+
+  const { data: presentaciones = [] } = useQuery<ProductoPresentacion>(`
     SELECT id, nombre, stock_unidades_sueltas, rollos_por_paquete, precio_USD
     FROM productos_presentacion
     WHERE estado = 'activo'
     ORDER BY peso_nominal_g ASC
   `);
 
-  const { data: potesActivos = [] } = useQuery(`
+  const { data: potesActivos = [] } = useQuery<InventarioPote>(`
     SELECT id, capacidad, stock_unidades, precio_venta_usd
     FROM inventario_potes
     WHERE estado = 'activo'
     ORDER BY capacidad ASC
   `);
 
-  // Total kg disponibles en inventario
-  const totalKgInventario = (bobinasActivas as any[]).reduce(
-    (acc, b) => acc + (b.peso_actual_kg ?? b.peso_inicial_kg ?? 0), 0
-  );
+  // Agrupar kilos por tipo de papel dinámicamente
+  const kgPorTipo = tiposPapel.map(tp => {
+    const total = bobinasActivas
+      .filter(b => b.id_tipo_papel === tp.id)
+      .reduce((acc, b) => acc + (b.peso_actual_kg ?? b.peso_inicial_kg ?? 0), 0);
+    return { id: tp.id, nombre: tp.nombre, total };
+  });
 
-  const handleAbrirMerma = (bobina: any) => {
+  const handleAbrirMerma = (bobina: BobinaActivaRow) => {
     setBobinaSeleccionada(bobina);
     setMermaKg('');
     setPesoMuertoKg('');
@@ -68,6 +85,7 @@ export function InventarioDashboardScreen() {
     }
     setSavingMerma(true);
     try {
+      if (!bobinaSeleccionada) return;
       const pesoActual = bobinaSeleccionada.peso_actual_kg ?? bobinaSeleccionada.peso_inicial_kg;
       const nuevoPeso = Math.max(0, pesoActual - merma - muerto);
       const nuevoEstado = nuevoPeso <= 0 ? 'agotada' : 'en_uso';
@@ -104,45 +122,38 @@ export function InventarioDashboardScreen() {
           <View style={styles.resumenItem}>
             <MaterialCommunityIcons name="archive-outline" size={28} color={theme.colors.primary} />
             <Text variant="headlineMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
-              {(bobinasActivas as any[]).length}
+              {bobinasActivas.length}
             </Text>
             <Text variant="bodySmall" style={styles.resumenLabel}>Bobinas activas</Text>
           </View>
-          <View style={styles.resumenDivider} />
-          <View style={styles.resumenItem}>
-            <MaterialCommunityIcons name="weight-kilogram" size={28} color={theme.colors.secondary} />
-            <Text variant="headlineMedium" style={{ color: theme.colors.secondary, fontWeight: 'bold' }}>
-              {totalKgInventario.toFixed(0)}
-            </Text>
-            <Text variant="bodySmall" style={styles.resumenLabel}>kg disponibles</Text>
-          </View>
-          <View style={styles.resumenDivider} />
-          <View style={styles.resumenItem}>
-            <MaterialCommunityIcons name="alpha-a-circle" size={28} color="#6366f1" />
-            <Text variant="headlineMedium" style={{ color: '#6366f1', fontWeight: 'bold' }}>
-              {(bobinasActivas as any[]).filter((b: any) => b.tipo_papel === 'A').length}
-            </Text>
-            <Text variant="bodySmall" style={styles.resumenLabel}>Tipo A</Text>
-          </View>
-          <View style={styles.resumenDivider} />
-          <View style={styles.resumenItem}>
-            <MaterialCommunityIcons name="alpha-b-circle" size={28} color="#f59e0b" />
-            <Text variant="headlineMedium" style={{ color: '#f59e0b', fontWeight: 'bold' }}>
-              {(bobinasActivas as any[]).filter((b: any) => b.tipo_papel === 'B').length}
-            </Text>
-            <Text variant="bodySmall" style={styles.resumenLabel}>Tipo B</Text>
-          </View>
+          {kgPorTipo.map((kp) => (
+            <React.Fragment key={kp.id}>
+              <View style={styles.resumenDivider} />
+              <View style={styles.resumenItem}>
+                <MaterialCommunityIcons name="label-outline" size={28} color="#6366f1" />
+                <Text variant="headlineMedium" style={{ color: '#6366f1', fontWeight: 'bold' }}>
+                  {kp.total.toFixed(0)}
+                </Text>
+                <Text variant="bodySmall" style={styles.resumenLabel}>kg {kp.nombre}</Text>
+              </View>
+            </React.Fragment>
+          ))}
         </View>
       </CustomCard>
 
       <View style={styles.headerRow}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>Bobinas en Inventario</Text>
-        <Button mode="text" compact onPress={() => router.push('/(screens)/historial-bobinas')}>
-          Ver Historial
-        </Button>
+        <Text variant="titleMedium" style={globalStyles.sectionTitle}>Bobinas en Inventario</Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Button mode="text" compact onPress={() => router.push('/(screens)/gestionar-tipos-papel')}>
+            Tipos de Papel
+          </Button>
+          <Button mode="text" compact onPress={() => router.push('/(screens)/historial-bobinas')}>
+            Historial
+          </Button>
+        </View>
       </View>
 
-      {(bobinasActivas as any[]).length === 0 ? (
+      {bobinasActivas.length === 0 ? (
         <View style={styles.emptyState}>
           <MaterialCommunityIcons name="archive-off-outline" size={48} color="#d1d5db" />
           <Text variant="bodyLarge" style={styles.emptyText}>
@@ -153,7 +164,7 @@ export function InventarioDashboardScreen() {
           </Text>
         </View>
       ) : (
-        (bobinasActivas as any[]).map((bobina: any) => {
+        bobinasActivas.map(bobina => {
           const pesoActual = bobina.peso_actual_kg ?? bobina.peso_inicial_kg ?? 0;
           const pesoInicial = bobina.peso_inicial_kg ?? 1;
           const progreso = Math.max(0, Math.min(1, pesoActual / pesoInicial));
@@ -163,13 +174,13 @@ export function InventarioDashboardScreen() {
           return (
             <List.Accordion
               key={bobina.id}
-              title={`Tipo ${bobina.tipo_papel} — ${pesoActual.toFixed(1)} kg restantes`}
+              title={`Tipo ${bobina.tipo_papel_nombre ?? '?'} — ${pesoActual.toFixed(1)} kg restantes`}
               description={`Inicial: ${pesoInicial} kg · ${new Date(bobina.fecha_llegada).toLocaleDateString('es-VE')}`}
               left={props => (
                 <List.Icon
                   {...props}
                   icon={esEnUso ? 'archive-arrow-up' : 'archive-outline'}
-                  color={bobina.tipo_papel === 'A' ? '#6366f1' : '#f59e0b'}
+                  color="#6366f1"
                 />
               )}
               style={styles.accordion}
@@ -230,18 +241,18 @@ export function InventarioDashboardScreen() {
   const renderRollos = () => (
     <View>
       <View style={styles.headerRow}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>Rollos Empaquetados</Text>
+        <Text variant="titleMedium" style={globalStyles.sectionTitle}>Rollos Empaquetados</Text>
         <View>
           <Button mode="text" compact onPress={() => router.push('/(screens)/historial-produccion')}>Historial</Button>
           <Button mode="text" compact onPress={() => router.push('/(screens)/gestionar-presentaciones')}>Gestionar</Button>
         </View>
       </View>
-      {(presentaciones as any[]).length === 0 ? (
+      {presentaciones.length === 0 ? (
         <View style={styles.emptyState}>
           <Text variant="bodyLarge" style={styles.emptyText}>No hay presentaciones activas.</Text>
         </View>
       ) : (
-        (presentaciones as any[]).map(prod => {
+        presentaciones.map(prod => {
           const sueltos = prod.stock_unidades_sueltas ?? 0;
           const paquetes = prod.rollos_por_paquete > 0 ? Math.floor(sueltos / prod.rollos_por_paquete) : 0;
           return (
@@ -269,17 +280,17 @@ export function InventarioDashboardScreen() {
   const renderPotes = () => (
     <View>
       <View style={styles.headerRow}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>Inventario de Potes</Text>
+        <Text variant="titleMedium" style={globalStyles.sectionTitle}>Inventario de Potes</Text>
         <Button mode="text" icon="cog" compact onPress={() => router.push('/(screens)/gestionar-potes')}>
           Gestionar
         </Button>
       </View>
-      {(potesActivos as any[]).length === 0 ? (
+      {potesActivos.length === 0 ? (
         <View style={styles.emptyState}>
           <Text variant="bodyLarge" style={styles.emptyText}>No hay potes activos.</Text>
         </View>
       ) : (
-        (potesActivos as any[]).map(pote => (
+        potesActivos.map(pote => (
           <CustomCard key={pote.id}>
             <View style={styles.cardContent}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -302,7 +313,7 @@ export function InventarioDashboardScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.container}>
       <View style={styles.segmentContainer}>
         <SegmentedButtons
           value={tab}
@@ -315,7 +326,7 @@ export function InventarioDashboardScreen() {
         />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
         {tab === 'bobinas' && renderBobinas()}
         {tab === 'terminado' && renderRollos()}
         {tab === 'potes' && renderPotes()}
@@ -327,7 +338,7 @@ export function InventarioDashboardScreen() {
           <Dialog.Title>Registrar Merma / Core</Dialog.Title>
           <Dialog.Content>
             <Text variant="bodyMedium" style={{ marginBottom: 4, color: '#6b7280' }}>
-              Bobina Tipo {bobinaSeleccionada?.tipo_papel} —{' '}
+              Bobina Tipo {bobinaSeleccionada?.tipo_papel_nombre ?? '?'} —{' '}
               <Text style={{ fontWeight: 'bold', color: '#111' }}>
                 {(bobinaSeleccionada?.peso_actual_kg ?? bobinaSeleccionada?.peso_inicial_kg ?? 0).toFixed(1)} kg actuales
               </Text>
@@ -366,16 +377,16 @@ export function InventarioDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  
   segmentContainer: { padding: 16, backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
-  scrollContent: { padding: 8, paddingBottom: 32 },
+  
   resumenCard: { marginBottom: 12 },
   resumenContent: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 16 },
   resumenItem: { alignItems: 'center', flex: 1, gap: 4 },
   resumenLabel: { color: '#6b7280', textAlign: 'center' },
   resumenDivider: { width: 1, height: 50, backgroundColor: '#e5e7eb' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 4, marginVertical: 8 },
-  sectionTitle: { fontWeight: 'bold', color: '#1f2937' },
+  
   accordion: { backgroundColor: '#ffffff', marginBottom: 6, borderRadius: 10 },
   accordionContent: { padding: 16, backgroundColor: '#FAFAFA', borderBottomLeftRadius: 10, borderBottomRightRadius: 10 },
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },

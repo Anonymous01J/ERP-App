@@ -1,33 +1,41 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
+import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, Alert } from 'react-native';
 import { Text, Button, Appbar, useTheme, Divider, TextInput } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { usePowerSync } from '@powersync/react';
+import { usePowerSync, useQuery } from '@powersync/react';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
+import { Menu } from 'react-native-paper';
+
 interface FilaBobina {
   key: string;
-  tipoPapel: 'A' | 'B';
+  idTipoPapel: string | null;
   pesoKg: string;
 }
 
 export function CargarBobinasViajeScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const theme = useTheme();
   const powerSync = usePowerSync();
   const params = useLocalSearchParams();
   const idViaje = params.id as string;
 
+  const { data: tiposPapel = [] } = useQuery('SELECT id, nombre FROM tipos_papel WHERE estado = ? ORDER BY nombre ASC', ['activo']);
+
   const [filas, setFilas] = useState<FilaBobina[]>([
-    { key: uuidv4(), tipoPapel: 'A', pesoKg: '' },
+    { key: uuidv4(), idTipoPapel: null, pesoKg: '' },
   ]);
   const [isSaving, setIsSaving] = useState(false);
+  const [menusVisibles, setMenusVisibles] = useState<Record<string, boolean>>({});
 
   const handleAgregarFila = () => {
-    setFilas(prev => [...prev, { key: uuidv4(), tipoPapel: 'A', pesoKg: '' }]);
+    setFilas(prev => [...prev, { key: uuidv4(), idTipoPapel: null, pesoKg: '' }]);
   };
 
   const handleEliminarFila = (key: string) => {
@@ -35,8 +43,8 @@ export function CargarBobinasViajeScreen() {
     setFilas(prev => prev.filter(f => f.key !== key));
   };
 
-  const handleCambiarTipo = (key: string, tipo: 'A' | 'B') => {
-    setFilas(prev => prev.map(f => f.key === key ? { ...f, tipoPapel: tipo } : f));
+  const handleCambiarTipo = (key: string, idTipo: string) => {
+    setFilas(prev => prev.map(f => f.key === key ? { ...f, idTipoPapel: idTipo } : f));
   };
 
   const handleCambiarPeso = (key: string, valor: string) => {
@@ -50,6 +58,10 @@ export function CargarBobinasViajeScreen() {
       Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Ingresa el peso de al menos una bobina.' });
       return;
     }
+    if (filasValidas.some(f => !f.idTipoPapel)) {
+      Toast.show({ type: 'error', text1: 'Tipos incompletos', text2: 'Selecciona el tipo de papel para cada bobina.' });
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -58,9 +70,9 @@ export function CargarBobinasViajeScreen() {
       for (const fila of filasValidas) {
         const pesoKg = parseFloat(fila.pesoKg);
         await powerSync.execute(
-          `INSERT INTO bobinas_grandes (id, id_viaje_compra, peso_inicial_kg, tipo_papel, peso_actual_kg, fecha_llegada, estado)
+          `INSERT INTO bobinas_grandes (id, id_viaje_compra, peso_inicial_kg, id_tipo_papel, peso_actual_kg, fecha_llegada, estado)
            VALUES (?, ?, ?, ?, ?, ?, 'disponible')`,
-          [uuidv4(), idViaje, pesoKg, fila.tipoPapel, pesoKg, now]
+          [uuidv4(), idViaje, pesoKg, fila.idTipoPapel, pesoKg, now]
         );
       }
 
@@ -117,13 +129,13 @@ export function CargarBobinasViajeScreen() {
   const totalKg = filas.reduce((acc, f) => acc + (parseFloat(f.pesoKg) || 0), 0);
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.containerWhite}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} disabled={isSaving} />
         <Appbar.Content title="Cargar Bobinas" subtitle="Registra el material adquirido" />
       </Appbar.Header>
 
-      <KeyboardAvoidingView style={styles.content} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={globalStyles.content} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
 
           <Text variant="bodyMedium" style={styles.instruccion}>
@@ -149,30 +161,35 @@ export function CargarBobinasViajeScreen() {
                 </View>
 
                 <View style={styles.filaInputs}>
-                  {/* Tipo A / B */}
                   <View style={styles.tipoRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.tipoBtn,
-                        fila.tipoPapel === 'A' && { backgroundColor: theme.colors.primary },
-                      ]}
-                      onPress={() => handleCambiarTipo(fila.key, 'A')}
+                    <Menu
+                      visible={menusVisibles[fila.key] || false}
+                      onDismiss={() => setMenusVisibles(prev => ({ ...prev, [fila.key]: false }))}
+                      anchor={
+                        <Button
+                          mode="outlined"
+                          onPress={() => setMenusVisibles(prev => ({ ...prev, [fila.key]: true }))}
+                          icon="format-list-bulleted-type"
+                          style={{ flex: 1, justifyContent: 'flex-start' }}
+                          textColor={fila.idTipoPapel ? theme.colors.primary : '#555'}
+                        >
+                          {fila.idTipoPapel 
+                            ? (tiposPapel as any[]).find(t => t.id === fila.idTipoPapel)?.nombre || 'Seleccionado' 
+                            : 'Elegir Tipo'}
+                        </Button>
+                      }
                     >
-                      <Text style={[styles.tipoBtnText, fila.tipoPapel === 'A' && { color: '#fff' }]}>
-                        Tipo A
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.tipoBtn,
-                        fila.tipoPapel === 'B' && { backgroundColor: theme.colors.secondary },
-                      ]}
-                      onPress={() => handleCambiarTipo(fila.key, 'B')}
-                    >
-                      <Text style={[styles.tipoBtnText, fila.tipoPapel === 'B' && { color: '#fff' }]}>
-                        Tipo B
-                      </Text>
-                    </TouchableOpacity>
+                      {(tiposPapel as any[]).map(tp => (
+                        <Menu.Item 
+                          key={tp.id} 
+                          onPress={() => { 
+                            handleCambiarTipo(fila.key, tp.id); 
+                            setMenusVisibles(prev => ({ ...prev, [fila.key]: false })); 
+                          }} 
+                          title={tp.nombre} 
+                        />
+                      ))}
+                    </Menu>
                   </View>
 
                   {/* Peso */}
@@ -230,14 +247,14 @@ export function CargarBobinasViajeScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <View style={styles.footer}>
+      <View style={[globalStyles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <Button
           mode="contained"
           onPress={handleConfirmarCarga}
           loading={isSaving}
           disabled={isSaving}
-          style={styles.saveButton}
-          contentStyle={styles.saveButtonContent}
+          style={globalStyles.saveButton}
+          contentStyle={globalStyles.saveButtonContent}
           icon="check-circle"
         >
           Confirmar Carga y Retornar
@@ -257,8 +274,8 @@ export function CargarBobinasViajeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#ffffff' },
-  content: { flex: 1 },
+  
+  
   formContainer: { padding: 24, paddingBottom: 40 },
   instruccion: { color: '#6b7280', marginBottom: 20, lineHeight: 20 },
   headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, paddingHorizontal: 4 },
@@ -288,7 +305,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  footer: { padding: 24, paddingBottom: 36, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  saveButton: { borderRadius: 12 },
-  saveButtonContent: { paddingVertical: 12 },
+  
+  
+  
 });

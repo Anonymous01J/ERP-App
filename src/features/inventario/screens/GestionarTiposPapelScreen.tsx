@@ -2,26 +2,26 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
 import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
 import { globalStyles } from '@core/theme/globalStyles';
-import {  View, StyleSheet, ScrollView, TouchableOpacity , RefreshControl } from 'react-native';
-import { Text, Appbar, useTheme, IconButton, SegmentedButtons, Menu, Avatar } from 'react-native-paper';
+import {  View, StyleSheet, ScrollView, Alert , RefreshControl } from 'react-native';
+import { Appbar, Text, useTheme, FAB, IconButton, Searchbar, SegmentedButtons, Menu, Avatar } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { usePowerSync, useQuery } from '@powersync/react';
-import { CustomCard } from '@components/ui/CustomCard';
+import { CustomCard } from '@ui/CustomCard';
 import Toast from 'react-native-toast-message';
 
-export function GestionarPotesScreen() {
+export default function GestionarTiposPapelScreen() {
   const { refreshing, onRefresh } = usePullToRefresh();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const theme = useTheme();
   const powerSync = usePowerSync();
 
+  const [searchQuery, setSearchQuery] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('activo');
   const [menuVisibleId, setMenuVisibleId] = useState<string | null>(null);
 
-  // Consultar los potes filtrados por estado
-  const { data: potes = [] } = useQuery(
-    `SELECT * FROM inventario_potes WHERE estado = ? ORDER BY capacidad ASC`,
+  const { data: tiposPapel = [] } = useQuery(
+    'SELECT * FROM tipos_papel WHERE estado = ? ORDER BY nombre ASC',
     [filtroEstado]
   );
 
@@ -31,7 +31,7 @@ export function GestionarPotesScreen() {
 
   const handleEdit = (id: string) => {
     setMenuVisibleId(null);
-    router.push(`/(screens)/registrar-pote?id=${id}`);
+    router.push({ pathname: '/(screens)/registrar-tipo-papel', params: { id } });
   };
 
   const handleToggleEstado = async (id: string, estadoActual: string) => {
@@ -39,32 +39,43 @@ export function GestionarPotesScreen() {
     const nuevoEstado = estadoActual === 'activo' ? 'inactivo' : 'activo';
     try {
       await powerSync.execute(
-        `UPDATE inventario_potes SET estado = ? WHERE id = ?`,
+        'UPDATE tipos_papel SET estado = ? WHERE id = ?',
         [nuevoEstado, id]
       );
       Toast.show({
         type: 'success',
-        text1: 'Actualizado',
-        text2: `El pote ha sido ${nuevoEstado === 'activo' ? 'activado' : 'desactivado'}.`,
+        text1: `Tipo de Papel ${nuevoEstado === 'activo' ? 'Activado' : 'Desactivado'}`,
+        text2: 'El estado se ha actualizado correctamente.'
       });
-    } catch (error) {
-      console.error('Error actualizando estado:', error);
+    } catch (e) {
+      console.error(e);
       Toast.show({
         type: 'error',
         text1: 'Error',
-        text2: 'No se pudo actualizar el estado del pote.',
+        text2: 'No se pudo actualizar el estado del tipo de papel.'
       });
     }
   };
+
+  const filteredTipos = tiposPapel.filter(t => 
+    t.nombre?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <View style={globalStyles.container}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
-        <Appbar.Content title="Tipos de Potes" />
+        <Appbar.Content title="Tipos de Papel" />
       </Appbar.Header>
 
       <View style={styles.headerControls}>
+        {/* <Searchbar
+          placeholder="Buscar tipo de papel..."
+          onChangeText={setSearchQuery}
+          value={searchQuery}
+          style={styles.searchbar}
+          elevation={1}
+        /> */}
         <SegmentedButtons
           value={filtroEstado}
           onValueChange={setFiltroEstado}
@@ -76,34 +87,28 @@ export function GestionarPotesScreen() {
         />
       </View>
 
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
-        {potes.map(pote => {
-          const isMenuVisible = menuVisibleId === pote.id;
-          const isInactive = pote.estado === 'inactivo';
+      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={styles.list}>
+        {filteredTipos.map(item => {
+          const isMenuVisible = menuVisibleId === item.id;
+          const isInactive = item.estado === 'inactivo';
 
           return (
-            <CustomCard key={pote.id} style={[styles.cardWrapper, isInactive && styles.cardInactive]}>
+            <CustomCard key={item.id} style={[styles.cardWrapper, isInactive && styles.cardInactive]}>
               <View style={styles.cardContent}>
                 <View style={styles.avatarContainer}>
                   <Avatar.Icon 
                     size={48} 
-                    icon="bottle-tonic-outline" 
-                    style={isInactive ? { backgroundColor: theme.colors.surfaceDisabled } : { backgroundColor: theme.colors.tertiaryContainer }}
-                    color={isInactive ? theme.colors.outline : theme.colors.tertiary}
+                    icon="paper-roll" 
+                    style={isInactive ? { backgroundColor: theme.colors.surfaceDisabled } : undefined}
                   />
                 </View>
                 <View style={styles.textContainer}>
                   <Text variant="titleMedium" style={[{ fontWeight: 'bold' }, isInactive && { color: theme.colors.outline }]}>
-                    Pote de {pote.capacidad}
+                    Papel {item.nombre}
                   </Text>
-                  <Text variant="bodyMedium" style={{ color: isInactive ? theme.colors.outline : '#666' }}>
-                    En stock: {pote.stock_unidades} unidades
+                  <Text variant="bodySmall" style={{ color: isInactive ? theme.colors.outline : '#666' }}>
+                    {item.estado.toUpperCase()}
                   </Text>
-                  <View style={styles.statusRow}>
-                    <Text variant="titleSmall" style={{ color: isInactive ? theme.colors.outline : theme.colors.primary }}>
-                      Venta: ${Number(pote.precio_venta_usd).toFixed(2)} | Compra: ${Number(pote.precio_compra_usd).toFixed(2)}
-                    </Text>
-                  </View>
                 </View>
 
                 <Menu
@@ -113,78 +118,64 @@ export function GestionarPotesScreen() {
                     <IconButton
                       icon="dots-vertical"
                       size={24}
-                      onPress={() => toggleMenu(pote.id)}
+                      onPress={() => toggleMenu(item.id)}
                     />
                   }
                 >
-                  <Menu.Item onPress={() => handleEdit(pote.id)} title="Editar" leadingIcon="pencil" />
+                  <Menu.Item onPress={() => handleEdit(item.id)} title="Editar" leadingIcon="pencil" />
                   <Menu.Item 
-                    onPress={() => handleToggleEstado(pote.id, pote.estado)} 
+                    onPress={() => handleToggleEstado(item.id, item.estado)} 
                     title={isInactive ? "Activar" : "Desactivar"} 
                     leadingIcon={isInactive ? "check-circle" : "cancel"} 
-                    titleStyle={{ color: isInactive ? theme.colors.primary : theme.colors.error }}
                   />
                 </Menu>
               </View>
             </CustomCard>
           );
         })}
-        {potes.length === 0 && (
-          <Text style={styles.emptyText}>No hay potes en este estado.</Text>
+        {filteredTipos.length === 0 && (
+          <View style={styles.empty}>
+            <Text variant="bodyLarge" style={{ color: '#9ca3af' }}>No hay tipos de papel registrados.</Text>
+          </View>
         )}
       </ScrollView>
 
-      <IconButton
+      <FAB
         icon="plus"
-        mode="contained"
-        containerColor={theme.colors.primary}
-        iconColor={theme.colors.onPrimary}
-        size={32}
-        style={[globalStyles.fab, { bottom: Math.max(insets.bottom + 16, 16) }]}
-        onPress={() => router.push('/(screens)/registrar-pote')}
+        style={[globalStyles.fab, { backgroundColor: theme.colors.primaryContainer, bottom: Math.max(insets.bottom + 16, 16) }]}
+        color={theme.colors.onPrimaryContainer}
+        onPress={() => router.push('/(screens)/registrar-tipo-papel')}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  
   headerControls: {
     padding: 16,
     paddingBottom: 8,
     backgroundColor: '#fff',
   },
+  searchbar: {
+    marginBottom: 12,
+    backgroundColor: '#f3f4f6',
+  },
   segmentedButtons: {
     marginBottom: 8,
   },
-  
-  cardContent: {
-    flexDirection: 'row',
-    padding: 16,
-    alignItems: 'center',
-  },
-  avatarContainer: {
-    marginRight: 16,
-  },
-  textContainer: {
-    flex: 1,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  
+  list: { padding: 16, paddingBottom: 100 },
   cardWrapper: {
     marginBottom: 12,
   },
   cardInactive: {
     opacity: 0.6,
   },
-  emptyText: {
-    textAlign: 'center',
-    marginTop: 40,
-    color: '#888',
-  }
+  cardContent: { padding: 16, flexDirection: 'row', alignItems: 'center' },
+  avatarContainer: {
+    marginRight: 16,
+  },
+  textContainer: {
+    flex: 1,
+  },
+  empty: { marginTop: 40, alignItems: 'center' },
 });

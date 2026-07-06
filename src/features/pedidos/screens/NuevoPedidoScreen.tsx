@@ -1,4 +1,6 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useEffect, useCallback } from 'react';
+import { globalStyles } from '@core/theme/globalStyles';
 import {
   View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform,
   TouchableOpacity, ActivityIndicator,
@@ -17,8 +19,10 @@ import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { ItemFormulario } from '../types/pedidos.types';
+import { getTasaDolarBCV, getTasaEuroBCV } from '@core/api/dolar';
 
 export function NuevoPedidoScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const theme = useTheme();
   const powerSync = usePowerSync();
@@ -28,6 +32,9 @@ export function NuevoPedidoScreen() {
   const [menuClienteVisible, setMenuClienteVisible] = useState(false);
   const [fechaEntrega, setFechaEntrega] = useState('');
   const [tasaCambio, setTasaCambio] = useState('');
+  const [tipoTasa, setTipoTasa] = useState<'dolar' | 'euro' | 'efectivo'>('dolar');
+  const [valorDolar, setValorDolar] = useState('');
+  const [valorEuro, setValorEuro] = useState('');
   const [fetchingTasa, setFetchingTasa] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -49,11 +56,11 @@ export function NuevoPedidoScreen() {
     ['activo']
   );
   const { data: productos = [] } = useQuery(
-    'SELECT id, nombre, peso_nominal_g FROM productos_presentacion WHERE estado = ? ORDER BY peso_nominal_g ASC',
+    'SELECT id, nombre, peso_nominal_g, precio_USD FROM productos_presentacion WHERE estado = ? ORDER BY peso_nominal_g ASC',
     ['activo']
   );
   const { data: potes = [] } = useQuery(
-    'SELECT id, capacidad FROM inventario_potes WHERE estado = ? ORDER BY capacidad ASC',
+    'SELECT id, capacidad, precio_venta_usd FROM inventario_potes WHERE estado = ? ORDER BY capacidad ASC',
     ['activo']
   );
 
@@ -61,22 +68,35 @@ export function NuevoPedidoScreen() {
   const fetchTasa = useCallback(async () => {
     setFetchingTasa(true);
     try {
-      const res = await fetch('https://ve.dolarapi.com/v1/dolares');
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0 && data[0].promedio) {
-        setTasaCambio(parseFloat(data[0].promedio).toFixed(2));
-      }
+      const [dolarPromedio, euroPromedio] = await Promise.all([
+        getTasaDolarBCV(),
+        getTasaEuroBCV()
+      ]);
+      
+      const dVal = dolarPromedio.toFixed(2);
+      setValorDolar(dVal);
+      setValorEuro(euroPromedio.toFixed(2));
+
+      if (tipoTasa === 'dolar') setTasaCambio(dVal);
+
     } catch (e) {
       console.warn('No se pudo obtener la tasa de cambio:', e);
       Toast.show({ type: 'info', text1: 'Sin tasa automática', text2: 'Ingresa la tasa manualmente.' });
     } finally {
       setFetchingTasa(false);
     }
-  }, []);
+  }, [tipoTasa]);
 
   useEffect(() => {
     fetchTasa();
   }, [fetchTasa]);
+
+  // Cambiar la tasa si el usuario cambia el tipo
+  useEffect(() => {
+    if (tipoTasa === 'dolar') setTasaCambio(valorDolar);
+    else if (tipoTasa === 'euro') setTasaCambio(valorEuro);
+    else setTasaCambio(''); // Efectivo (Manual)
+  }, [tipoTasa, valorDolar, valorEuro]);
 
   // --- Helpers ---
   const clienteSeleccionado = clientes.find((c: any) => c.id === idCliente);
@@ -187,19 +207,19 @@ export function NuevoPedidoScreen() {
   const canSave = !!idCliente && !!fechaEntrega && items.length > 0 && !isSaving;
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.containerWhite}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} disabled={isSaving} />
         <Appbar.Content title="Nuevo Pedido" subtitle="Crédito a 30 días" />
       </Appbar.Header>
 
-      <KeyboardAvoidingView style={styles.content} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView style={globalStyles.content} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView contentContainerStyle={globalStyles.scrollContent} keyboardShouldPersistTaps="handled">
 
           {/* SECCIÓN 1: Cliente y Entrega */}
           <CustomCard>
             <View style={styles.cardContent}>
-              <Text variant="titleMedium" style={styles.sectionTitle}>1. Cliente y Fecha de Entrega</Text>
+              <Text variant="titleMedium" style={globalStyles.sectionTitle}>1. Cliente y Fecha de Entrega</Text>
 
               {/* Selector de cliente */}
               <Menu
@@ -240,7 +260,7 @@ export function NuevoPedidoScreen() {
           <CustomCard>
             <View style={styles.cardContent}>
               <View style={styles.rowBetween}>
-                <Text variant="titleMedium" style={styles.sectionTitle}>2. Tasa de Cambio (VES/USD)</Text>
+                <Text variant="titleMedium" style={globalStyles.sectionTitle}>2. Tasa de Cambio (Referencia)</Text>
                 <TouchableOpacity onPress={fetchTasa} disabled={fetchingTasa} style={styles.refreshBtn}>
                   {fetchingTasa
                     ? <ActivityIndicator size={18} color={theme.colors.primary} />
@@ -248,17 +268,31 @@ export function NuevoPedidoScreen() {
                   }
                 </TouchableOpacity>
               </View>
+
+              <SegmentedButtons
+                value={tipoTasa}
+                onValueChange={(v) => setTipoTasa(v as 'dolar' | 'euro' | 'efectivo')}
+                buttons={[
+                  { value: 'dolar', label: 'BCV ($)', icon: 'currency-usd' },
+                  { value: 'euro', label: 'BCV (€)', icon: 'currency-eur' },
+                  { value: 'efectivo', label: 'Efectivo', icon: 'cash' },
+                ]}
+                style={{ marginBottom: 12 }}
+              />
+
               <TextInput
                 mode="outlined"
-                label="Bs. por 1 USD"
+                label={tipoTasa === 'euro' ? 'Bs. por 1 EUR' : 'Bs. por 1 USD'}
                 value={tasaCambio}
                 onChangeText={setTasaCambio}
                 keyboardType="numeric"
-                left={<TextInput.Icon icon="currency-usd" />}
+                left={<TextInput.Icon icon={tipoTasa === 'euro' ? 'currency-eur' : 'currency-usd'} />}
                 style={styles.input}
               />
               <HelperText type="info">
-                Tasa obtenida automáticamente de DolarAPI. Puedes editarla si es necesario.
+                {tipoTasa === 'efectivo' 
+                  ? 'Ingresa la tasa de divisa en efectivo manualmente.' 
+                  : 'Tasa obtenida de DolarAPI. Puedes editarla de ser necesario para descuentos.'}
               </HelperText>
             </View>
           </CustomCard>
@@ -266,7 +300,7 @@ export function NuevoPedidoScreen() {
           {/* SECCIÓN 3: Constructor de Productos */}
           <CustomCard>
             <View style={styles.cardContent}>
-              <Text variant="titleMedium" style={styles.sectionTitle}>3. Añadir Productos</Text>
+              <Text variant="titleMedium" style={globalStyles.sectionTitle}>3. Añadir Productos</Text>
 
               <SegmentedButtons
                 value={tipoItem}
@@ -301,7 +335,15 @@ export function NuevoPedidoScreen() {
                   }
                 >
                   {(productos as any[]).map(p => (
-                    <Menu.Item key={p.id} onPress={() => { setIdProductoSel(p.id); setMenuProductoVisible(false); }} title={p.nombre} />
+                    <Menu.Item 
+                      key={p.id} 
+                      onPress={() => { 
+                        setIdProductoSel(p.id); 
+                        setPrecioItem(p.precio_USD ? p.precio_USD.toString() : '');
+                        setMenuProductoVisible(false); 
+                      }} 
+                      title={p.nombre} 
+                    />
                   ))}
                   {productos.length === 0 && <Menu.Item title="No hay presentaciones activas" disabled />}
                 </Menu>
@@ -323,7 +365,15 @@ export function NuevoPedidoScreen() {
                   }
                 >
                   {(potes as any[]).map(p => (
-                    <Menu.Item key={p.id} onPress={() => { setIdPoteSel(p.id); setMenuPoteVisible(false); }} title={`Pote ${p.capacidad}`} />
+                    <Menu.Item 
+                      key={p.id} 
+                      onPress={() => { 
+                        setIdPoteSel(p.id); 
+                        setPrecioItem(p.precio_venta_usd ? p.precio_venta_usd.toString() : '');
+                        setMenuPoteVisible(false); 
+                      }} 
+                      title={`Pote ${p.capacidad}`} 
+                    />
                   ))}
                   {potes.length === 0 && <Menu.Item title="No hay potes activos" disabled />}
                 </Menu>
@@ -361,7 +411,7 @@ export function NuevoPedidoScreen() {
           {items.length > 0 && (
             <CustomCard>
               <View style={styles.cardContent}>
-                <Text variant="titleMedium" style={styles.sectionTitle}>4. Resumen del Pedido</Text>
+                <Text variant="titleMedium" style={globalStyles.sectionTitle}>4. Resumen del Pedido</Text>
                 {items.map(item => (
                   <View key={item.key} style={styles.itemRow}>
                     <View style={{ flex: 1 }}>
@@ -404,12 +454,12 @@ export function NuevoPedidoScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <View style={styles.footer}>
+      <View style={[globalStyles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <Button
           mode="contained"
           onPress={handleGuardar}
-          style={styles.saveButton}
-          contentStyle={styles.saveButtonContent}
+          style={globalStyles.saveButton}
+          contentStyle={globalStyles.saveButtonContent}
           disabled={!canSave}
           loading={isSaving}
         >
@@ -421,11 +471,11 @@ export function NuevoPedidoScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
-  content: { flex: 1 },
-  scrollContent: { padding: 8, paddingBottom: 32, gap: 8 },
+  
+  
+  
   cardContent: { padding: 16 },
-  sectionTitle: { fontWeight: 'bold', marginBottom: 12, color: '#1f2937' },
+  
   menuBtn: { marginBottom: 4 },
   input: { marginBottom: 4 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -435,7 +485,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f3f4f6',
   },
   infoBox: { flexDirection: 'row', alignItems: 'center', borderRadius: 10, padding: 10 },
-  footer: { padding: 16, paddingBottom: 24, backgroundColor: '#ffffff', borderTopWidth: 1, borderTopColor: '#e0e0e0' },
-  saveButton: { borderRadius: 12 },
-  saveButtonContent: { paddingVertical: 12 },
+  
+  
+  
 });

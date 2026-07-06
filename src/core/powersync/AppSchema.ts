@@ -27,6 +27,11 @@ const productos_presentacion = new Table({
   estado: column.text
 });
 
+const tipos_papel = new Table({
+  nombre: column.text,
+  estado: column.text
+});
+
 const proveedores = new Table({
   nombre_empresa: column.text,
   telefono: column.text,
@@ -71,7 +76,7 @@ const abonos_pagos = new Table({
 const bobinas_grandes = new Table({
   id_viaje_compra: column.text,
   peso_inicial_kg: column.real,
-  tipo_papel: column.text,
+  id_tipo_papel: column.text,
   peso_actual_kg: column.real,
   peso_muerto_kg: column.real,
   merma_core_kg: column.real,
@@ -137,5 +142,6 @@ export const AppSchema = new Schema({
   consumo_bobinas,
   detalles_pedido,
   entregas_viaje,
-  movimientos
+  movimientos,
+  tipos_papel
 });

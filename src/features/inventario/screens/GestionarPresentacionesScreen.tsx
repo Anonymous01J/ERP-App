@@ -1,5 +1,8 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
+import { globalStyles } from '@core/theme/globalStyles';
+import {  View, StyleSheet, ScrollView, TouchableOpacity , RefreshControl } from 'react-native';
 import { Text, Appbar, useTheme, IconButton, Divider, SegmentedButtons, Menu, Avatar, ActivityIndicator } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { usePowerSync, useQuery } from '@powersync/react';
@@ -7,6 +10,8 @@ import { CustomCard } from '@components/ui/CustomCard';
 import Toast from 'react-native-toast-message';
 
 export function GestionarPresentacionesScreen() {
+  const { refreshing, onRefresh } = usePullToRefresh();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const theme = useTheme();
   const powerSync = usePowerSync();
@@ -59,7 +64,7 @@ export function GestionarPresentacionesScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.container}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Tipos de Rollo (Presentaciones)" />
@@ -77,11 +82,11 @@ export function GestionarPresentacionesScreen() {
         />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
         {isLoading ? (
           <ActivityIndicator style={{ marginTop: 50 }} />
         ) : presentaciones.length > 0 ? (
-          presentaciones.map(pres => {
+          presentaciones.map((pres: any) => {
             const isExpanded = expandedId === pres.id;
             const isMenuVisible = menuVisibleId === pres.id;
             const isInactive = pres.estado === 'inactivo';
@@ -107,7 +112,10 @@ export function GestionarPresentacionesScreen() {
                       </Text>
                       <View style={styles.statusRow}>
                         <Text variant="titleSmall" style={{ color: isInactive ? theme.colors.outline : theme.colors.primary }}>
-                          {pres.rollos_por_paquete} unidades / paquete
+                          {pres.rollos_por_paquete} uds / paq
+                        </Text>
+                        <Text variant="titleSmall" style={{ fontWeight: 'bold', color: isInactive ? theme.colors.outline : '#16a34a' }}>
+                          ${pres.precio_USD ? Number(pres.precio_USD).toFixed(2) : '0.00'}
                         </Text>
                       </View>
                     </View>
@@ -158,7 +166,7 @@ export function GestionarPresentacionesScreen() {
         containerColor={theme.colors.primary}
         iconColor={theme.colors.onPrimary}
         size={32}
-        style={styles.fab}
+        style={[globalStyles.fab, { bottom: Math.max(insets.bottom + 16, 16) }]}
         onPress={() => router.push('/(screens)/registrar-presentacion')}
       />
     </View>
@@ -166,10 +174,7 @@ export function GestionarPresentacionesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F7FA',
-  },
+  
   headerControls: {
     padding: 16,
     paddingBottom: 8,
@@ -178,10 +183,7 @@ const styles = StyleSheet.create({
   segmentedButtons: {
     marginBottom: 8,
   },
-  scrollContent: {
-    padding: 8,
-    paddingBottom: 100,
-  },
+  
   cardContent: {
     flexDirection: 'row',
     padding: 16,
@@ -199,16 +201,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  fab: {
-    position: 'absolute',
-    bottom: 86,
-    right: 16,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  
   cardWrapper: {
     marginBottom: 12,
   },

@@ -1,5 +1,8 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useMemo } from 'react';
-import { View, StyleSheet, ScrollView, Dimensions } from 'react-native';
+import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
+import { globalStyles } from '@core/theme/globalStyles';
+import {  View, StyleSheet, ScrollView, Dimensions , RefreshControl } from 'react-native';
 import { Text, Appbar, useTheme, Divider, Surface, FAB } from 'react-native-paper';
 import { CustomCard } from '@components/ui/CustomCard';
 import { useQuery } from '@powersync/react';
@@ -9,6 +12,8 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 const { width } = Dimensions.get('window');
 
 export function FinanzasDashboardScreen() {
+  const { refreshing, onRefresh } = usePullToRefresh();
+  const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
 
@@ -109,12 +114,12 @@ export function FinanzasDashboardScreen() {
   const formatUsd = (val: number) => `$${val.toFixed(2)}`;
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.container}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.Content title="Resumen Financiero" />
       </Appbar.Header>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
         
         {/* ROW 1: Balance y Deuda */}
         <View style={styles.row}>
@@ -238,7 +243,7 @@ export function FinanzasDashboardScreen() {
       <FAB
         icon="cash-plus"
         label="Registrar"
-        style={styles.fab}
+        style={[globalStyles.fab, { bottom: Math.max(insets.bottom + 16, 16) }]}
         onPress={() => router.push('/(screens)/registrar-gasto')}
       />
     </View>
@@ -246,8 +251,8 @@ export function FinanzasDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
-  scrollContent: { padding: 12, paddingBottom: 32 },
+  
+  
   row: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   kpiBox: { flex: 1, padding: 16, borderRadius: 16 },
   kpiHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -261,5 +266,5 @@ const styles = StyleSheet.create({
   movCard: { marginBottom: 8, borderRadius: 12 },
   movContent: { padding: 12, flexDirection: 'row', alignItems: 'center' },
   iconContainer: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  fab: { position: 'absolute', margin: 16, right: 0, bottom: 0 },
+  
 });

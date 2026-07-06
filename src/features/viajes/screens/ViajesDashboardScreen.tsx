@@ -1,5 +1,8 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
+import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
+import { globalStyles } from '@core/theme/globalStyles';
+import {  View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform , RefreshControl } from 'react-native';
 import { List, Text, Button, useTheme, Chip, IconButton, TextInput, Divider } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { CustomCard } from '@components/ui/CustomCard';
@@ -181,7 +184,11 @@ const GastoViajeForm = ({ idViaje, theme }: { idViaje: string; theme: any }) => 
           onChangeText={setMonto}
           keyboardType="decimal-pad"
           style={[styles.montoInput, { flex: 1 }]}
-          left={<TextInput.Icon icon={moneda === 'USD' ? 'currency-usd' : 'currency-brl'} />}
+          left={
+            moneda === 'USD' 
+              ? <TextInput.Icon icon="currency-usd" /> 
+              : <TextInput.Icon icon={() => <Text style={{ fontWeight: 'bold', fontSize: 16, color: '#555' }}>Bs.</Text>} />
+          }
           outlineStyle={{ borderRadius: 10 }}
         />
         <TouchableOpacity
@@ -314,6 +321,8 @@ const ParadasViaje = ({
 };
 
 export function ViajesDashboardScreen() {
+  const { refreshing, onRefresh } = usePullToRefresh();
+  const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
   const powerSync = usePowerSync();
@@ -483,7 +492,7 @@ export function ViajesDashboardScreen() {
 
   // Hook de paradas para cada viaje activo (se cargan dentro de ParadasViaje)
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={globalStyles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* Filtros */}
       <View style={styles.filtersContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -495,7 +504,7 @@ export function ViajesDashboardScreen() {
         </ScrollView>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
 
         {/* VIAJES ACTIVOS */}
         {viajesActivos.length > 0 && (
@@ -534,11 +543,21 @@ export function ViajesDashboardScreen() {
               >
                 <View style={styles.accordionContent}>
                   {viaje.notas ? (
-                    <Text variant="bodyMedium" style={styles.detailText}>Notas: <Text style={{ fontWeight: 'bold' }}>{viaje.notas}</Text></Text>
+                    <Text variant="bodyMedium" style={styles.detailText}>
+                      Notas: <Text style={{ fontWeight: 'bold' }}>{viaje.notas}</Text>
+                    </Text>
                   ) : null}
-                  <Text variant="bodySmall" style={styles.detailText}>
+                  <Text variant="bodySmall" style={[styles.detailText, { marginBottom: 16 }]}>
                     Llegada a base: {formatFecha(viaje.fecha_viaje_llegada_base)}
                   </Text>
+
+                  {/* Paradas de entrega (si hubo) */}
+                  {(viaje.tipo_viaje === 'entrega' || viaje.tipo_viaje === 'mixto') && (
+                    <ParadasViaje idViaje={viaje.id} theme={theme} powerSync={powerSync} />
+                  )}
+
+                  {/* Historial de movimientos (gastos/ingresos) */}
+                  <MovimientosViaje idViaje={viaje.id} theme={theme} />
                 </View>
               </List.Accordion>
             ))}
@@ -558,7 +577,7 @@ export function ViajesDashboardScreen() {
         containerColor={theme.colors.primary}
         iconColor={theme.colors.onPrimary}
         size={32}
-        style={styles.fab}
+        style={[globalStyles.fab, { bottom: Math.max(insets.bottom + 16, 16) }]}
         onPress={() => router.push('/(screens)/registrar-viaje')}
       />
     </KeyboardAvoidingView>
@@ -613,13 +632,13 @@ function ViajeActivoItem({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  
   filtersContainer: {
     paddingVertical: 12, paddingHorizontal: 8,
     backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#e0e0e0',
   },
   chip: { marginHorizontal: 4 },
-  scrollContent: { padding: 8, paddingBottom: 100 },
+  
   sectionHeader: { fontWeight: 'bold', marginLeft: 8, marginBottom: 8, color: '#333' },
   accordion: { backgroundColor: '#ffffff', marginBottom: 8, borderRadius: 8 },
   accordionContent: {
@@ -640,11 +659,7 @@ const styles = StyleSheet.create({
   },
   actionRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16, gap: 8 },
   actionButton: { borderRadius: 8 },
-  fab: {
-    position: 'absolute', bottom: 16, right: 16,
-    width: 64, height: 64, borderRadius: 32,
-    justifyContent: 'center', alignItems: 'center',
-  },
+  
   // Estilos del nuevo GastoViajeForm
   formCard: {
     marginTop: 16,
@@ -698,4 +713,3 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
 });
-

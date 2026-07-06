@@ -8,11 +8,13 @@ import { SupabaseConnector } from '../core/powersync/Connector';
 type AuthContextType = {
   session: Session | null;
   isLoading: boolean;
+  signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType>({
   session: null,
   isLoading: true,
+  signOut: async () => {},
 });
 
 export const useAuth = () => {
@@ -58,8 +60,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
+  const signOut = async () => {
+    await supabase.auth.signOut();
+  };
+
   return (
-    <AuthContext.Provider value={{ session, isLoading }}>
+    <AuthContext.Provider value={{ session, isLoading, signOut }}>
       {children}
     </AuthContext.Provider>
   );

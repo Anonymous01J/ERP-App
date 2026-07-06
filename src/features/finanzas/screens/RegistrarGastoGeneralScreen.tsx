@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { Appbar, useTheme, TextInput, Button, Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -68,14 +69,14 @@ export function RegistrarGastoGeneralScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.containerWhite}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} disabled={saving} />
         <Appbar.Content title="Registrar Gasto / Ingreso" />
       </Appbar.Header>
 
-      <KeyboardAvoidingView style={styles.content} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+      <KeyboardAvoidingView style={globalStyles.content} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={globalStyles.scrollContent}>
           <CustomCard>
             <View style={styles.cardContent}>
               
@@ -191,9 +192,9 @@ export function RegistrarGastoGeneralScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
-  content: { flex: 1 },
-  scrollContent: { padding: 16 },
+  
+  
+  
   cardContent: { padding: 16 },
   sectionLabel: { color: '#9ca3af', fontWeight: 'bold', letterSpacing: 0.5, marginBottom: 10 },
   tipoRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },

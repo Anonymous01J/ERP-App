@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text, Button, Appbar, useTheme, TextInput } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -102,17 +103,17 @@ export default function RegistrarPoteScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.containerWhite}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title={isEditing ? 'Editar Pote' : 'Nuevo Pote'} />
       </Appbar.Header>
 
       <KeyboardAvoidingView 
-        style={styles.content} 
+        style={globalStyles.content} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={globalStyles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.formContainer}>
             <Text variant="titleMedium" style={styles.title}>
               Datos del Pote
@@ -170,16 +171,9 @@ export default function RegistrarPoteScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F7FA',
-  },
-  content: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-  },
+  
+  
+  
   title: {
     fontWeight: 'bold',
     marginBottom: 16,

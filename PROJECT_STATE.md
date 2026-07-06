@@ -173,27 +173,37 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 
 ---
 
-## 6. Schema de Base de Datos
-
-- Todas las tablas con UUID, RLS habilitado y políticas `FOR ALL TO authenticated`.
-- Schema definido en `src/core/powersync/AppSchema.ts` (PowerSync) y `src/SCHEMA_SUPABASE.sql` (Supabase).
-- **Tablas principales:** `clientes`, `proveedores`, `pedidos`, `detalles_pedido`, `abonos_pagos`, `productos_presentacion`, `inventario_potes`, `viajes`, `entregas_viaje`, `bobinas_grandes`, `movimientos`.
-- **Columnas migradas manualmente en Supabase (ya aplicadas):**
-  ```sql
-  ALTER TABLE public.entregas_viaje ADD COLUMN IF NOT EXISTS hora_llegada timestamp with time zone;
-  ALTER TABLE public.entregas_viaje ADD COLUMN IF NOT EXISTS estado text NOT NULL DEFAULT 'pendiente';
-  ALTER TABLE public.entregas_viaje ADD COLUMN IF NOT EXISTS orden int NOT NULL DEFAULT 1;
-  ```
+## 6. Multi-Moneda y Flexibilidad Financiera
+- **Precios Flexibles:** Las presentaciones y potes tienen un `precio_USD` base en la BD.
+- **Tasas de Cambio Dinámicas:** En la creación de pedidos, el usuario puede alternar entre tasas BCV ($), BCV (€) consultadas vía API (`dolarapi.com`), o ingresar una tasa "Efectivo" manual.
+- **Auto-completado y Edición:** Al añadir un producto a un pedido, se auto-completa el precio unitario base en USD, pero el usuario puede editarlo libremente (ej. para aplicar descuentos por volumen) antes de guardar.
 
 ---
 
-## 7. Módulos Pendientes
+## 7. Tipos de Papel Dinámicos
+- **Desacoplamiento Estructural:** Se eliminó la dependencia estática de "Tipo A" y "Tipo B".
+- **Nueva Tabla `tipos_papel`:** Implementada con RLS y sincronización offline-first.
+- **UI Adaptativa:**
+  - El Dashboard de Inventario agrupa automáticamente las métricas de kilos según los tipos de papel activos.
+  - La pantalla de Cargar Bobinas utiliza menús desplegables conectados a la BD para seleccionar el papel adquirido.
+  - Historial y Producción realizan JOINs con la nueva tabla para mostrar nombres reales.
+
+---
+
+## 8. Schema de Base de Datos
+
+- Todas las tablas con UUID, RLS habilitado y políticas `FOR ALL TO authenticated`.
+- Schema definido en `src/core/powersync/AppSchema.ts` (PowerSync) y base de datos (Supabase).
+- **Tablas principales:** `clientes`, `proveedores`, `pedidos`, `detalles_pedido`, `abonos_pagos`, `productos_presentacion`, `inventario_potes`, `viajes`, `entregas_viaje`, `bobinas_grandes`, `movimientos`, `tipos_papel`.
+
+---
+
+## 9. Módulos Pendientes
 
 | Módulo | Estado | Prioridad |
 |---|---|---|
-| Gastos generales (fuera de viaje) | No iniciado | Media |
-| Dashboard de KPIs | No iniciado | Media |
 | Asignación FIFO de stock a pedidos | Pospuesto | Baja |
+| Generación de PDF (Notas de Entrega) | No iniciado | Media |
 
 ---
 

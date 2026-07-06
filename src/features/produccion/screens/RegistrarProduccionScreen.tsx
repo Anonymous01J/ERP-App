@@ -1,4 +1,6 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useMemo } from 'react';
+import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { Text, Button, Appbar, useTheme, Switch, Divider, Menu, Checkbox } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -8,14 +10,31 @@ import { usePowerSync, useQuery } from '@powersync/react';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { ProductoPresentacion, BobinaGrande } from '../../core/powersync/types';
+
+interface BobinaActivaRow extends BobinaGrande {
+  tipo_papel_nombre: string | null;
+}
+
+interface PedidoProduccionRow {
+  id_pedido: string;
+  razon_social: string;
+  estado: string;
+  fecha_entrega_estimada: string;
+  id_producto: string;
+  cantidad_solicitada: number;
+  cantidad_producida: number | null;
+  producto_nombre: string;
+}
 
 export function RegistrarProduccionScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const theme = useTheme();
   const powerSync = usePowerSync();
 
   const [menuVisible, setMenuVisible] = useState(false);
-  const [bobinaSeleccionada, setBobinaSeleccionada] = useState<any>(null);
+  const [bobinaSeleccionada, setBobinaSeleccionada] = useState<BobinaActivaRow | null>(null);
   
   // Estado de cantidades por presentación: { id_producto: cantidad }
   const [cantidades, setCantidades] = useState<Record<string, number>>({});
@@ -25,14 +44,15 @@ export function RegistrarProduccionScreen() {
   const [saving, setSaving] = useState(false);
 
   // Consultas PowerSync
-  const { data: bobinas = [] } = useQuery(`
-    SELECT id, tipo_papel, peso_actual_kg, peso_inicial_kg, estado
-    FROM bobinas_grandes 
-    WHERE estado IN ('disponible', 'en_uso')
-    ORDER BY fecha_llegada ASC
+  const { data: bobinas = [] } = useQuery<BobinaActivaRow>(`
+    SELECT bg.id, bg.id_tipo_papel, bg.peso_actual_kg, bg.peso_inicial_kg, bg.estado, tp.nombre as tipo_papel_nombre
+    FROM bobinas_grandes bg
+    LEFT JOIN tipos_papel tp ON bg.id_tipo_papel = tp.id
+    WHERE bg.estado IN ('disponible', 'en_uso')
+    ORDER BY bg.fecha_llegada ASC
   `);
 
-  const { data: presentaciones = [] } = useQuery(`
+  const { data: presentaciones = [] } = useQuery<ProductoPresentacion>(`
     SELECT id, nombre, peso_real_g 
     FROM productos_presentacion 
     WHERE estado = 'activo'
@@ -40,7 +60,7 @@ export function RegistrarProduccionScreen() {
   `);
 
   // Obtener pedidos pendientes o en producción con sus detalles
-  const { data: pedidosData = [] } = useQuery(`
+  const { data: pedidosData = [] } = useQuery<PedidoProduccionRow>(`
     SELECT 
       p.id as id_pedido, 
       c.razon_social, 
@@ -61,7 +81,7 @@ export function RegistrarProduccionScreen() {
   // Procesar pedidos para mostrar opciones agrupadas, ya vienen ordenados por fecha
   const pedidosPendientes = useMemo(() => {
     const agrupados: Record<string, any> = {};
-    for (const row of pedidosData as any[]) {
+    for (const row of pedidosData) {
       if (!agrupados[row.id_pedido]) {
         agrupados[row.id_pedido] = {
           id: row.id_pedido,
@@ -135,8 +155,9 @@ export function RegistrarProduccionScreen() {
       const now = new Date().toISOString();
       let totalKgConsumidos = 0;
 
-      // Iterar sobre cada presentación que se produjo
-      for (const prod of presentaciones as any[]) {
+      await powerSync.writeTransaction(async (tx) => {
+        // Iterar sobre cada presentación que se produjo
+        for (const prod of presentaciones) {
         const qTotal = cantidades[prod.id] || 0;
         if (qTotal <= 0) continue;
 
@@ -148,21 +169,21 @@ export function RegistrarProduccionScreen() {
             if (qRestante <= 0) break;
             
             // Buscar cuánto necesita este pedido de este producto
-            const pedidoRow = pedidosData.find((p: any) => p.id_pedido === idPedido && p.id_producto === prod.id);
+            const pedidoRow = pedidosData.find(p => p.id_pedido === idPedido && p.id_producto === prod.id);
             if (pedidoRow) {
               const faltante = Math.max(0, pedidoRow.cantidad_solicitada - (pedidoRow.cantidad_producida || 0));
               const asignar = Math.min(qRestante, faltante);
               
               if (asignar > 0) {
                 // Actualizar detalle de pedido
-                await powerSync.execute(
+                await tx.execute(
                   `UPDATE detalles_pedido SET cantidad_producida = COALESCE(cantidad_producida, 0) + ? WHERE id_pedido = ? AND id_producto = ?`,
                   [asignar, idPedido, prod.id]
                 );
 
                 // Insertar registro de producción
                 const idProdDiaria = uuidv4();
-                await powerSync.execute(
+                await tx.execute(
                   `INSERT INTO produccion_diaria (id, id_producto, id_pedido_destino, fecha, cantidad_rollos_total) VALUES (?, ?, ?, ?, ?)`,
                   [idProdDiaria, prod.id, idPedido, now, asignar]
                 );
@@ -170,7 +191,7 @@ export function RegistrarProduccionScreen() {
                 // Registrar consumo
                 const kgConsumidos = (asignar * (prod.peso_real_g || 0)) / 1000;
                 totalKgConsumidos += kgConsumidos;
-                await powerSync.execute(
+                await tx.execute(
                   `INSERT INTO consumo_bobinas (id, id_produccion, id_bobina, kg_consumidos) VALUES (?, ?, ?, ?)`,
                   [uuidv4(), idProdDiaria, bobinaSeleccionada.id, kgConsumidos]
                 );
@@ -179,13 +200,13 @@ export function RegistrarProduccionScreen() {
 
                 // Actualizar estado del pedido (evaluar si ya se completó en base a los nuevos datos)
                 // Usamos una subconsulta para ver si quedan detalles por producir
-                const { rows } = await powerSync.execute(
+                const { rows } = await tx.execute(
                   `SELECT COUNT(*) as faltantes FROM detalles_pedido WHERE id_pedido = ? AND cantidad_producida < cantidad_solicitada`,
                   [idPedido]
                 );
                 const faltantes = rows?.item(0)?.faltantes || 0;
                 const nuevoEstado = faltantes === 0 ? 'listo' : 'en_produccion';
-                await powerSync.execute(`UPDATE pedidos SET estado = ? WHERE id = ?`, [nuevoEstado, idPedido]);
+                await tx.execute(`UPDATE pedidos SET estado = ? WHERE id = ?`, [nuevoEstado, idPedido]);
               }
             }
           }
@@ -194,14 +215,14 @@ export function RegistrarProduccionScreen() {
         // 2. Asignar el remanente al Stock General
         if (qRestante > 0) {
           // Actualizar stock de presentación
-          await powerSync.execute(
+          await tx.execute(
             `UPDATE productos_presentacion SET stock_unidades_sueltas = COALESCE(stock_unidades_sueltas, 0) + ? WHERE id = ?`,
             [qRestante, prod.id]
           );
 
           // Insertar registro de producción
           const idProdDiaria = uuidv4();
-          await powerSync.execute(
+          await tx.execute(
             `INSERT INTO produccion_diaria (id, id_producto, id_pedido_destino, fecha, cantidad_rollos_total) VALUES (?, ?, NULL, ?, ?)`,
             [idProdDiaria, prod.id, now, qRestante]
           );
@@ -209,7 +230,7 @@ export function RegistrarProduccionScreen() {
           // Registrar consumo
           const kgConsumidos = (qRestante * (prod.peso_real_g || 0)) / 1000;
           totalKgConsumidos += kgConsumidos;
-          await powerSync.execute(
+          await tx.execute(
             `INSERT INTO consumo_bobinas (id, id_produccion, id_bobina, kg_consumidos) VALUES (?, ?, ?, ?)`,
             [uuidv4(), idProdDiaria, bobinaSeleccionada.id, kgConsumidos]
           );
@@ -224,11 +245,12 @@ export function RegistrarProduccionScreen() {
         const fechaUso = bobinaSeleccionada.estado === 'disponible' ? now : bobinaSeleccionada.fecha_uso;
         const fechaGasto = nuevoEstado === 'agotada' ? now : bobinaSeleccionada.fecha_gasto;
 
-        await powerSync.execute(
+        await tx.execute(
           `UPDATE bobinas_grandes SET peso_actual_kg = ?, estado = ?, fecha_uso = ?, fecha_gasto = ? WHERE id = ?`,
           [nuevoPeso, nuevoEstado, fechaUso, fechaGasto, bobinaSeleccionada.id]
         );
       }
+    });
 
       Toast.show({ type: 'success', text1: 'Producción Registrada', text2: `Se consumieron ${totalKgConsumidos.toFixed(2)}kg teóricos.` });
       router.back();
@@ -241,18 +263,18 @@ export function RegistrarProduccionScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.containerWhite}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} disabled={saving} />
         <Appbar.Content title="Registrar Producción" />
       </Appbar.Header>
 
-      <KeyboardAvoidingView style={styles.content} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+      <KeyboardAvoidingView style={globalStyles.content} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={globalStyles.scrollContent}>
           
           <CustomCard>
             <View style={styles.cardContent}>
-              <Text variant="titleMedium" style={styles.sectionTitle}>1. Origen y Material</Text>
+              <Text variant="titleMedium" style={globalStyles.sectionTitle}>1. Origen y Material</Text>
               
               <Text variant="bodyMedium" style={{ marginBottom: 8, color: '#555' }}>Bobina Madre a Descontar</Text>
               <Menu
@@ -267,19 +289,19 @@ export function RegistrarProduccionScreen() {
                     contentStyle={{ flexDirection: 'row-reverse' }}
                   >
                     {bobinaSeleccionada 
-                      ? `Bobina Tipo ${bobinaSeleccionada.tipo_papel} (${(bobinaSeleccionada.peso_actual_kg ?? bobinaSeleccionada.peso_inicial_kg).toFixed(1)}kg)` 
+                      ? `Bobina Tipo ${bobinaSeleccionada.tipo_papel_nombre ?? '?'} (${(bobinaSeleccionada.peso_actual_kg ?? bobinaSeleccionada.peso_inicial_kg).toFixed(1)}kg)` 
                       : 'Seleccionar Bobina'}
                   </Button>
                 }
               >
-                {(bobinas as any[]).map(bob => (
+                {bobinas.map(bob => (
                   <Menu.Item 
                     key={bob.id}
                     onPress={() => { setBobinaSeleccionada(bob); setMenuVisible(false); }} 
-                    title={`Tipo ${bob.tipo_papel} (${(bob.peso_actual_kg ?? bob.peso_inicial_kg).toFixed(1)}kg disponibles)`}
+                    title={`Tipo ${bob.tipo_papel_nombre ?? '?'} (${(bob.peso_actual_kg ?? bob.peso_inicial_kg).toFixed(1)}kg disponibles)`}
                   />
                 ))}
-                {(bobinas as any[]).length === 0 && (
+                {bobinas.length === 0 && (
                   <Menu.Item title="No hay bobinas activas" disabled />
                 )}
               </Menu>
@@ -288,9 +310,9 @@ export function RegistrarProduccionScreen() {
 
           <CustomCard>
             <View style={styles.cardContent}>
-              <Text variant="titleMedium" style={styles.sectionTitle}>2. Rollos Producidos</Text>
+              <Text variant="titleMedium" style={globalStyles.sectionTitle}>2. Rollos Producidos</Text>
               
-              {(presentaciones as any[]).map((prod, index) => (
+              {presentaciones.map((prod, index) => (
                 <View key={prod.id}>
                   <View style={styles.inputRow}>
                     <View>
@@ -310,7 +332,7 @@ export function RegistrarProduccionScreen() {
 
           <CustomCard>
             <View style={styles.cardContent}>
-              <Text variant="titleMedium" style={styles.sectionTitle}>3. Destino y Asignación</Text>
+              <Text variant="titleMedium" style={globalStyles.sectionTitle}>3. Destino y Asignación</Text>
               <View style={styles.switchRow}>
                 <View style={{ flex: 1, paddingRight: 16 }}>
                   <Text variant="bodyLarge">Vincular a Pedidos Pendientes</Text>
@@ -379,12 +401,12 @@ export function RegistrarProduccionScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <View style={styles.footer}>
+      <View style={[globalStyles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <Button 
           mode="contained" 
           onPress={handleGuardar} 
-          style={styles.saveButton}
-          contentStyle={styles.saveButtonContent}
+          style={globalStyles.saveButton}
+          contentStyle={globalStyles.saveButtonContent}
           disabled={!bobinaSeleccionada || totalRollos === 0 || saving}
           loading={saving}
           icon="check-circle"
@@ -397,17 +419,17 @@ export function RegistrarProduccionScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
-  content: { flex: 1 },
-  scrollContent: { padding: 8, paddingBottom: 24, gap: 8 },
+  
+  
+  
   cardContent: { padding: 16 },
-  sectionTitle: { fontWeight: 'bold', marginBottom: 16, color: '#333' },
+  
   menuAnchor: { marginBottom: 8 },
   inputRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 4 },
   divider: { marginVertical: 8 },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   infoBox: { marginTop: 16, padding: 16, backgroundColor: '#E3F2FD', borderRadius: 8 },
-  footer: { padding: 16, backgroundColor: '#ffffff', borderTopWidth: 1, borderTopColor: '#e0e0e0' },
-  saveButton: { borderRadius: 8 },
-  saveButtonContent: { paddingVertical: 8 },
+  
+  
+  
 });

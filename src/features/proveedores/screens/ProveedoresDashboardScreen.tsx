@@ -1,4 +1,7 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
+import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
+import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Platform } from 'react-native';
 import { Text, Avatar, useTheme, IconButton, Divider, Searchbar, SegmentedButtons, Menu } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -7,6 +10,8 @@ import { useQuery, usePowerSync } from '@powersync/react';
 import Toast from 'react-native-toast-message';
 
 export function ProveedoresDashboardScreen() {
+  const { refreshing, onRefresh } = usePullToRefresh();
+  const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
   const powerSync = usePowerSync();
@@ -15,7 +20,6 @@ export function ProveedoresDashboardScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('activo');
   const [menuVisibleId, setMenuVisibleId] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
 
   // Consulta PowerSync
   const { data: proveedores = [] } = useQuery(
@@ -117,7 +121,7 @@ export function ProveedoresDashboardScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.container}>
       <View style={styles.header}>
         <Searchbar
           placeholder="Buscar proveedores..."
@@ -138,8 +142,8 @@ export function ProveedoresDashboardScreen() {
       </View>
 
       <ScrollView 
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {}} />}
+        contentContainerStyle={globalStyles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {proveedores.length === 0 ? (
           <View style={styles.emptyState}>
@@ -158,7 +162,7 @@ export function ProveedoresDashboardScreen() {
         containerColor={theme.colors.primary}
         iconColor={theme.colors.onPrimary}
         size={32}
-        style={styles.fab}
+        style={[globalStyles.fab, { bottom: Math.max(insets.bottom + 16, 16) }]}
         onPress={() => router.push('/(screens)/registrar-proveedor')}
       />
     </View>
@@ -166,11 +170,11 @@ export function ProveedoresDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  
   header: { padding: 16, backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#e0e0e0', zIndex: 10 },
   searchbar: { backgroundColor: '#f0f2f5', borderRadius: 12, marginBottom: 16 },
   segmented: { marginHorizontal: 0 },
-  scrollContent: { padding: 16, paddingBottom: 100 },
+  
   card: { marginBottom: 12, borderRadius: 16, overflow: 'hidden' },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 },
   headerContent: { flexDirection: 'row', alignItems: 'center', flex: 1 },
@@ -184,6 +188,6 @@ const styles = StyleSheet.create({
   detailLabel: { color: '#6b7280', marginBottom: 2, fontWeight: 'bold' },
   actionsRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
   opcionesBtn: { padding: 8 },
-  fab: { position: 'absolute', bottom: 16, right: 16, width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center' },
+  
   emptyState: { alignItems: 'center', marginTop: 40 }
 });

@@ -1,4 +1,6 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
+import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text, Button, Appbar, useTheme, TextInput } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -8,6 +10,7 @@ import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 
 export function RegistrarProveedorScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const theme = useTheme();
   const powerSync = usePowerSync();
@@ -76,13 +79,13 @@ export function RegistrarProveedorScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.containerWhite}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} disabled={isLoading} />
         <Appbar.Content title={esEdicion ? "Editar Proveedor" : "Nuevo Proveedor"} />
       </Appbar.Header>
 
-      <KeyboardAvoidingView style={styles.content} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={globalStyles.content} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.formContainer}>
           <TextInput
             mode="outlined"
@@ -124,14 +127,14 @@ export function RegistrarProveedorScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <View style={styles.footer}>
+      <View style={[globalStyles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <Button 
           mode="contained" 
           onPress={handleGuardar} 
           loading={isLoading}
           disabled={isLoading || !nombre.trim()}
-          style={styles.saveButton}
-          contentStyle={styles.saveButtonContent}
+          style={globalStyles.saveButton}
+          contentStyle={globalStyles.saveButtonContent}
         >
           {esEdicion ? 'Guardar Cambios' : 'Registrar Proveedor'}
         </Button>
@@ -141,11 +144,11 @@ export function RegistrarProveedorScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#ffffff' },
-  content: { flex: 1 },
+  
+  
   formContainer: { padding: 24 },
   input: { marginBottom: 16 },
-  footer: { padding: 24, paddingBottom: 36, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  saveButton: { borderRadius: 12 },
-  saveButtonContent: { paddingVertical: 12 }
+  
+  
+  
 });

@@ -1,12 +1,16 @@
-import React, { useState, useCallback } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useState } from 'react';
+import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { Text, Avatar, useTheme, IconButton, Divider, Button, Searchbar, SegmentedButtons, Menu } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { CustomCard } from '@components/ui/CustomCard';
 import { usePowerSync, useQuery } from '@powersync/react';
 import Toast from 'react-native-toast-message';
+import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
 
 export function ClientesDashboardScreen() {
+  const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
   const powerSync = usePowerSync();
@@ -15,47 +19,12 @@ export function ClientesDashboardScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('activo');
   const [menuVisibleId, setMenuVisibleId] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const { refreshing, onRefresh } = usePullToRefresh();
 
   const { data: clientes = [] } = useQuery(
     `SELECT * FROM clientes WHERE estado = ? ORDER BY razon_social ASC`, 
     [filtroEstado]
   );
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      Toast.show({ type: 'info', text1: 'Sincronizando...', text2: 'Comprobando cambios locales y remotos...' });
-
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      const status = powerSync.syncStatus;
-
-      // FIX: Add a guard clause to prevent crash if syncStatus is not ready
-      if (!status) {
-        Toast.show({
-          type: 'info',
-          text1: 'Estado no Disponible',
-          text2: 'La información de sincronización aún no está lista.'
-        });
-        setRefreshing(false);
-        return;
-      }
-
-      if (status.error) {
-        Toast.show({ type: 'error', text1: 'Error de Sincronización', text2: status.error.message || 'No se pudo sincronizar.' });
-      } else if (status.connected) {
-        Toast.show({ type: 'success', text1: 'Sincronización Exitosa', text2: 'Los cambios han sido subidos y bajados correctamente.' });
-      } else {
-        Toast.show({ type: 'info', text1: 'Modo Offline', text2: 'Los cambios están guardados localmente.' });
-      }
-    } catch (e) {
-      console.error('Error al forzar la sincronización:', e);
-      Toast.show({ type: 'error', text1: 'Error', text2: 'Ocurrió un problema inesperado.' });
-    } finally {
-      setRefreshing(false);
-    }
-  }, [powerSync]);
 
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
@@ -92,7 +61,7 @@ export function ClientesDashboardScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.container}>
       <View style={styles.headerControls}>
         <Searchbar
           placeholder="Buscar cliente..."
@@ -113,7 +82,7 @@ export function ClientesDashboardScreen() {
       </View>
 
       <ScrollView 
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={globalStyles.scrollContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
@@ -200,7 +169,7 @@ export function ClientesDashboardScreen() {
         containerColor={theme.colors.primary}
         iconColor={theme.colors.onPrimary}
         size={32}
-        style={styles.fab}
+        style={[globalStyles.fab, { bottom: Math.max(insets.bottom + 16, 16) }]}
         onPress={() => router.push('/(screens)/registrar-cliente')}
       />
     </View>
@@ -208,9 +177,7 @@ export function ClientesDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  
   headerControls: {
     padding: 16,
     paddingBottom: 8,
@@ -223,10 +190,7 @@ const styles = StyleSheet.create({
   segmentedButtons: {
     marginBottom: 8,
   },
-  scrollContent: {
-    padding: 8,
-    paddingBottom: 100,
-  },
+  
   cardContent: {
     flexDirection: 'row',
     padding: 16,
@@ -244,16 +208,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  fab: {
-    position: 'absolute',
-    bottom: 16,
-    right: 16,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  
   cardWrapper: {
     marginBottom: 12,
   },

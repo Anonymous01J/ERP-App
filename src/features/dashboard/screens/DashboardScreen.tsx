@@ -1,5 +1,8 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useMemo } from 'react';
-import { View, StyleSheet, ScrollView, Dimensions } from 'react-native';
+import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
+import { globalStyles } from '@core/theme/globalStyles';
+import {  View, StyleSheet, ScrollView, Dimensions , RefreshControl } from 'react-native';
 import { Text, useTheme, Avatar, SegmentedButtons, FAB } from 'react-native-paper';
 import { CustomCard } from '@components/ui/CustomCard';
 import { LineChart } from 'react-native-gifted-charts';
@@ -8,8 +11,10 @@ import { useRouter } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 export function DashboardScreen() {
+  const { refreshing, onRefresh } = usePullToRefresh();
   const theme = useTheme();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [chartPeriod, setChartPeriod] = useState('Día');
   const [fabOpen, setFabOpen] = useState(false);
 
@@ -174,8 +179,8 @@ export function DashboardScreen() {
   }, [flujoCaja, chartPeriod]);
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+    <View style={globalStyles.container}>
+      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
         
         <Text variant="headlineMedium" style={{ fontWeight: 'bold', marginBottom: 16, color: '#1f2937' }}>Visión Global</Text>
 
@@ -199,7 +204,7 @@ export function DashboardScreen() {
 
           <CustomCard style={styles.gridItem}>
             <View style={styles.gridItemContent}>
-              <MaterialCommunityIcons name="roll-cylinder" size={24} color="#d97706" />
+              <MaterialCommunityIcons name="paper-roll" size={24} color="#d97706" />
               <Text variant="titleLarge" style={styles.gridItemNumber}>{metrics.bobinasKg.toFixed(0)} kg</Text>
               <Text variant="labelSmall" style={styles.gridItemLabel}>Papel Disponible</Text>
             </View>
@@ -341,10 +346,11 @@ export function DashboardScreen() {
       <FAB.Group
         open={fabOpen}
         visible
+        safeAreaInsets={{ bottom: insets.bottom }}
         icon={fabOpen ? 'close' : 'plus'}
         actions={[
           { icon: 'plus-box-outline', label: 'Nuevo Pedido', onPress: () => router.push('/(screens)/nuevo-pedido') },
-          { icon: 'roll-cylinder', label: 'Registrar Producción', onPress: () => router.push('/(screens)/registrar-produccion') },
+          { icon: 'paper-roll', label: 'Registrar Producción', onPress: () => router.push('/(screens)/registrar-produccion') },
           { icon: 'truck', label: 'Registrar Viaje', onPress: () => router.push('/(screens)/registrar-viaje') },
         ]}
         onStateChange={({ open }) => setFabOpen(open)}
@@ -359,8 +365,8 @@ export function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
-  scrollContent: { padding: 16, paddingBottom: 32 },
+  
+  
   alertContent: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 16 },
   textContainer: { flex: 1 },
   chartHeader: { padding: 16, paddingBottom: 0 },

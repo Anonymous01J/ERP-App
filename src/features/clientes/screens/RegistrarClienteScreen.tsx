@@ -1,13 +1,16 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { Button, Appbar, useTheme, TextInput } from 'react-native-paper';
+import { Button, Appbar, useTheme, TextInput, Text } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { usePowerSync } from '@powersync/react';
+import { globalStyles } from '@core/theme/globalStyles';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 
 export function RegistrarClienteScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const theme = useTheme();
   const powerSync = usePowerSync();
@@ -21,7 +24,6 @@ export function RegistrarClienteScreen() {
 
   useEffect(() => {
     if (isEditing && id) {
-      // Cargar datos del cliente existente
       const cargarCliente = async () => {
         try {
           const result = await powerSync.get('SELECT * FROM clientes WHERE id = ?', [id]);
@@ -50,13 +52,11 @@ export function RegistrarClienteScreen() {
       const creditoNumerico = limiteCredito ? parseFloat(limiteCredito) : 0;
 
       if (isEditing && id) {
-        // Actualizar
         await powerSync.execute(
           'UPDATE clientes SET razon_social = ?, telefono = ?, limite_credito = ? WHERE id = ?',
           [nombre.trim(), telefono.trim(), creditoNumerico, id]
         );
       } else {
-        // Insertar
         const newId = uuidv4();
         await powerSync.execute(
           'INSERT INTO clientes (id, razon_social, telefono, limite_credito, estado, saldo_a_favor_usd) VALUES (?, ?, ?, ?, ?, ?)',
@@ -70,7 +70,6 @@ export function RegistrarClienteScreen() {
         text2: 'Sincronizando con el servidor...'
       });
 
-      // Volver atrás después de un breve momento para ver el toast
       setTimeout(() => router.back(), 800);
 
     } catch (error) {
@@ -81,18 +80,21 @@ export function RegistrarClienteScreen() {
     }
   };
 
+  const canSave = nombre.trim().length > 0 && !loading;
+
   return (
-    <View style={styles.container}>
-      <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
+    <View style={globalStyles.containerWhite}>
+      <Appbar.Header style={{ backgroundColor: '#ffffff', elevation: 0 }}>
         <Appbar.BackAction onPress={() => router.back()} disabled={loading} />
         <Appbar.Content title={isEditing ? "Editar Cliente" : "Registrar Cliente"} />
       </Appbar.Header>
 
       <KeyboardAvoidingView 
-        style={styles.content} 
+        style={globalStyles.content} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <ScrollView contentContainerStyle={styles.formContainer}>
+        <ScrollView contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
+          <Text variant="titleMedium" style={globalStyles.sectionTitle}>Datos Principales</Text>
           <TextInput
             mode="outlined"
             label="Nombre o Razón Social"
@@ -122,13 +124,13 @@ export function RegistrarClienteScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <View style={styles.footer}>
+      <View style={[globalStyles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <Button 
           mode="contained" 
           onPress={handleGuardar} 
-          style={styles.saveButton}
-          contentStyle={styles.saveButtonContent}
-          disabled={!nombre || loading}
+          style={globalStyles.saveButton}
+          contentStyle={globalStyles.saveButtonContent}
+          disabled={!canSave}
           loading={loading}
         >
           {isEditing ? "Guardar Cambios" : "Guardar Cliente"}
@@ -139,27 +141,10 @@ export function RegistrarClienteScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  content: {
-    flex: 1,
-  },
   formContainer: {
     padding: 24,
   },
   input: {
     marginBottom: 16,
-  },
-  footer: {
-    padding: 24,
-    paddingBottom: 36,
-  },
-  saveButton: {
-    borderRadius: 12,
-  },
-  saveButtonContent: {
-    paddingVertical: 12,
   },
 });

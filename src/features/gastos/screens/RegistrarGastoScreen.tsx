@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text, Appbar, useTheme, TextInput, IconButton, Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -42,14 +43,14 @@ export function RegistrarGastoScreen() {
   ];
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.containerWhite}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Agenda de Gastos" titleStyle={{ fontWeight: 'bold' }} />
       </Appbar.Header>
 
-      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+      <KeyboardAvoidingView style={globalStyles.containerWhite} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={globalStyles.scrollContent}>
           
           {/* Summary Cards */}
           <View style={styles.summaryRow}>
@@ -174,14 +175,8 @@ export function RegistrarGastoScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F7FA', // Light theme background
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
+  
+  
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

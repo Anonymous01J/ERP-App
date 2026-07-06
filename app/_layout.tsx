@@ -8,6 +8,12 @@ import { db, setupPowerSync } from '../src/core/powersync/system';
 import { AuthProvider, useAuth } from '../src/state/AuthProvider';
 import Toast from 'react-native-toast-message';
 import { SyncStatusNotifier } from '../src/components/ui/SyncStatusNotifier';
+import { LogBox } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+
+LogBox.ignoreLogs([
+  'setLayoutAnimationEnabledExperimental is currently a no-op',
+]);
 
 // Custom theme for the paper rewinding business
 const theme = {
@@ -89,6 +95,7 @@ export default function RootLayout() {
           <RootLayoutNav />
           <SyncStatusNotifier />
           <Toast />
+          <StatusBar style="light" />
         </PaperProvider>
       </PowerSyncContext.Provider>
     </AuthProvider>

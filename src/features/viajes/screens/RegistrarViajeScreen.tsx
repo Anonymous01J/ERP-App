@@ -1,4 +1,6 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
+import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { Text, Button, Appbar, useTheme, TextInput, SegmentedButtons, Menu, Chip, Divider } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -9,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 export function RegistrarViajeScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const theme = useTheme();
   const powerSync = usePowerSync();
@@ -108,13 +111,13 @@ export function RegistrarViajeScreen() {
   const proveedorSeleccionado = proveedores.find((p: any) => p.id === idProveedor);
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.containerWhite}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} disabled={isSaving} />
         <Appbar.Content title="Registrar Viaje" />
       </Appbar.Header>
 
-      <KeyboardAvoidingView style={styles.content} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={globalStyles.content} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
           
           {/* Tipo de Viaje */}
@@ -231,12 +234,12 @@ export function RegistrarViajeScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <View style={styles.footer}>
+      <View style={[globalStyles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <Button
           mode="contained"
           onPress={handleGuardar}
-          style={styles.saveButton}
-          contentStyle={styles.saveButtonContent}
+          style={globalStyles.saveButton}
+          contentStyle={globalStyles.saveButtonContent}
           disabled={isBotonDeshabilitado}
           loading={isSaving}
         >
@@ -248,16 +251,16 @@ export function RegistrarViajeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#ffffff' },
-  content: { flex: 1 },
+  
+  
   formContainer: { padding: 24, paddingBottom: 40 },
   label: { marginBottom: 10, fontWeight: 'bold', color: '#1f2937' },
   segmented: { marginBottom: 24 },
   section: { marginBottom: 24 },
   input: { marginBottom: 16 },
-  footer: { padding: 24, paddingBottom: 36, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  saveButton: { borderRadius: 12 },
-  saveButtonContent: { paddingVertical: 12 },
+  
+  
+  
   chip: { marginBottom: 8, alignSelf: 'flex-start' },
   emptyText: { color: '#9ca3af', fontStyle: 'italic', marginTop: 4 },
   paradasOrden: { marginBottom: 8 },

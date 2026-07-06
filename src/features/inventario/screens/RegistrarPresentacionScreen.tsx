@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text, Button, Appbar, useTheme, TextInput } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -17,6 +18,7 @@ export default function RegistrarPresentacionScreen() {
   const [pesoNominal, setPesoNominal] = useState('');
   const [pesoReal, setPesoReal] = useState('');
   const [unidades, setUnidades] = useState('');
+  const [precio, setPrecio] = useState('');
 
   const isEditing = !!id;
 
@@ -38,6 +40,7 @@ export default function RegistrarPresentacionScreen() {
         setPesoNominal(pres.peso_nominal_g ? pres.peso_nominal_g.toString() : '');
         setPesoReal(pres.peso_real_g ? pres.peso_real_g.toString() : '');
         setUnidades(pres.rollos_por_paquete ? pres.rollos_por_paquete.toString() : '');
+        setPrecio(pres.precio_USD ? pres.precio_USD.toString() : '');
       }
     } catch (error) {
       console.error('Error cargando presentación:', error);
@@ -50,7 +53,7 @@ export default function RegistrarPresentacionScreen() {
   };
 
   const handleGuardar = async () => {
-    if (!nombre.trim() || !pesoNominal || !pesoReal || !unidades) {
+    if (!nombre.trim() || !pesoNominal || !pesoReal || !unidades || !precio) {
       Toast.show({
         type: 'error',
         text1: 'Campos incompletos',
@@ -63,9 +66,9 @@ export default function RegistrarPresentacionScreen() {
       if (isEditing) {
         await powerSync.execute(
           `UPDATE productos_presentacion 
-           SET nombre = ?, peso_nominal_g = ?, peso_real_g = ?, rollos_por_paquete = ? 
+           SET nombre = ?, peso_nominal_g = ?, peso_real_g = ?, rollos_por_paquete = ?, precio_USD = ? 
            WHERE id = ?`,
-          [nombre.trim(), parseInt(pesoNominal), parseInt(pesoReal), parseInt(unidades), id]
+          [nombre.trim(), parseInt(pesoNominal), parseInt(pesoReal), parseInt(unidades), parseFloat(precio), id]
         );
         Toast.show({
           type: 'success',
@@ -75,9 +78,9 @@ export default function RegistrarPresentacionScreen() {
       } else {
         const newId = uuidv4();
         await powerSync.execute(
-          `INSERT INTO productos_presentacion (id, nombre, peso_nominal_g, peso_real_g, rollos_por_paquete, estado) 
-           VALUES (?, ?, ?, ?, ?, 'activo')`,
-          [newId, nombre.trim(), parseInt(pesoNominal), parseInt(pesoReal), parseInt(unidades)]
+          `INSERT INTO productos_presentacion (id, nombre, peso_nominal_g, peso_real_g, rollos_por_paquete, precio_USD, estado) 
+           VALUES (?, ?, ?, ?, ?, ?, 'activo')`,
+          [newId, nombre.trim(), parseInt(pesoNominal), parseInt(pesoReal), parseInt(unidades), parseFloat(precio)]
         );
         Toast.show({
           type: 'success',
@@ -102,17 +105,17 @@ export default function RegistrarPresentacionScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.containerWhite}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title={isEditing ? 'Editar Presentación' : 'Nueva Presentación'} />
       </Appbar.Header>
 
       <KeyboardAvoidingView 
-        style={styles.content} 
+        style={globalStyles.content} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={globalStyles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.formContainer}>
             <Text variant="titleMedium" style={styles.title}>
               Datos de la Presentación
@@ -143,14 +146,25 @@ export default function RegistrarPresentacionScreen() {
                 style={[styles.input, styles.half]}
               />
             </View>
-            <TextInput
-              mode="outlined"
-              label="Unidades por Paquete"
-              value={unidades}
-              onChangeText={setUnidades}
-              keyboardType="numeric"
-              style={styles.input}
-            />
+            <View style={styles.row}>
+              <TextInput
+                mode="outlined"
+                label="Unidades por Paquete"
+                value={unidades}
+                onChangeText={setUnidades}
+                keyboardType="numeric"
+                style={[styles.input, styles.half]}
+              />
+              <TextInput
+                mode="outlined"
+                label="Precio (USD)"
+                value={precio}
+                onChangeText={setPrecio}
+                keyboardType="decimal-pad"
+                left={<TextInput.Icon icon="currency-usd" />}
+                style={[styles.input, styles.half]}
+              />
+            </View>
             <Button 
               mode="contained" 
               onPress={handleGuardar} 
@@ -167,16 +181,9 @@ export default function RegistrarPresentacionScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F7FA',
-  },
-  content: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-  },
+  
+  
+  
   title: {
     fontWeight: 'bold',
     marginBottom: 16,

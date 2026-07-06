@@ -1,5 +1,7 @@
 import React from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
+import { globalStyles } from '@core/theme/globalStyles';
+import {  View, StyleSheet, ScrollView , RefreshControl } from 'react-native';
 import { Text, Appbar, useTheme, Divider, Chip } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@powersync/react';
@@ -7,14 +9,17 @@ import { CustomCard } from '@ui/CustomCard';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 export function HistorialBobinasScreen() {
+  const { refreshing, onRefresh } = usePullToRefresh();
   const router = useRouter();
   const theme = useTheme();
 
   const { data: bobinasAgotadas = [] } = useQuery(`
-    SELECT bg.id, bg.tipo_papel, bg.peso_inicial_kg, bg.peso_actual_kg,
+    SELECT bg.id, bg.id_tipo_papel, bg.peso_inicial_kg, bg.peso_actual_kg,
            bg.merma_core_kg, bg.peso_muerto_kg, bg.costo_bobina,
-           bg.fecha_llegada, bg.fecha_uso, bg.fecha_gasto
+           bg.fecha_llegada, bg.fecha_uso, bg.fecha_gasto,
+           tp.nombre as tipo_papel_nombre
     FROM bobinas_grandes bg
+    LEFT JOIN tipos_papel tp ON bg.id_tipo_papel = tp.id
     WHERE bg.estado = 'agotada'
     ORDER BY bg.fecha_gasto DESC
   `);
@@ -25,13 +30,13 @@ export function HistorialBobinasScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.containerWhite}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Historial de Bobinas" subtitle="Bobinas consumidas" />
       </Appbar.Header>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
         {(bobinasAgotadas as any[]).length === 0 ? (
           <View style={styles.emptyState}>
             <MaterialCommunityIcons name="archive-check-outline" size={56} color="#d1d5db" />
@@ -58,9 +63,9 @@ export function HistorialBobinasScreen() {
                     <View style={styles.tipoContainer}>
                       <View style={[
                         styles.tipoBadge,
-                        { backgroundColor: bobina.tipo_papel === 'A' ? '#6366f1' : '#f59e0b' }
+                        { backgroundColor: '#6366f1' }
                       ]}>
-                        <Text style={styles.tipoBadgeText}>Tipo {bobina.tipo_papel}</Text>
+                        <Text style={styles.tipoBadgeText}>Tipo {bobina.tipo_papel_nombre ?? '?'}</Text>
                       </View>
                       <Text variant="titleMedium" style={styles.titulo}>
                         Bobina #{(bobinasAgotadas as any[]).length - index}
@@ -174,8 +179,8 @@ export function HistorialBobinasScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
-  scrollContent: { padding: 12, paddingBottom: 32 },
+  
+  
   card: { marginBottom: 12, borderRadius: 16 },
   cardContent: { padding: 16 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
