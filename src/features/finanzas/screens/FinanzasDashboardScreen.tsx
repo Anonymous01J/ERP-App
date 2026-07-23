@@ -2,8 +2,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useMemo } from 'react';
 import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
 import { globalStyles } from '@core/theme/globalStyles';
-import {  View, StyleSheet, ScrollView, Dimensions , RefreshControl } from 'react-native';
-import { Text, Appbar, useTheme, Divider, Surface, FAB } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, Dimensions, RefreshControl } from 'react-native';
+import { Text, useTheme, Surface, FAB } from 'react-native-paper';
 import { CustomCard } from '@components/ui/CustomCard';
 import { useQuery } from '@powersync/react';
 import { useRouter } from 'expo-router';
@@ -66,8 +66,6 @@ export function FinanzasDashboardScreen() {
     hoy.setHours(0, 0, 0, 0);
 
     for (const d of deudas as any[]) {
-      // Solo contar deudas de pedidos que ya fueron entregados ('listo' o 'entregado') o si se permite desde antes.
-      // Normalmente la deuda empieza a correr cuando se entrega, pero usaremos todos los pendientes.
       const saldo = d.monto_total - d.abonado;
       if (saldo > 0) {
         deudaTotal += saldo;
@@ -85,7 +83,7 @@ export function FinanzasDashboardScreen() {
             deudaAlDia += saldo;
           }
         } else {
-          deudaAlDia += saldo; // Sin fecha asume al día
+          deudaAlDia += saldo;
         }
       }
     }
@@ -115,12 +113,10 @@ export function FinanzasDashboardScreen() {
 
   return (
     <View style={globalStyles.container}>
-      <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
-        <Appbar.Content title="Resumen Financiero" />
-      </Appbar.Header>
-
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
-        
+      <ScrollView 
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} 
+        contentContainerStyle={[globalStyles.scrollContent, { paddingBottom: Math.max(insets.bottom + 80, 100) }]}
+      >
         {/* ROW 1: Balance y Deuda */}
         <View style={styles.row}>
           <Surface style={[styles.kpiBox, { backgroundColor: theme.colors.primaryContainer }]} elevation={1}>
@@ -175,96 +171,92 @@ export function FinanzasDashboardScreen() {
               )}
             </View>
 
-            <View style={styles.legendContainer}>
+            <View style={styles.legendRow}>
               <View style={styles.legendItem}>
-                <View style={[styles.dot, { backgroundColor: '#3b82f6' }]} />
+                <View style={[styles.legendDot, { backgroundColor: '#3b82f6' }]} />
                 <Text variant="bodySmall">Al Día: {formatUsd(kpis.deudaAlDia)}</Text>
               </View>
               <View style={styles.legendItem}>
-                <View style={[styles.dot, { backgroundColor: '#f59e0b' }]} />
+                <View style={[styles.legendDot, { backgroundColor: '#f59e0b' }]} />
                 <Text variant="bodySmall">Por Vencer: {formatUsd(kpis.deudaPorVencer)}</Text>
               </View>
+            </View>
+            <View style={styles.legendRow}>
               <View style={styles.legendItem}>
-                <View style={[styles.dot, { backgroundColor: '#ef4444' }]} />
+                <View style={[styles.legendDot, { backgroundColor: '#ef4444' }]} />
                 <Text variant="bodySmall">Atrasada: {formatUsd(kpis.deudaAtrasada)}</Text>
               </View>
             </View>
           </View>
         </CustomCard>
 
-        {/* FLUJO DE CAJA (TIMELINE) */}
-        <Text variant="titleMedium" style={{ fontWeight: 'bold', marginTop: 24, marginBottom: 8, color: '#374151' }}>
+        {/* HISTORIAL FLUJO DE CAJA */}
+        <Text variant="titleMedium" style={{ fontWeight: 'bold', marginTop: 24, marginBottom: 12 }}>
           Flujo de Caja Reciente
         </Text>
-        
-        {flujoCaja.length === 0 ? (
-          <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="receipt" size={48} color="#d1d5db" />
-            <Text variant="bodyMedium" style={{ color: '#9ca3af', marginTop: 8 }}>No hay movimientos financieros registrados.</Text>
-          </View>
-        ) : (
-          (flujoCaja as any[]).slice(0, 50).map((mov, index) => {
-            const isIngreso = mov.tipo === 'ingreso';
-            const montoUsd = mov.moneda === 'USD' ? mov.monto : (mov.monto / (mov.tasa_cambio || 1));
-            return (
-              <CustomCard key={index} style={styles.movCard}>
-                <View style={styles.movContent}>
-                  <View style={[styles.iconContainer, { backgroundColor: isIngreso ? '#dcfce7' : '#fee2e2' }]}>
-                    <MaterialCommunityIcons 
-                      name={isIngreso ? 'arrow-down-bold' : 'arrow-up-bold'} 
-                      size={20} 
-                      color={isIngreso ? '#16a34a' : '#dc2626'} 
-                    />
-                  </View>
-                  <View style={{ flex: 1, marginHorizontal: 12 }}>
-                    <Text variant="bodyMedium" style={{ fontWeight: 'bold', color: '#1f2937' }}>{mov.descripcion}</Text>
-                    <Text variant="bodySmall" style={{ color: '#6b7280' }}>
-                      {new Date(mov.fecha).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text variant="bodyMedium" style={{ fontWeight: 'bold', color: isIngreso ? '#16a34a' : '#dc2626' }}>
-                      {isIngreso ? '+' : '-'}{formatUsd(montoUsd)}
-                    </Text>
-                    {mov.moneda !== 'USD' && (
-                      <Text variant="bodySmall" style={{ color: '#9ca3af', fontSize: 10 }}>
-                        {mov.monto.toFixed(2)} {mov.moneda}
-                      </Text>
-                    )}
-                  </View>
+
+        {flujoCaja.slice(0, 10).map((mov: any, index: number) => {
+          const isIngreso = mov.tipo === 'ingreso';
+          const montoUsd = mov.moneda === 'USD' ? mov.monto : (mov.monto / (mov.tasa_cambio || 1));
+          
+          return (
+            <Surface key={index} style={styles.movCard} elevation={1}>
+              <View style={styles.movContent}>
+                <View style={[styles.iconBox, { backgroundColor: isIngreso ? '#dcfce7' : '#fee2e2' }]}>
+                  <MaterialCommunityIcons 
+                    name={isIngreso ? 'arrow-down' : 'arrow-up'} 
+                    size={20} 
+                    color={isIngreso ? '#16a34a' : '#dc2626'} 
+                  />
                 </View>
-              </CustomCard>
-            );
-          })
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text variant="bodyMedium" style={{ fontWeight: 'bold' }}>{mov.descripcion}</Text>
+                  <Text variant="bodySmall" style={{ color: '#6b7280' }}>
+                    {new Date(mov.fecha).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                </View>
+                <Text variant="bodyLarge" style={{ fontWeight: 'bold', color: isIngreso ? '#16a34a' : '#dc2626' }}>
+                  {isIngreso ? '+' : '-'}{formatUsd(montoUsd)}
+                </Text>
+              </View>
+            </Surface>
+          );
+        })}
+
+        {flujoCaja.length === 0 && (
+          <Text variant="bodyMedium" style={{ color: '#9ca3af', textAlign: 'center', marginTop: 20 }}>
+            Sin movimientos financieros registrados.
+          </Text>
         )}
 
       </ScrollView>
 
+      {/* FAB REGISTRAR GASTO */}
       <FAB
         icon="cash-plus"
         label="Registrar"
-        style={[globalStyles.fab, { bottom: Math.max(insets.bottom + 16, 16) }]}
-        onPress={() => router.push('/(screens)/registrar-gasto')}
+        style={[styles.fab, { bottom: Math.max(insets.bottom + 16, 24) }]}
+        onPress={() => router.push('/(drawer)/finanzas/registrar-gasto')}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  
-  
   row: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   kpiBox: { flex: 1, padding: 16, borderRadius: 16 },
+  kpiBoxMini: { flex: 1, padding: 12, borderRadius: 12, backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#f3f4f6' },
   kpiHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  kpiBoxMini: { flex: 1, padding: 16, borderRadius: 16, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e5e7eb' },
-  deudaBarContainer: { height: 16, borderRadius: 8, flexDirection: 'row', overflow: 'hidden', backgroundColor: '#e5e7eb' },
-  deudaSegment: { height: '100%' },
-  legendContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, flexWrap: 'wrap', gap: 8 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-  emptyState: { alignItems: 'center', marginTop: 24, padding: 24 },
-  movCard: { marginBottom: 8, borderRadius: 12 },
-  movContent: { padding: 12, flexDirection: 'row', alignItems: 'center' },
-  iconContainer: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   
+  deudaBarContainer: { height: 12, borderRadius: 6, backgroundColor: '#f3f4f6', flexDirection: 'row', overflow: 'hidden', marginBottom: 12 },
+  deudaSegment: { height: '100%' },
+  legendRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+
+  movCard: { borderRadius: 12, backgroundColor: 'white', marginBottom: 8 },
+  movContent: { flexDirection: 'row', alignItems: 'center', padding: 12 },
+  iconBox: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  
+  fab: { position: 'absolute', right: 16 }
 });

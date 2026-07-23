@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../core/supabase/client';
 
@@ -21,6 +21,10 @@ export const useAuth = () => {
   return useContext(AuthContext);
 };
 
+// Flag a nivel de módulo para evitar múltiples conexiones simultáneas
+// (resiste re-montajes del componente en React Strict Mode)
+let isPowerSyncConnecting = false;
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,29 +32,46 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     // Definir función para conectar a PowerSync
     const connectPowerSync = async () => {
-      const connector = new SupabaseConnector();
-      await db.connect(connector);
+      if (isPowerSyncConnecting) {
+        console.log('[AuthProvider] Already connecting (module-level guard), skipping...');
+        return;
+      }
+      if (db.currentStatus?.connected) {
+        console.log('[AuthProvider] Already connected, skipping...');
+        return;
+      }
+      isPowerSyncConnecting = true;
+      try {
+        // Garantizar que la DB esté inicializada antes de conectar
+        console.log('[AuthProvider] Initializing PowerSync DB...');
+        await db.init();
+        console.log('[AuthProvider] DB initialized. Connecting to PowerSync...');
+        const connector = new SupabaseConnector();
+        await db.connect(connector);
+        const status = db.currentStatus;
+        console.log('[AuthProvider] db.connect() resolved. Status:', JSON.stringify(status));
+        if (status?.dataFlow?.uploadError) {
+          console.error('[AuthProvider] Upload error detail:', JSON.stringify(status.dataFlow.uploadError));
+        }
+      } catch (err) {
+        console.error('[AuthProvider] PowerSync connection error:', JSON.stringify(err));
+      } finally {
+        isPowerSyncConnecting = false;
+      }
     };
 
-    // Obtener la sesión inicial
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setIsLoading(false);
-      if (session) {
-        connectPowerSync().catch(console.error);
-      }
-    });
-
-    // Escuchar cambios en la sesión (login, logout, token refresh)
+    // Escuchar cambios en la sesión (onAuthStateChange maneja la sesión inicial automáticamente)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
+      async (event, currentSession) => {
+        console.log('[AuthProvider] Auth state event:', event);
+        setSession(currentSession);
         setIsLoading(false);
         
-        if (session) {
+        if (currentSession) {
           connectPowerSync().catch(console.error);
         } else {
-          await db.disconnect();
+          isPowerSyncConnecting = false;
+          await db.disconnect().catch(console.error);
         }
       }
     );

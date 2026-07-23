@@ -2,13 +2,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useMemo } from 'react';
 import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
 import { globalStyles } from '@core/theme/globalStyles';
-import {  View, StyleSheet, ScrollView, Dimensions , RefreshControl } from 'react-native';
-import { Text, useTheme, Avatar, SegmentedButtons, FAB } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, Dimensions, RefreshControl, Linking, TouchableOpacity } from 'react-native';
+import { Text, useTheme, Avatar, SegmentedButtons, FAB, Dialog, Portal, Button, Chip } from 'react-native-paper';
 import { CustomCard } from '@components/ui/CustomCard';
 import { LineChart } from 'react-native-gifted-charts';
 import { useQuery } from '@powersync/react';
 import { useRouter } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import Toast from 'react-native-toast-message';
 
 export function DashboardScreen() {
   const { refreshing, onRefresh } = usePullToRefresh();
@@ -17,6 +18,7 @@ export function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const [chartPeriod, setChartPeriod] = useState('Día');
   const [fabOpen, setFabOpen] = useState(false);
+  const [modalAlertasVisible, setModalAlertasVisible] = useState(false);
 
   // 1. Pedidos (Contadores)
   const { data: pedidosStats = [] } = useQuery(`
@@ -26,11 +28,14 @@ export function DashboardScreen() {
     GROUP BY estado
   `);
 
-  // 2. Alertas de Cobranza
+  // 2. Alertas de Cobranza (Con detalle de cliente y saldos)
   const { data: creditosPendientes = [] } = useQuery(`
-    SELECT id, fecha_vencimiento_credito 
-    FROM pedidos 
-    WHERE estado_pago = 'pendiente' AND estado != 'cancelado'
+    SELECT p.id, p.fecha_vencimiento_credito, p.monto_total, c.razon_social, c.telefono,
+           COALESCE((SELECT SUM(monto_equivalente_usd) FROM abonos_pagos WHERE id_pedido = p.id), 0) as abonado
+    FROM pedidos p
+    JOIN clientes c ON c.id = p.id_cliente
+    WHERE p.estado_pago = 'pendiente' AND p.estado != 'cancelado'
+    ORDER BY p.fecha_vencimiento_credito ASC
   `);
 
   // 3. Inventario Bobinas
@@ -56,6 +61,33 @@ export function DashboardScreen() {
     FROM abonos_pagos
   `);
 
+  // --- HELPER WHATSAPP ---
+  const sendWhatsAppReminder = (razonSocial: string, telefono: string | null, saldo: number, estadoFin: string) => {
+    if (!telefono) {
+      Toast.show({ type: 'error', text1: 'Sin teléfono', text2: 'El cliente no tiene teléfono registrado.' });
+      return;
+    }
+    let cleanPhone = telefono.replace(/\D/g, '');
+    if (cleanPhone.startsWith('0')) {
+      cleanPhone = '58' + cleanPhone.substring(1);
+    }
+    
+    let mensaje = '';
+    if (estadoFin === 'atrasado') {
+      mensaje = `Hola ${razonSocial}, le escribimos para recordarle que su factura tiene un saldo pendiente de $${saldo.toFixed(2)} USD que se encuentra *VENCIDO*. Agradecemos su pronto pago.`;
+    } else if (estadoFin === 'por_vencer') {
+      mensaje = `Hola ${razonSocial}, le escribimos para recordarle que su factura con saldo de $${saldo.toFixed(2)} USD está próxima a vencer.`;
+    } else {
+      mensaje = `Hola ${razonSocial}, le adjuntamos el estado de su cuenta. Saldo actual: $${saldo.toFixed(2)} USD.`;
+    }
+
+    const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(mensaje)}`;
+    Linking.openURL(url).catch((err) => {
+      console.error('Error abriendo WhatsApp:', err);
+      Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir WhatsApp.' });
+    });
+  };
+
   // --- PROCESAMIENTO DE KPIs ---
   const metrics = useMemo(() => {
     let pedidosPorProducir = 0;
@@ -68,16 +100,47 @@ export function DashboardScreen() {
 
     let pagosPorVencer = 0;
     let pagosVencidos = 0;
+    const alertasLista: Array<{
+      id: string;
+      razon_social: string;
+      telefono: string | null;
+      saldo: number;
+      estadoFin: 'atrasado' | 'por_vencer';
+      diasDiff: number;
+    }> = [];
+
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
 
     for (const c of creditosPendientes as any[]) {
+      const saldo = (c.monto_total ?? 0) - (c.abonado ?? 0);
+      if (saldo <= 0) continue;
+
       if (c.fecha_vencimiento_credito) {
         const venc = new Date(c.fecha_vencimiento_credito);
         const diffTime = venc.getTime() - hoy.getTime();
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        if (diffDays < 0) pagosVencidos++;
-        else if (diffDays <= 5) pagosPorVencer++;
+        if (diffDays < 0) {
+          pagosVencidos++;
+          alertasLista.push({
+            id: c.id,
+            razon_social: c.razon_social,
+            telefono: c.telefono,
+            saldo,
+            estadoFin: 'atrasado',
+            diasDiff: Math.abs(diffDays),
+          });
+        } else if (diffDays <= 5) {
+          pagosPorVencer++;
+          alertasLista.push({
+            id: c.id,
+            razon_social: c.razon_social,
+            telefono: c.telefono,
+            saldo,
+            estadoFin: 'por_vencer',
+            diasDiff: diffDays,
+          });
+        }
       }
     }
 
@@ -86,10 +149,20 @@ export function DashboardScreen() {
       pedidosListos,
       pagosPorVencer,
       pagosVencidos,
+      alertasLista,
       bobinasKg: bobinasData.length > 0 ? bobinasData[0].total_kg : 0,
       potesTotal: potesData.length > 0 ? potesData[0].total_potes : 0,
     };
   }, [pedidosStats, creditosPendientes, bobinasData, potesData]);
+
+  const handleCardAlertasPress = () => {
+    if (metrics.alertasLista.length === 1) {
+      const item = metrics.alertasLista[0];
+      sendWhatsAppReminder(item.razon_social, item.telefono, item.saldo, item.estadoFin);
+    } else if (metrics.alertasLista.length > 1) {
+      setModalAlertasVisible(true);
+    }
+  };
 
   // --- PROCESAMIENTO DE GRÁFICOS ---
   const { lineDataIngresos, lineDataEgresos } = useMemo(() => {
@@ -101,7 +174,6 @@ export function DashboardScreen() {
     hoy.setHours(23, 59, 59, 999);
 
     if (chartPeriod === 'Día') {
-      // Día actual (Hoy): Agrupado por bloques de 4 horas
       const hourBlocks = [0, 4, 8, 12, 16, 20];
       hourBlocks.forEach(h => {
         const key = `${h.toString().padStart(2, '0')}:00`;
@@ -123,7 +195,6 @@ export function DashboardScreen() {
         }
       }
     } else if (chartPeriod === 'Semana') {
-      // Semana: Últimos 7 días
       for (let i = 6; i >= 0; i--) {
         const d = new Date(hoy.getTime() - i * 24 * 60 * 60 * 1000);
         const key = d.toISOString().split('T')[0];
@@ -139,10 +210,9 @@ export function DashboardScreen() {
         }
       }
     } else {
-      // Mes: Últimas 4 semanas
       for (let i = 3; i >= 0; i--) {
         const start = new Date(hoy.getTime() - (i * 7 + 6) * 24 * 60 * 60 * 1000);
-        const startStr = start.toISOString().split('T')[0].slice(5); // Solo MM-DD
+        const startStr = start.toISOString().split('T')[0].slice(5);
         const key = `Sem ${4 - i} (${startStr})`;
         labelsEnOrden.push(key);
         dataIngresosMap[key] = 0;
@@ -163,17 +233,16 @@ export function DashboardScreen() {
     }
 
     const formatLabel = (lbl: string) => {
-      if (chartPeriod === 'Día') return lbl.substring(0, 5); // Ej: 08:00
+      if (chartPeriod === 'Día') return lbl.substring(0, 5);
       if (chartPeriod === 'Semana') {
         const [y, m, d] = lbl.split('-');
         return `${d}/${m}`;
       }
-      return lbl.split(' ')[0]; // Para mes (Semanas), mostrar 'Sem 1', etc.
+      return lbl.split(' ')[0];
     };
 
     const outIngresos = labelsEnOrden.map(lbl => ({ value: dataIngresosMap[lbl], label: formatLabel(lbl), dataLabel: formatLabel(lbl) }));
-    const outEgresos = labelsEnOrden.map(lbl => ({ value: dataEgresosMap[lbl], dataLabel: formatLabel(lbl) })); // Solo necesitamos las labels en la línea 1
-
+    const outEgresos = labelsEnOrden.map(lbl => ({ value: dataEgresosMap[lbl], dataLabel: formatLabel(lbl) }));
 
     return { lineDataIngresos: outIngresos, lineDataEgresos: outEgresos };
   }, [flujoCaja, chartPeriod]);
@@ -184,7 +253,7 @@ export function DashboardScreen() {
         
         <Text variant="headlineMedium" style={{ fontWeight: 'bold', marginBottom: 16, color: '#1f2937' }}>Visión Global</Text>
 
-        {/* Tarjetas de Métricas Operativas (Arriba y más compactas) */}
+        {/* Tarjetas de Métricas Operativas */}
         <View style={styles.grid}>
           <CustomCard style={styles.gridItem}>
             <View style={styles.gridItemContent}>
@@ -219,20 +288,33 @@ export function DashboardScreen() {
           </CustomCard>
         </View>
 
-        {/* Alertas Financieras */}
+        {/* Alertas Financieras Clickables */}
         {(metrics.pagosPorVencer > 0 || metrics.pagosVencidos > 0) && (
-          <CustomCard style={{ backgroundColor: '#FFF3E0', marginBottom: 16 }}>
-            <View style={styles.alertContent}>
-              <Avatar.Icon size={40} icon="alert" style={{ backgroundColor: '#FFB74D' }} color="#fff" />
-              <View style={styles.textContainer}>
-                <Text variant="titleMedium" style={{ color: '#E65100', fontWeight: 'bold' }}>Alertas de Cobranza</Text>
-                <Text variant="bodyMedium" style={{ color: '#E65100' }}>
-                  {metrics.pagosPorVencer} pagos por vencer en los próximos 5 días.
-                  {metrics.pagosVencidos > 0 && `\n${metrics.pagosVencidos} pagos VENCIDOS actualmente.`}
-                </Text>
+          <TouchableOpacity activeOpacity={0.8} onPress={handleCardAlertasPress}>
+            <CustomCard style={{ backgroundColor: metrics.pagosVencidos > 0 ? '#fee2e2' : '#FFF3E0', marginBottom: 16 }}>
+              <View style={styles.alertContent}>
+                <Avatar.Icon 
+                  size={40} 
+                  icon="alert" 
+                  style={{ backgroundColor: metrics.pagosVencidos > 0 ? '#ef4444' : '#FFB74D' }} 
+                  color="#fff" 
+                />
+                <View style={styles.textContainer}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text variant="titleMedium" style={{ color: metrics.pagosVencidos > 0 ? '#991b1b' : '#E65100', fontWeight: 'bold' }}>
+                      Alertas de Cobranza
+                    </Text>
+                    <MaterialCommunityIcons name="whatsapp" size={22} color="#25D366" />
+                  </View>
+                  <Text variant="bodyMedium" style={{ color: metrics.pagosVencidos > 0 ? '#991b1b' : '#E65100', marginTop: 2 }}>
+                    {metrics.pagosPorVencer > 0 && `${metrics.pagosPorVencer} pagos por vencer en los próximos 5 días.`}
+                    {metrics.pagosPorVencer > 0 && metrics.pagosVencidos > 0 && '\n'}
+                    {metrics.pagosVencidos > 0 && `${metrics.pagosVencidos} pagos VENCIDOS actualmente.`}
+                  </Text>
+                </View>
               </View>
-            </View>
-          </CustomCard>
+            </CustomCard>
+          </TouchableOpacity>
         )}
 
         {/* Gráfico Financiero */}
@@ -301,21 +383,16 @@ export function DashboardScreen() {
                   );
                 },
               }}
-              
-              // Estilo Ingresos (Verde)
               color1="#16a34a"
               startFillColor1="#16a34a"
               endFillColor1="#16a34a"
               startOpacity1={0.3}
               endOpacity1={0.05}
-              
-              // Estilo Egresos (Rojo)
               color2="#dc2626"
               startFillColor2="#dc2626"
               endFillColor2="#dc2626"
               startOpacity2={0.3}
               endOpacity2={0.05}
-
               yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
               xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
               yAxisLabelPrefix="$"
@@ -343,6 +420,53 @@ export function DashboardScreen() {
         </CustomCard>
       </ScrollView>
 
+      {/* Dialog para seleccionar a cuál cliente enviar WhatsApp si hay más de uno */}
+      <Portal>
+        <Dialog visible={modalAlertasVisible} onDismiss={() => setModalAlertasVisible(false)}>
+          <Dialog.Title>Enviar Recordatorio de Pago</Dialog.Title>
+          <Dialog.Content>
+            <ScrollView style={{ maxHeight: 300 }}>
+              {metrics.alertasLista.map(item => (
+                <View 
+                  key={item.id} 
+                  style={{ 
+                    flexDirection: 'row', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between', 
+                    paddingVertical: 10,
+                    borderBottomWidth: 1,
+                    borderBottomColor: '#f3f4f6'
+                  }}
+                >
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text variant="bodyMedium" style={{ fontWeight: 'bold' }}>{item.razon_social}</Text>
+                    <Text variant="bodySmall" style={{ color: '#6b7280' }}>
+                      Saldo: ${item.saldo.toFixed(2)} USD
+                    </Text>
+                  </View>
+                  <Button
+                    mode="contained"
+                    buttonColor="#25D366"
+                    textColor="#ffffff"
+                    icon="whatsapp"
+                    compact
+                    onPress={() => {
+                      sendWhatsAppReminder(item.razon_social, item.telefono, item.saldo, item.estadoFin);
+                      setModalAlertasVisible(false);
+                    }}
+                  >
+                    Enviar
+                  </Button>
+                </View>
+              ))}
+            </ScrollView>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setModalAlertasVisible(false)}>Cerrar</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
       <FAB.Group
         open={fabOpen}
         visible
@@ -365,8 +489,6 @@ export function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  
-  
   alertContent: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 16 },
   textContainer: { flex: 1 },
   chartHeader: { padding: 16, paddingBottom: 0 },

@@ -9,6 +9,9 @@ import { CustomCard } from '@components/ui/CustomCard';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { CurrencyInput } from '@components/ui/CurrencyInput';
+import { parseCurrency, formatCurrencyATM } from '@core/utils/currency';
+import { getTasaDolarBCV } from '@core/api/dolar';
 
 const CATEGORIAS = [
   { key: 'nomina',      label: 'Nómina',      icon: 'account-group' },
@@ -32,7 +35,7 @@ export function RegistrarGastoGeneralScreen() {
   const [saving, setSaving] = useState(false);
 
   const handleGuardar = async () => {
-    const valMonto = parseFloat(monto);
+    const valMonto = parseCurrency(monto);
     if (isNaN(valMonto) || valMonto <= 0) {
       Toast.show({ type: 'error', text1: 'Monto inválido', text2: 'Ingresa una cantidad mayor a 0.' });
       return;
@@ -43,7 +46,7 @@ export function RegistrarGastoGeneralScreen() {
       return;
     }
 
-    const valTasa = parseFloat(tasaCambio) || 1;
+    const valTasa = parseCurrency(tasaCambio) || 1;
 
     setSaving(true);
     try {
@@ -124,12 +127,12 @@ export function RegistrarGastoGeneralScreen() {
 
               {/* MONTO Y MONEDA */}
               <View style={styles.montoRow}>
-                <TextInput
+                <CurrencyInput
                   mode="outlined"
                   label={`Monto en ${moneda}`}
                   value={monto}
                   onChangeText={setMonto}
-                  keyboardType="decimal-pad"
+                  keyboardType="numeric"
                   style={[styles.montoInput, { flex: 1 }]}
                   left={<TextInput.Icon icon={moneda === 'USD' ? 'currency-usd' : 'currency-brl'} />}
                   outlineStyle={{ borderRadius: 10 }}
@@ -146,12 +149,12 @@ export function RegistrarGastoGeneralScreen() {
 
               {/* TASA DE CAMBIO (Si es VES) */}
               {moneda === 'VES' && (
-                <TextInput
+                <CurrencyInput
                   mode="outlined"
                   label="Tasa de Cambio (Ej. 36.5)"
                   value={tasaCambio}
                   onChangeText={setTasaCambio}
-                  keyboardType="decimal-pad"
+                  keyboardType="numeric"
                   style={styles.tasaInput}
                   left={<TextInput.Icon icon="calculator" />}
                   outlineStyle={{ borderRadius: 10 }}

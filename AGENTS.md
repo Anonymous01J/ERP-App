@@ -12,7 +12,7 @@ Este proyecto utiliza un entorno basado en Nix (`.idx/dev.nix`) en Firebase Stud
 ### 🛠️ Core Tech Stack
 * **Framework:** React Native (utilizando **Expo** y **Expo Router** para la navegación).
 * **UI & Styling:** **React Native Paper** (diseño basado en Material Design, rápido y con un sistema de diseño consistente).
-* **Base de Datos / Backend:** **Supabase** *(Próximamente)*.
+* **Base de Datos / Backend:** **Supabase + PowerSync** (Sincronización Offline-First activa bidireccionalmente).
 * **Lenguaje:** **TypeScript estricto** (sin `any`, interfaces claras y tipado fuerte).
 
 ## 3. Expo & Framework Versions
@@ -37,15 +37,29 @@ Always use path aliases defined in `tsconfig.json` to prevent relative path hell
 ## 6. Reglas de Negocio a Resolver
 * **Materia Prima e Inventario:** Registro de compras de bobinas grandes (Tipo A/B), control de kilos consumidos y cálculo de merma ("peso muerto"/core).
 * **Pedidos y Empaque:** Control en rollos agrupados por presentación (600g = 7 ud, 1kg = 5 ud, 2.5kg = 2 ud, 5kg = 1 ud).
-* **Producción Diaria:** Registro de rebobinado por día, asignación a stock/pedidos y cálculo automático de pagos por destajo.
+* **Producción Diaria:** Registro de rebobinado por día, asignación a stock/pedidos y cálculo automático de pagos por destajo. Estimación de tiempo de producción basado en `tiempo_x_paquete_min`.
 * **Logística de Viajes:** Registro flexible de gastos (gasolina, peajes, viáticos) durante o después del viaje.
 * **Venta de Potes:** Control de stock y salidas independiente de los rollos de papel.
 * **Finanzas:** Ventas a crédito a 30 días (una sola cuota), soporte para abonos, adelantos y notas de entrega.
 
-## 7. Development Environment (Project IDX & Nix)
+## 7. Currency & Input Rules
+- **Monetary Inputs:** ALWAYS use `<CurrencyInput>` from `@components/ui/CurrencyInput` for price, amount, or exchange rate inputs to ensure ATM-style formatting (`1.234,56`).
+- **Database Conversions:** ALWAYS parse formatted currency strings using `parseCurrency` from `@core/utils/currency` before saving/calculating values or inserting into Supabase/PowerSync (`parseCurrency(val)`).
+
+## 8. Development Environment (Project IDX & Nix)
 - System dependencies, CLIs, Node versions, and VS Code extensions must be configured in `dev.nix` (Nix packages).
 
-## 8. PowerSync & Hooks (CRITICAL)
+## 9. PowerSync & Hooks (CRITICAL)
 - **`useQuery` Hook:** When querying reactive data, **ALWAYS** import `useQuery` directly from `@powersync/react`. 
   - ❌ **INCORRECT:** `const { data } = powerSync.useQuery('SELECT * FROM table')` (This will throw a TypeError because `useQuery` is not a method on the `powerSync` object).
   - ✅ **CORRECT:** `import { useQuery } from '@powersync/react';` and then `const { data = [] } = useQuery('SELECT * FROM table')`.
+- **Database Permissions & Replication (Supabase):**
+  - Execute `GRANT SELECT ON ALL TABLES IN SCHEMA public TO powersync_role;` and `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO powersync_role;` so PowerSync can replicate data.
+  - Set `ALTER TABLE <tabla> REPLICA IDENTITY FULL;` for all public tables.
+- **Client Auth Configuration (PowerSync Dashboard):**
+  - Supabase signs JWTs with `ES256` algorithm and `aud: "authenticated"`.
+  - In PowerSync Dashboard -> Client Auth:
+    - Set JWKS URI to `https://<ref>.supabase.co/auth/v1/.well-known/jwks.json`.
+    - Add `authenticated` to **JWT Audience**.
+    - Remove conflicting manual HS256 secrets.
+- **Connection Management:** Always await `db.init()` before `db.connect()` and use module-level guards to prevent concurrent double-connections during React re-mounts.

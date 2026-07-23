@@ -31,7 +31,7 @@ export default function GestionarTiposPapelScreen() {
 
   const handleEdit = (id: string) => {
     setMenuVisibleId(null);
-    router.push({ pathname: '/(screens)/registrar-tipo-papel', params: { id } });
+    router.push(`/(screens)/registrar-tipo-papel?id=${id}`);
   };
 
   const handleToggleEstado = async (id: string, estadoActual: string) => {

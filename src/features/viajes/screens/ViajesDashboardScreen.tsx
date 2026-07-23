@@ -398,7 +398,7 @@ export function ViajesDashboardScreen() {
       }
       if (estado === 'en_destino') {
         return (
-          <Button mode="contained" icon="inbox-arrow-down" onPress={() => router.push({ pathname: '/(screens)/cargar-bobinas-viaje', params: { id: viaje.id } })} style={styles.actionButton}>
+          <Button mode="contained" icon="inbox-arrow-down" onPress={() => router.push(`/(screens)/cargar-bobinas-viaje?id=${viaje.id}`)} style={styles.actionButton}>
             Cargar Bobinas y Retornar
           </Button>
         );
@@ -445,7 +445,7 @@ export function ViajesDashboardScreen() {
       }
       if (estado === 'en_destino') {
         return (
-          <Button mode="contained" icon="inbox-arrow-down" onPress={() => router.push({ pathname: '/(screens)/cargar-bobinas-viaje', params: { id: viaje.id } })} style={styles.actionButton}>
+          <Button mode="contained" icon="inbox-arrow-down" onPress={() => router.push(`/(screens)/cargar-bobinas-viaje?id=${viaje.id}`)} style={styles.actionButton}>
             Cargar Bobinas y Retornar
           </Button>
         );

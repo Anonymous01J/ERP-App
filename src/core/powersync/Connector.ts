@@ -11,18 +11,22 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
    * This is called automatically when required.
    */
   async fetchCredentials() {
-    const { data: { session } } = await supabase.auth.getSession();
+    console.log('[Connector] fetchCredentials called...');
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    console.log('[Connector] Session status:', session ? 'ACTIVE (User logged in)' : 'NULL (No user logged in)', sessionError || '');
 
     if (!session) {
-      console.log('[Connector] No active Supabase session. PowerSync will not connect yet.');
+      console.log('[Connector] No active Supabase session. PowerSync will remain DISCONNECTED.');
       return null; // Returning null puts PowerSync in disconnected state
     }
 
     const powersyncUrl = process.env.EXPO_PUBLIC_POWERSYNC_URL;
     if (!powersyncUrl) {
+      console.error('[Connector] EXPO_PUBLIC_POWERSYNC_URL is missing in environment variables!');
       throw new Error('EXPO_PUBLIC_POWERSYNC_URL environment variable is not set.');
     }
 
+    console.log('[Connector] Connecting to PowerSync URL:', powersyncUrl);
     return {
       endpoint: powersyncUrl,
       token: session.access_token

@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { globalStyles } from '@core/theme/globalStyles';
-import { View, StyleSheet, Alert } from 'react-native';
+import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
 import { TextInput, Button, Text, Surface, useTheme } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import Toast from 'react-native-toast-message';
 import { supabase } from '../../../core/supabase/client';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 export function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     // Inicializar Google Sign-In
@@ -19,17 +23,29 @@ export function LoginScreen() {
   }, []);
 
   const signInWithEmail = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Por favor ingresa tu correo y contraseña');
+    if (!email.trim() || !password) {
+      Toast.show({
+        type: 'error',
+        text1: 'Datos incompletos',
+        text2: 'Por favor ingresa tu correo y contraseña.',
+      });
       return;
     }
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: email.trim(),
       password,
     });
     
-    if (error) Alert.alert('Error', error.message);
+    if (error) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error de acceso',
+        text2: error.message === 'Invalid login credentials' 
+          ? 'Correo o contraseña incorrectos.' 
+          : error.message,
+      });
+    }
     setLoading(false);
   };
 
@@ -38,7 +54,6 @@ export function LoginScreen() {
       setLoading(true);
       await GoogleSignin.hasPlayServices();
       const userInfo = await GoogleSignin.signIn();
-      // En versiones recientes de @react-native-google-signin, el ID token está en idToken o data.idToken
       const idToken = userInfo.data?.idToken || userInfo.idToken;
       
       if (idToken) {
@@ -48,13 +63,17 @@ export function LoginScreen() {
         });
         if (error) throw error;
       } else {
-        throw new Error('¡No se recibió ningún ID Token de Google!');
+        throw new Error('No se recibió el token de autenticación de Google.');
       }
     } catch (error: any) {
       if (error.code === 'SIGN_IN_CANCELLED') {
-        // user cancelled the login flow
+        // Cancelado por el usuario
       } else {
-        Alert.alert('Error de Autenticación', error.message);
+        Toast.show({
+          type: 'error',
+          text1: 'Error de Autenticación',
+          text2: error.message || 'No se pudo iniciar sesión con Google.',
+        });
       }
     } finally {
       setLoading(false);
@@ -62,100 +81,167 @@ export function LoginScreen() {
   };
 
   return (
-    <Surface style={[globalStyles.containerWhite, { backgroundColor: theme.colors.background }]}>
-      <View style={styles.formContainer}>
-        <Text variant="headlineMedium" style={styles.title}>ERP App</Text>
-        <Text variant="bodyMedium" style={styles.subtitle}>Inicia sesión para continuar</Text>
-        
-        <TextInput
-          label="Correo electrónico"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          style={styles.input}
-          mode="outlined"
-          disabled={loading}
-        />
-        <TextInput
-          label="Contraseña"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          style={styles.input}
-          mode="outlined"
-          disabled={loading}
-        />
-        
-        <Button 
-          mode="contained" 
-          onPress={signInWithEmail} 
-          loading={loading}
-          disabled={loading}
-          style={styles.button}
+    <Surface style={[styles.container, { backgroundColor: theme.colors.background, paddingTop: insets.top }]}>
+      <StatusBar style="dark" />
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+        style={{ flex: 1 }}
+      >
+        <ScrollView 
+          contentContainerStyle={[
+            styles.scrollContent, 
+            { paddingTop: 20, paddingBottom: Math.max(insets.bottom + 20, 30) }
+          ]}
+          keyboardShouldPersistTaps="handled"
         >
-          Iniciar Sesión
-        </Button>
+          {/* Header Branding */}
+          <View style={styles.brandContainer}>
+            <Image 
+              source={require('../../../../assets/icon.png')} 
+              style={styles.appLogo} 
+              resizeMode="contain" 
+            />
+            <Text variant="headlineSmall" style={[styles.brandTitle, { color: theme.colors.primary }]}>
+              ERP Rebobinados
+            </Text>
+            <Text variant="bodyMedium" style={styles.brandSubtitle}>
+              Gestión Administrativa e Inventario
+            </Text>
+          </View>
 
-        <View style={styles.dividerContainer}>
-          <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />
-          <Text style={{ marginHorizontal: 10, color: theme.colors.outline }}>O</Text>
-          <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />
-        </View>
-        
-        <Button 
-          mode="outlined" 
-          icon="google" 
-          onPress={signInWithGoogle} 
-          loading={loading}
-          disabled={loading}
-          style={styles.button}
-        >
-          Continuar con Google
-        </Button>
-      </View>
+          {/* Form Card */}
+          <Surface style={styles.card} elevation={2}>
+            <Text variant="titleMedium" style={styles.cardHeader}>
+              Iniciar Sesión
+            </Text>
+
+            <TextInput
+              label="Correo electrónico"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              mode="outlined"
+              disabled={loading}
+              left={<TextInput.Icon icon="email-outline" />}
+              style={styles.input}
+              outlineStyle={{ borderRadius: 12 }}
+            />
+
+            <TextInput
+              label="Contraseña"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              mode="outlined"
+              disabled={loading}
+              left={<TextInput.Icon icon="lock-outline" />}
+              right={
+                <TextInput.Icon 
+                  icon={showPassword ? "eye-off-outline" : "eye-outline"} 
+                  onPress={() => setShowPassword(!showPassword)} 
+                />
+              }
+              style={styles.input}
+              outlineStyle={{ borderRadius: 12 }}
+            />
+
+            <Button 
+              mode="contained" 
+              onPress={signInWithEmail} 
+              loading={loading}
+              disabled={loading}
+              style={styles.submitBtn}
+              contentStyle={styles.btnContent}
+            >
+              Ingresar
+            </Button>
+
+            <View style={styles.dividerRow}>
+              <View style={[styles.line, { backgroundColor: theme.colors.outlineVariant }]} />
+              <Text variant="bodySmall" style={{ color: theme.colors.outline, marginHorizontal: 12 }}>
+                o continúa con
+              </Text>
+              <View style={[styles.line, { backgroundColor: theme.colors.outlineVariant }]} />
+            </View>
+
+            <Button 
+              mode="outlined" 
+              icon="google" 
+              onPress={signInWithGoogle} 
+              loading={loading}
+              disabled={loading}
+              style={styles.googleBtn}
+              contentStyle={styles.btnContent}
+            >
+              Cuenta de Google
+            </Button>
+          </Surface>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Surface>
   );
 }
 
 const styles = StyleSheet.create({
-  
-  formContainer: {
-    backgroundColor: 'white',
-    padding: 24,
-    borderRadius: 16,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+  container: {
+    flex: 1,
   },
-  title: {
-    textAlign: 'center',
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  brandContainer: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  appLogo: {
+    width: 84,
+    height: 84,
+    marginBottom: 16,
+    borderRadius: 20,
+  },
+  brandTitle: {
     fontWeight: 'bold',
-    marginBottom: 8,
-    color: '#0D47A1',
+    letterSpacing: 0.5,
   },
-  subtitle: {
-    textAlign: 'center',
-    marginBottom: 24,
-    opacity: 0.7,
+  brandSubtitle: {
+    color: '#6b7280',
+    marginTop: 4,
+  },
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 24,
+  },
+  cardHeader: {
+    fontWeight: 'bold',
+    marginBottom: 20,
+    color: '#1f2937',
   },
   input: {
     marginBottom: 16,
+    backgroundColor: '#ffffff',
   },
-  button: {
+  submitBtn: {
     marginTop: 8,
-    paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 12,
   },
-  dividerContainer: {
+  googleBtn: {
+    borderRadius: 12,
+    borderColor: '#e5e7eb',
+  },
+  btnContent: {
+    paddingVertical: 6,
+  },
+  dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 24,
+    marginVertical: 20,
   },
-  divider: {
+  line: {
     flex: 1,
     height: 1,
-  }
+  },
 });

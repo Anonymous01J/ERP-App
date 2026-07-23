@@ -104,6 +104,7 @@ const detalles_pedido = new Table({
   id_pedido: column.text,
   id_producto: column.text,
   id_pote: column.text,
+  id_tipo_papel: column.text,
   cantidad_solicitada: column.integer,
   cantidad_producida: column.integer,
   precio_unitario: column.real

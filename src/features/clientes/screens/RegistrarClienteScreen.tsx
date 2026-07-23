@@ -8,6 +8,8 @@ import { globalStyles } from '@core/theme/globalStyles';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { CurrencyInput } from '@components/ui/CurrencyInput';
+import { parseCurrency, formatCurrencyATM } from '@core/utils/currency';
 
 export function RegistrarClienteScreen() {
   const insets = useSafeAreaInsets();
@@ -30,7 +32,7 @@ export function RegistrarClienteScreen() {
           if (result) {
             setNombre(result.razon_social || '');
             setTelefono(result.telefono || '');
-            setLimiteCredito(result.limite_credito ? result.limite_credito.toString() : '');
+            setLimiteCredito(result.limite_credito ? formatCurrencyATM(result.limite_credito.toString()) : '');
           }
         } catch (error) {
           console.error('Error cargando cliente:', error);
@@ -49,7 +51,7 @@ export function RegistrarClienteScreen() {
 
     setLoading(true);
     try {
-      const creditoNumerico = limiteCredito ? parseFloat(limiteCredito) : 0;
+      const creditoNumerico = limiteCredito ? parseCurrency(limiteCredito) : 0;
 
       if (isEditing && id) {
         await powerSync.execute(
@@ -112,7 +114,7 @@ export function RegistrarClienteScreen() {
             style={styles.input}
             disabled={loading}
           />
-          <TextInput
+          <CurrencyInput
             mode="outlined"
             label="Límite de Crédito Opcional ($)"
             value={limiteCredito}

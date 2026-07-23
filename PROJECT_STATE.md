@@ -16,17 +16,20 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 
 ## 2. Infraestructura de Backend
 
-- **PowerSync + Supabase:** Sincronización offline-first activa. El conector (`Connector.ts`) actúa en nombre del usuario autenticado y respeta RLS.
-- **Edge Function `powersync`:** Refactorizada para usar el token del usuario (no `service_role_key`), garantizando que RLS se respete correctamente.
-- **Manejo de Sesión:** `AuthProvider.tsx` gestiona globalmente el estado de autenticación; el conector previene subidas si no hay sesión activa.
+- **PowerSync + Supabase:** Sincronización offline-first 100% activa en ambas direcciones (subida y descarga).
+  - **Conector (`Connector.ts`):** Actúa en nombre del usuario autenticado y respeta RLS.
+  - **Edge Function `powersync`:** Recibe las operaciones CRUD enviadas desde la app y las ejecuta en Supabase utilizando el token JWT del usuario.
+  - **Replicación y Permisos de BD:** `powersync_role` cuenta con permisos `GRANT SELECT` en todas las tablas (`ALTER DEFAULT PRIVILEGES`), tablas registradas en la publicación de replicación y con `REPLICA IDENTITY FULL`.
+  - **Autenticación PowerSync:** Validada mediante JWKS con la URI de Supabase (`https://<ref>.supabase.co/auth/v1/.well-known/jwks.json`), soportando algoritmos `ES256` y audience `authenticated`.
+- **Manejo de Sesión:** `AuthProvider.tsx` gestiona globalmente el estado de autenticación de Supabase y sincronización de PowerSync con protección contra dobles conexiones en re-montajes.
 
 ---
 
 ## 3. Autenticación
 
-- **Flujo Google Sign-In:** Implementado con `@react-native-google-signin/google-signin`.
-- **Pantalla de Login:** `src/features/auth/screens/LoginScreen.tsx`.
-- **Protección de rutas:** Redirige automáticamente a `/login` si no hay sesión.
+- **Flujo Google Sign-In:** Implementado con `@react-native-google-signin/google-signin` e ID Token de Supabase.
+- **Pantalla de Login (`LoginScreen.tsx`):** Rediseño moderno con branding de la app (`assets/icon.png`), selector para ver/ocultar contraseña, integración con `StatusBar` adaptable (`dark`), `useSafeAreaInsets` y `Toast.show`.
+- **Protección de rutas:** Redirige automáticamente a `/login` si no hay sesión activa.
 
 ---
 
@@ -36,9 +39,13 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 |---|---|
 | `CustomCard` | Tarjeta base estilizada |
 | `NumericInput` | Input numérico con botones +/− |
+| `CurrencyInput` | Input para precios/montos con formateo al vuelo estilo registradora/ATM (`1.234,56`) |
 | `DatePickerInput` | Selector de fecha reutilizable |
 | `StatusBarBadge` | Indicador de estado (badge) |
 | `SyncStatusNotifier` | Indicador de estado de sincronización |
+
+### Utilidades Globales (`src/core/utils/`)
+- `currency.ts`: `formatCurrencyATM` (formatea números al formato ATM) y `parseCurrency` (convierte `"1.234,56"` a `1234.56` antes de guardar en la BD o realizar operaciones matemáticas).
 
 ---
 
@@ -48,6 +55,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 - CRUD completo offline-first (PowerSync).
 - Listado con búsqueda en tiempo real y filtro activo/inactivo.
 - Eliminación lógica (desactivar/reactivar).
+- Formulario de clientes con `CurrencyInput` para `limite_credito`.
 - Ruta en Drawer: `app/(drawer)/clientes.tsx`.
 - Modal de creación/edición: `app/(screens)/registrar-cliente.tsx`.
 
@@ -66,15 +74,18 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 - **Dashboard (`PedidosDashboardScreen`)** con dos vistas conectadas a PowerSync:
   - **Logística:** Pedidos en estado `pendiente`, `en_produccion`, `listo` con filtros por chip.
     - Muestra detalles de productos (JOIN con `detalles_pedido`, `productos_presentacion`, `inventario_potes`).
+    - **Estimación de tiempo de producción:** Calcula automáticamente las horas/minutos requeridos para abastecer los rollos faltantes del pedido basado en `tiempo_x_paquete_min`.
     - Botones de avance de estado: `pendiente → en_produccion → listo`.
   - **Cuentas x Cobrar:** Pedidos `entregado` con `estado_pago = 'pendiente'`.
     - Calcula automáticamente si el crédito está Al Día / Por Vencer (<5 días) / Atrasado.
     - Barra de progreso de deuda (abonado vs total).
-    - **Diálogo de Abono:** acepta USD o Bolívares con tasa de cambio; marca el pedido como `pagado` automáticamente al saldarse.
+    - **Recordatorio por WhatsApp:** Botón directo que abre WhatsApp (`wa.me/58...`) con mensaje personalizado notificando factura vencida o próxima a vencer.
+    - **Diálogo de Abono:** Acepta USD o Bolívares con `CurrencyInput`. Consulta la tasa BCV automáticamente con opción de recarga manual; marca el pedido como `pagado` automáticamente al saldarse.
 - **Formulario (`NuevoPedidoScreen`)** conectado a PowerSync:
   - Selector de cliente (desde `clientes` activos en BD).
   - Selector de presentación/pote (desde `productos_presentacion` e `inventario_potes` activos).
-  - **Tasa de cambio automática** consultada desde `ve.dolarapi.com/v1/dolares` al abrir el formulario (con botón de refresco manual).
+  - Inputs monetarios de precios y tasa con `CurrencyInput`.
+  - **Tasa de cambio automática** consultada desde `getTasaDolarBCV()` / `dolarapi.com` al abrir el formulario (con botón de refresco manual).
   - Muestra el equivalente en Bolívares en tiempo real.
   - Al guardar: inserta en `pedidos` + cada ítem en `detalles_pedido`.
   - Fecha de vencimiento de crédito calculada automáticamente: fecha entrega + 30 días.
@@ -86,7 +97,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 
 #### Tab: Bobinas Grandes
 - **Dashboard (`InventarioDashboardScreen`)** conectado a datos reales de `bobinas_grandes`:
-  - **Panel de resumen:** total de bobinas activas, kg totales, conteo Tipo A y Tipo B.
+  - **Panel de resumen:** total de bobinas activas, kg totales, conteo por tipo de papel.
   - **Lista de bobinas** con barra de progreso de consumo por bobina (cambia de verde → amarillo → rojo según los kg restantes).
   - **Diálogo de Merma/Core:** descuenta `merma_core_kg` y `peso_muerto_kg` del `peso_actual_kg`. Marca la bobina como `agotada` automáticamente cuando llega a 0.
 - **Historial (`HistorialBobinasScreen`)** conectado a `bobinas_grandes` con `estado = 'agotada'`:
@@ -94,15 +105,15 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - Calcula y muestra **% de eficiencia** con indicador de color (verde/amarillo/rojo).
 
 #### Tab: Rollos (Presentaciones)
-- Datos reales de `productos_presentacion` (nombre, stock suelto, paquetes calculados, precio USD).
+- Datos reales de `productos_presentacion` (nombre, stock suelto, paquetes calculados, precio USD, tiempo estimado x paquete en minutos).
 
 #### Tab: Potes
 - Datos reales de `inventario_potes` (capacidad, stock actual, precio).
 - Alerta visual "⚠️ Stock bajo" si hay menos de 20 unidades.
 
 #### CRUD de Presentaciones y Potes
-- `GestionarPresentacionesScreen` y `RegistrarPresentacionScreen`.
-- `GestionarPotesScreen` y `RegistrarPoteScreen`.
+- `GestionarPresentacionesScreen` y `RegistrarPresentacionScreen` (incluye campo de `tiempo_x_paquete_min` y `precio_USD` con `CurrencyInput`).
+- `GestionarPotesScreen` y `RegistrarPoteScreen` (precios de compra y venta con `CurrencyInput`).
 - Rutas: `app/(screens)/gestionar-presentaciones.tsx`, `app/(screens)/gestionar-potes.tsx`, etc.
 
 ---
@@ -111,6 +122,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 - **Formulario (`RegistrarProduccionScreen`)** conectado a PowerSync:
   - Selecciona la bobina de origen a descontar (de las disponibles o en uso).
   - Ingreso de la cantidad de rollos producidos por cada presentación activa.
+  - **Cálculo de Tiempo Estimado:** Muestra los minutos/horas estimadas de trabajo requeridas para la tirada seleccionada.
   - **Cálculo automático de kg consumidos** (usando el peso real `peso_real_g` de la presentación).
   - Asignación inteligente: Selección manual de pedidos a abastecer mediante checkboxes.
   - **Botón "Auto-Asignar":** Rellena automáticamente los pedidos pendientes priorizando los más urgentes (ordenados por fecha de entrega).
@@ -125,21 +137,22 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 
 ### 💰 Finanzas / Flujo de Caja (`src/features/finanzas`)
 - **Dashboard General (`FinanzasDashboardScreen`)** accesible globalmente desde las pestañas inferiores:
-  - **KPIs Financieros (Conversión USD Dinámica):** Calcula y consolida la deudas pendientes de ventas (Cuentas por Cobrar), así como el total de Ingresos y Egresos del mes actual utilizando la tasa de cambio histórica (VES->USD) almacenada individualmente en cada transacción.
-  - **Estado de la Deuda:** Barra gráfica que segmenta porcentualmente si la cartera de crédito está "Al Día", "Por Vencer" (a menos de 5 días) o "Atrasada" (créditos con fecha vencida de 30 días).
-  - **Flujo de Caja Histórico (Timeline):** Unifica en una sola vista cronológica todas las entradas (pagos, abonos y adelantos de clientes en `abonos_pagos`) y las salidas (gastos logísticos, peajes, gasolina, etc., en `movimientos`), reflejando montos en moneda original y su equivalente convertido.
-  - **Registro de Gastos Generales (`RegistrarGastoGeneralScreen`):** Formulario dedicado accesible a través de un botón flotante para registrar pagos de Nómina, Alquiler, Servicios, Suministros u Otros (exigiendo descripción para "Otros").
+  - **Sin encabezados duplicados:** Se eliminó el `Appbar.Header` interno para integrarse directamente con la navegación global del Drawer.
+  - **KPIs Financieros (Conversión USD Dinámica):** Consolida cuentas por cobrar, ingresos y egresos del mes actual utilizando la tasa de cambio histórica (VES->USD) almacenada en cada transacción.
+  - **Estado de la Deuda:** Barra gráfica que segmenta porcentualmente si la cartera de crédito está "Al Día", "Por Vencer" (a menos de 5 días) o "Atrasada" (créditos con fecha vencida).
+  - **Flujo de Caja Histórico (Timeline):** Unifica en una sola vista cronológica todas las entradas (`abonos_pagos`) y salidas (`movimientos`).
+  - **Registro de Gastos Generales (`RegistrarGastoGeneralScreen`):** Formulario con `CurrencyInput` para montos y tasas. Clasifica pagos de Nómina, Alquiler, Servicios, Suministros u Otros.
 
 ---
 
 ### 📊 Dashboard de Inicio (`src/features/dashboard`)
-- **Panel de Control Principal (`DashboardScreen`)** conectado 100% a la base de datos:
-  - **Alertas Críticas:** Detecta automáticamente si hay pagos de clientes por vencer en los próximos 5 días o si ya están vencidos, mostrando un banner amarillo disuasivo.
-  - **Gráfico Interactivo de Liquidez:** Muestra el flujo de Ingresos (verde) vs Egresos (rojo) en USD. Soporta agrupación dinámica por:
-    - **Día:** Últimos 7 días.
-    - **Semana:** Últimas 4 semanas.
-    - **Mes:** Últimos 6 meses.
-  - **Métricas Operativas:** Tarjetas con contadores en tiempo real de Pedidos Pendientes, Pedidos Listos para Despacho, Kilos Totales de Papel Disponible y Unidades de Potes en Stock.
+- **Panel de Control Principal (`DashboardScreen`)** conectado a PowerSync:
+  - **Card de Alerta de Cobranza Dinámica:** 
+    - Se muestra en **Rojo** (`#fee2e2`) cuando hay pagos vencidos (`pagosVencidos > 0`).
+    - Se muestra en **Naranja** (`#FFF3E0`) cuando hay pagos por vencer en los próximos 5 días.
+    - **Acción al presionar:** Si hay 1 solo cliente moroso, abre directamente WhatsApp con el mensaje pre-redactado. Si hay múltiples clientes con deuda, despliega un **Modal / Diálogo** interactivo que lista a cada cliente con su saldo y un botón verde directo de WhatsApp `💬`.
+  - **Gráfico Interactivo de Liquidez:** Muestra el flujo de Ingresos (verde) vs Egresos (rojo) en USD con agrupación dinámica por Día, Semana o Mes.
+  - **Métricas Operativas:** Tarjetas con contadores en tiempo real de Pedidos Pendientes, Pedidos Listos, Kilos de Papel Disponible y Unidades de Potes en Stock.
 
 ---
 
@@ -159,51 +172,43 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 | `mixto` | `retornando` | → Llegué a Base (Fin) |
 
 #### Pantallas
-- **`ViajesDashboardScreen`:** Viajes activos con acordeones por viaje. Cada acordeón muestra:
-  - **Paradas individuales** con botón "Entregado" por parada (registra `hora_llegada`).
+- **`ViajesDashboardScreen`:** Viajes activos con acordeones por viaje.
+  - **Paradas individuales** con botón "Entregado" por parada.
   - **`MovimientosViaje`:** Historial de gastos/ingresos registrados en el viaje con resumen Egresos / Balance / Ingresos.
-  - **`GastoViajeForm`:** Formulario de movimiento rápido conectado a PowerSync con:
-    - Tipo: Gasto / Ingreso.
-    - Categorías con íconos: Gasolina, Peaje, Viáticos, Mantenimiento, Operativos, Otros.
-    - Monto + toggle VES/USD.
-    - Descripción opcional.
-    - Guarda en tabla `movimientos`.
-- **`RegistrarViajeScreen`:** Formulario conectado a pedidos reales de PowerSync (listos primero, en producción después). Selección de orden de paradas visual. Inserta en `viajes` + `entregas_viaje`.
-- **`CargarBobinasViajeScreen`:** Filas dinámicas de bobinas (tipo A/B + peso kg). Inserta en `bobinas_grandes` y avanza el viaje a `retornando`. Opción "Retornar Sin Carga" con confirmación.
+  - **`GastoViajeForm`:** Formulario de movimiento rápido conectado a PowerSync con `CurrencyInput`.
+- **`RegistrarViajeScreen`:** Formulario conectado a pedidos reales de PowerSync. Selección de orden de paradas visual. Inserta en `viajes` + `entregas_viaje`.
+- **`CargarBobinasViajeScreen`:** Filas dinámicas de bobinas (tipo de papel + peso kg). Inserta en `bobinas_grandes` y avanza el viaje a `retornando`.
 
 ---
 
-## 6. Multi-Moneda y Flexibilidad Financiera
-- **Precios Flexibles:** Las presentaciones y potes tienen un `precio_USD` base en la BD.
-- **Tasas de Cambio Dinámicas:** En la creación de pedidos, el usuario puede alternar entre tasas BCV ($), BCV (€) consultadas vía API (`dolarapi.com`), o ingresar una tasa "Efectivo" manual.
-- **Auto-completado y Edición:** Al añadir un producto a un pedido, se auto-completa el precio unitario base en USD, pero el usuario puede editarlo libremente (ej. para aplicar descuentos por volumen) antes de guardar.
+## 6. Multi-Moneda y Reglas de Precios / Empaque
+- **Input de Dinero Estilo ATM (`CurrencyInput`):** Formateo automático de derecha a izquierda (`1.234,56`) con conversión limpia a número flotante (`parseCurrency`) antes de realizar operaciones de BD.
+- **Venta por Rollos Individuales:** Los pedidos se solicitan y cotizan por cantidad de rollos/unidades individuales.
+- **Precio por Rollo:** El `precio_USD` en `productos_presentacion` representa el **Precio x Rollo (USD)**.
+- **Cálculo Automático de Empaque:** El sistema calcula en tiempo real cuántos paquetes completos y rollos sueltos representan las unidades solicitadas.
+- **Desglose en Logística y Formulario:** Se visualiza el equivalente de empaque tanto al construir el pedido como en las tarjetas del Dashboard.
+- **Asignación de Tipo de Papel por Ítem:** Cada ítem en `detalles_pedido` almacena `id_tipo_papel`.
+- **Tasas de Cambio Dinámicas:** En la creación de pedidos y abonos, se consulta la tasa BCV automáticamente vía API o se permite tasa "Efectivo" manual.
 
 ---
 
-## 7. Tipos de Papel Dinámicos
-- **Desacoplamiento Estructural:** Se eliminó la dependencia estática de "Tipo A" y "Tipo B".
-- **Nueva Tabla `tipos_papel`:** Implementada con RLS y sincronización offline-first.
-- **UI Adaptativa:**
-  - El Dashboard de Inventario agrupa automáticamente las métricas de kilos según los tipos de papel activos.
-  - La pantalla de Cargar Bobinas utiliza menús desplegables conectados a la BD para seleccionar el papel adquirido.
-  - Historial y Producción realizan JOINs con la nueva tabla para mostrar nombres reales.
-
----
-
-## 8. Schema de Base de Datos
+## 7. Schema de Base de Datos
 
 - Todas las tablas con UUID, RLS habilitado y políticas `FOR ALL TO authenticated`.
 - Schema definido en `src/core/powersync/AppSchema.ts` (PowerSync) y base de datos (Supabase).
-- **Tablas principales:** `clientes`, `proveedores`, `pedidos`, `detalles_pedido`, `abonos_pagos`, `productos_presentacion`, `inventario_potes`, `viajes`, `entregas_viaje`, `bobinas_grandes`, `movimientos`, `tipos_papel`.
+- **Tablas principales:** `clientes`, `proveedores`, `pedidos`, `detalles_pedido`, `abonos_pagos`, `productos_presentacion` (incluye `tiempo_x_paquete_min`), `inventario_potes`, `viajes`, `entregas_viaje`, `bobinas_grandes`, `movimientos`, `tipos_papel`.
 
 ---
 
-## 9. Módulos Pendientes
+## 8. Módulos Pendientes
 
 | Módulo | Estado | Prioridad |
 |---|---|---|
-| Asignación FIFO de stock a pedidos | Pospuesto | Baja |
-| Generación de PDF (Notas de Entrega) | No iniciado | Media |
+| Pago por Destajo a Operarios | No iniciado | Media |
+| Generación de PDF / Notas de Entrega | No iniciado | Media |
+| Exportación a Excel/CSV | No iniciado | Baja |
+| **Refactoring: Queries a Custom Hooks** | Pendiente | Media |
+| **Gestión de Usuarios y Roles (UI)** | Pendiente | Media |
 
 ---
 

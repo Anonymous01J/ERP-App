@@ -4,6 +4,8 @@ import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 're
 import { Text, Button, Appbar, useTheme, TextInput } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { usePowerSync } from '@powersync/react';
+import { CurrencyInput } from '@components/ui/CurrencyInput';
+import { parseCurrency } from '@core/utils/currency';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
@@ -19,6 +21,7 @@ export default function RegistrarPresentacionScreen() {
   const [pesoReal, setPesoReal] = useState('');
   const [unidades, setUnidades] = useState('');
   const [precio, setPrecio] = useState('');
+  const [tiempoPaquete, setTiempoPaquete] = useState('');
 
   const isEditing = !!id;
 
@@ -41,6 +44,7 @@ export default function RegistrarPresentacionScreen() {
         setPesoReal(pres.peso_real_g ? pres.peso_real_g.toString() : '');
         setUnidades(pres.rollos_por_paquete ? pres.rollos_por_paquete.toString() : '');
         setPrecio(pres.precio_USD ? pres.precio_USD.toString() : '');
+        setTiempoPaquete(pres.tiempo_x_paquete_min ? pres.tiempo_x_paquete_min.toString() : '');
       }
     } catch (error) {
       console.error('Error cargando presentación:', error);
@@ -66,9 +70,9 @@ export default function RegistrarPresentacionScreen() {
       if (isEditing) {
         await powerSync.execute(
           `UPDATE productos_presentacion 
-           SET nombre = ?, peso_nominal_g = ?, peso_real_g = ?, rollos_por_paquete = ?, precio_USD = ? 
+           SET nombre = ?, peso_nominal_g = ?, peso_real_g = ?, rollos_por_paquete = ?, precio_USD = ?, tiempo_x_paquete_min = ? 
            WHERE id = ?`,
-          [nombre.trim(), parseInt(pesoNominal), parseInt(pesoReal), parseInt(unidades), parseFloat(precio), id]
+          [nombre.trim(), parseInt(pesoNominal), parseInt(pesoReal), parseInt(unidades), parseCurrency(precio), tiempoPaquete ? parseFloat(tiempoPaquete) : null, id]
         );
         Toast.show({
           type: 'success',
@@ -78,9 +82,9 @@ export default function RegistrarPresentacionScreen() {
       } else {
         const newId = uuidv4();
         await powerSync.execute(
-          `INSERT INTO productos_presentacion (id, nombre, peso_nominal_g, peso_real_g, rollos_por_paquete, precio_USD, estado) 
-           VALUES (?, ?, ?, ?, ?, ?, 'activo')`,
-          [newId, nombre.trim(), parseInt(pesoNominal), parseInt(pesoReal), parseInt(unidades), parseFloat(precio)]
+          `INSERT INTO productos_presentacion (id, nombre, peso_nominal_g, peso_real_g, rollos_por_paquete, precio_USD, tiempo_x_paquete_min, estado) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'activo')`,
+          [newId, nombre.trim(), parseInt(pesoNominal), parseInt(pesoReal), parseInt(unidades), parseCurrency(precio), tiempoPaquete ? parseFloat(tiempoPaquete) : null]
         );
         Toast.show({
           type: 'success',
@@ -155,16 +159,23 @@ export default function RegistrarPresentacionScreen() {
                 keyboardType="numeric"
                 style={[styles.input, styles.half]}
               />
-              <TextInput
+              <CurrencyInput
                 mode="outlined"
-                label="Precio (USD)"
+                label="Precio x Rollo (USD)"
                 value={precio}
                 onChangeText={setPrecio}
-                keyboardType="decimal-pad"
-                left={<TextInput.Icon icon="currency-usd" />}
                 style={[styles.input, styles.half]}
               />
             </View>
+            <TextInput
+              mode="outlined"
+              label="Tiempo Aprox. por Paquete (min)"
+              value={tiempoPaquete}
+              onChangeText={setTiempoPaquete}
+              keyboardType="decimal-pad"
+              left={<TextInput.Icon icon="timer-outline" />}
+              style={styles.input}
+            />
             <Button 
               mode="contained" 
               onPress={handleGuardar} 

@@ -1,8 +1,9 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
+import { getTasaDolarBCV } from '@core/api/dolar';
 import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
 import { globalStyles } from '@core/theme/globalStyles';
-import {  View, StyleSheet, ScrollView, Linking , RefreshControl } from 'react-native';
+import { View, StyleSheet, ScrollView, Linking, RefreshControl } from 'react-native';
 import {
   Chip, Text, ProgressBar, Button, useTheme,
   SegmentedButtons, Divider, Dialog, Portal, TextInput,
@@ -10,6 +11,8 @@ import {
 import { useRouter } from 'expo-router';
 import { usePowerSync, useQuery } from '@powersync/react';
 import { CustomCard } from '@ui/CustomCard';
+import { CurrencyInput } from '@components/ui/CurrencyInput';
+import { parseCurrency, formatCurrencyATM } from '@core/utils/currency';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
@@ -33,7 +36,9 @@ interface AbonoTotalRow {
 interface DetallePedidoConNombresRow {
   id_pedido: string;
   nombre_item: string;
-  tipo_papel: string | null;
+  nombre_tipo_papel: string | null;
+  rollos_por_paquete: number | null;
+  tiempo_x_paquete_min: number | null;
   cantidad_solicitada: number;
   cantidad_producida: number | null;
 }
@@ -94,6 +99,7 @@ export function PedidosDashboardScreen() {
   const [montoAbono, setMontoAbono] = useState('');
   const [monedaAbono, setMonedaAbono] = useState<'USD' | 'VES'>('USD');
   const [tasaAbono, setTasaAbono] = useState('');
+  const [loadingTasa, setLoadingTasa] = useState(false);
   const [savingAbono, setSavingAbono] = useState(false);
 
   // --- Queries ---
@@ -132,12 +138,15 @@ export function PedidosDashboardScreen() {
   const { data: detallesTodos = [] } = useQuery<DetallePedidoConNombresRow>(`
     SELECT dp.id_pedido,
       COALESCE(pp.nombre, 'Pote ' || ip.capacidad) as nombre_item,
-      pp.tipo_papel,
+      tp.nombre as nombre_tipo_papel,
+      pp.rollos_por_paquete,
+      pp.tiempo_x_paquete_min,
       dp.cantidad_solicitada,
       dp.cantidad_producida
     FROM detalles_pedido dp
     LEFT JOIN productos_presentacion pp ON pp.id = dp.id_producto
     LEFT JOIN inventario_potes ip ON ip.id = dp.id_pote
+    LEFT JOIN tipos_papel tp ON tp.id = dp.id_tipo_papel
   `);
 
   const getDetallesPedido = (idPedido: string) =>
@@ -146,6 +155,20 @@ export function PedidosDashboardScreen() {
   const getAbonado = (idPedido: string): number => {
     const row = abonosTodos.find(a => a.id_pedido === idPedido);
     return row ? row.total_abonado : 0;
+  };
+
+  const getTiempoRestante = (detalles: DetallePedidoConNombresRow[]): string => {
+    let totalMin = 0;
+    for (const d of detalles) {
+      const faltante = Math.max(0, d.cantidad_solicitada - (d.cantidad_producida || 0));
+      if (faltante <= 0 || !d.tiempo_x_paquete_min || !d.rollos_por_paquete) continue;
+      const paqs = Math.ceil(faltante / d.rollos_por_paquete);
+      totalMin += paqs * d.tiempo_x_paquete_min;
+    }
+    if (totalMin <= 0) return '';
+    const h = Math.floor(totalMin / 60);
+    const m = Math.round(totalMin % 60);
+    return h > 0 ? `${h}h ${m}min` : `${m}min`;
   };
 
   // --- Filtrar vista finanzas ---
@@ -175,8 +198,13 @@ export function PedidosDashboardScreen() {
       Toast.show({ type: 'error', text1: 'Sin teléfono', text2: 'El cliente no tiene teléfono registrado.' });
       return;
     }
-    // Clean phone number (remove spaces, -, etc)
-    const phone = pedido.telefono.replace(/[^0-9+]/g, '');
+    // Clean phone number (remove spaces, -, +, etc)
+    let cleanPhone = pedido.telefono.replace(/\D/g, '');
+    
+    // If starts with 0 (e.g. 04141234567), format for Venezuela country code (584141234567)
+    if (cleanPhone.startsWith('0')) {
+      cleanPhone = '58' + cleanPhone.substring(1);
+    }
     
     let mensaje = '';
     if (estadoFin === 'atrasado') {
@@ -187,59 +215,94 @@ export function PedidosDashboardScreen() {
       mensaje = `Hola ${pedido.razon_social}, le adjuntamos el estado de su cuenta. Saldo actual: $${saldo.toFixed(2)} USD.`;
     }
 
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(mensaje)}`;
-    Linking.canOpenURL(url).then(supported => {
-      if (supported) {
-        Linking.openURL(url);
-      } else {
-        Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir WhatsApp' });
-      }
+    const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(mensaje)}`;
+    Linking.openURL(url).catch((err) => {
+      console.error('Error abriendo WhatsApp:', err);
+      Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir WhatsApp.' });
     });
   };
 
+  // --- Consultar tasa de cambio automática ---
+  const fetchTasaAuto = useCallback(async () => {
+    setLoadingTasa(true);
+    try {
+      const tasa = await getTasaDolarBCV();
+      if (tasa && tasa > 0) {
+        setTasaAbono(formatCurrencyATM(tasa.toFixed(2)));
+      }
+    } catch (e) {
+      console.warn('Error al obtener tasa BCV:', e);
+      Toast.show({ type: 'info', text1: 'Sin tasa automática', text2: 'Ingresa la tasa manualmente.' });
+    } finally {
+      setLoadingTasa(false);
+    }
+  }, []);
+
   // --- Registrar abono ---
-  const handleAbrirAbono = (pedido: PedidoFinanzasRow) => {
+  const openAbonoDialog = (pedido: PedidoFinanzasRow) => {
     setPedidoAbonar(pedido);
     setMontoAbono('');
     setMonedaAbono('USD');
     setTasaAbono('');
     setDialogVisible(true);
+    fetchTasaAuto();
   };
 
   const handleGuardarAbono = async () => {
-    const monto = parseFloat(montoAbono);
+    if (!pedidoAbonar) return;
+    const monto = parseCurrency(montoAbono);
     if (isNaN(monto) || monto <= 0) {
-      Toast.show({ type: 'error', text1: 'Monto inválido' });
+      Toast.show({ type: 'error', text1: 'Monto inválido', text2: 'Ingresa un monto mayor a 0.' });
       return;
     }
-    const tasa = parseFloat(tasaAbono) || 1;
-    const montoUsd = monedaAbono === 'USD' ? monto : monto / tasa;
 
-    if (!pedidoAbonar) return;
+    let tasa = 1;
+    let equivalenteUsd = monto;
+
+    if (monedaAbono === 'VES') {
+      tasa = parseCurrency(tasaAbono);
+      if (isNaN(tasa) || tasa <= 0) {
+        Toast.show({ type: 'error', text1: 'Tasa inválida', text2: 'Ingresa una tasa de cambio válida.' });
+        return;
+      }
+      equivalenteUsd = monto / tasa;
+    }
+
     const abonadoPrevio = getAbonado(pedidoAbonar.id);
-    const saldo = pedidoAbonar.monto_total - abonadoPrevio;
+    const saldoActual = (pedidoAbonar.monto_total ?? 0) - abonadoPrevio;
 
-    if (montoUsd > saldo + 0.01) { // 0.01 tolerance for floating point errors
-      Toast.show({ type: 'error', text1: 'Monto excesivo', text2: `El saldo deudor es solo $${saldo.toFixed(2)} USD.` });
+    if (equivalenteUsd > saldoActual + 0.01) {
+      Toast.show({
+        type: 'error',
+        text1: 'Monto excede el saldo',
+        text2: `El saldo pendiente es $${saldoActual.toFixed(2)} USD.`
+      });
       return;
     }
 
     setSavingAbono(true);
     try {
+      const nuevoId = uuidv4();
+      const fechaActual = new Date().toISOString();
+
       await powerSync.execute(
         `INSERT INTO abonos_pagos (id, id_pedido, monto, monto_equivalente_usd, moneda, tasa_cambio, fecha_pago, tipo_pago)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'abono')`,
-        [uuidv4(), pedidoAbonar.id, monto, montoUsd, monedaAbono, tasa, new Date().toISOString()]
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [nuevoId, pedidoAbonar.id, monto, equivalenteUsd, monedaAbono, tasa, fechaActual, 'abono']
       );
 
-      // Verificar si ya está saldado (abonado >= monto_total)
-      const totalAbonado = getAbonado(pedidoAbonar.id) + montoUsd;
-      if (totalAbonado >= pedidoAbonar.monto_total) {
-        await powerSync.execute("UPDATE pedidos SET estado_pago = 'pagado' WHERE id = ?", [pedidoAbonar.id]);
-        Toast.show({ type: 'success', text1: '¡Pedido Saldado!', text2: 'El pago ha sido completado.' });
+      // Si el nuevo total abonado cubre el saldo total, actualizar estado_pago a 'pagado'
+      const nuevoTotalAbonado = abonadoPrevio + equivalenteUsd;
+      if (nuevoTotalAbonado >= (pedidoAbonar.monto_total ?? 0) - 0.01) {
+        await powerSync.execute(
+          `UPDATE pedidos SET estado_pago = 'pagado' WHERE id = ?`,
+          [pedidoAbonar.id]
+        );
+        Toast.show({ type: 'success', text1: '¡Pedido Saldado!', text2: 'El pedido fue marcado como pagado.' });
       } else {
-        Toast.show({ type: 'success', text1: 'Abono Registrado', text2: `$${montoUsd.toFixed(2)} USD acreditados.` });
+        Toast.show({ type: 'success', text1: 'Abono registrado', text2: `Quedan $${((pedidoAbonar.monto_total ?? 0) - nuevoTotalAbonado).toFixed(2)} USD pendientes.` });
       }
+
       setDialogVisible(false);
     } catch {
       Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo registrar el abono.' });
@@ -250,53 +313,45 @@ export function PedidosDashboardScreen() {
 
   return (
     <View style={globalStyles.container}>
-      {/* Tabs principales */}
-      <View style={styles.segmentContainer}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 80, 100) }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[theme.colors.primary]} />}
+      >
+        {/* Selector Logística / Cuentas x Cobrar */}
         <SegmentedButtons
           value={vista}
           onValueChange={setVista}
           buttons={[
-            { value: 'logistica', label: 'Logística', icon: 'package-variant' },
-            { value: 'finanzas', label: 'Cuentas x Cobrar', icon: 'cash-multiple' },
+            { value: 'logistica', label: 'Logística', icon: 'truck-fast' },
+            { value: 'finanzas', label: 'Cuentas x Cobrar', icon: 'cash-register' },
           ]}
+          style={{ marginBottom: 16 }}
         />
-      </View>
-
-      {/* Filtros secundarios */}
-      <View style={styles.filtersContainer}>
-        <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} horizontal showsHorizontalScrollIndicator={false}>
-          {(vista === 'logistica'
-            ? ['Todos', 'Pendiente', 'En Producción', 'Listo', 'Entregado']
-            : ['Todos', 'Al Día', 'Por Vencer', 'Atrasado']
-          ).map(f => (
-            <Chip
-              key={f}
-              selected={(vista === 'logistica' ? filtroLog : filtroFin) === f}
-              onPress={() => vista === 'logistica' ? setFiltroLog(f) : setFiltroFin(f)}
-              style={styles.chip}
-              showSelectedOverlay
-            >
-              {f}
-            </Chip>
-          ))}
-        </ScrollView>
-      </View>
-
-      <ScrollView contentContainerStyle={globalStyles.scrollContent}>
 
         {/* === VISTA LOGÍSTICA === */}
         {vista === 'logistica' && (
           <>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              {['Todos', 'Pendiente', 'En Producción', 'Listo', 'Entregado'].map((cat) => (
+                <Chip
+                  key={cat}
+                  selected={filtroLog === cat}
+                  onPress={() => setFiltroLog(cat)}
+                  style={{ marginRight: 8 }}
+                  selectedColor={theme.colors.primary}
+                >
+                  {cat}
+                </Chip>
+              ))}
+            </ScrollView>
+
             {pedidosLog.length === 0 ? (
               <View style={styles.emptyState}>
-                <MaterialCommunityIcons name="package-variant-closed" size={48} color="#d1d5db" />
-                <Text variant="bodyLarge" style={styles.emptyText}>No hay pedidos en este estado.</Text>
-                <Button mode="contained" icon="plus" onPress={() => router.push('/(screens)/nuevo-pedido')} style={{ marginTop: 16 }}>
-                  Crear Primer Pedido
-                </Button>
+                <MaterialCommunityIcons name="clipboard-text-outline" size={48} color="#d1d5db" />
+                <Text variant="bodyLarge" style={styles.emptyText}>No hay pedidos en esta sección.</Text>
               </View>
             ) : (
-              pedidosLog.map(pedido => {
+              pedidosLog.map((pedido) => {
                 const detalles = getDetallesPedido(pedido.id);
                 return (
                   <CustomCard key={pedido.id}>
@@ -317,10 +372,18 @@ export function PedidosDashboardScreen() {
                           const producida = d.cantidad_producida || 0;
                           const faltante = Math.max(0, d.cantidad_solicitada - producida);
                           const isComplete = faltante === 0;
+
+                          let empaqueTxt = '';
+                          if (d.rollos_por_paquete && d.rollos_por_paquete > 1) {
+                            const paqs = Math.floor(d.cantidad_solicitada / d.rollos_por_paquete);
+                            const sueltos = d.cantidad_solicitada % d.rollos_por_paquete;
+                            empaqueTxt = ` [${paqs} paq.${sueltos > 0 ? ` + ${sueltos} un.` : ''}]`;
+                          }
+
                           return (
                             <Text key={i} variant="bodySmall" style={{ color: isComplete ? '#16a34a' : '#4b5563', marginBottom: 2 }}>
-                              • {producida} / {d.cantidad_solicitada} {d.nombre_item}
-                              {d.tipo_papel ? ` (${d.tipo_papel})` : ''}
+                              • {producida} / {d.cantidad_solicitada} un.{empaqueTxt} {d.nombre_item}
+                              {d.nombre_tipo_papel ? ` (${d.nombre_tipo_papel})` : ''}
                               {!isComplete && faltante > 0 && ` - Faltan ${faltante}`}
                               {isComplete && ' ✓'}
                             </Text>
@@ -328,6 +391,18 @@ export function PedidosDashboardScreen() {
                         }) : (
                           <Text variant="bodySmall" style={{ color: '#9ca3af' }}>Sin detalles cargados.</Text>
                         )}
+
+                        {/* Tiempo estimado de producción restante */}
+                        {(() => {
+                          const tiempoTxt = getTiempoRestante(detalles);
+                          if (!tiempoTxt) return null;
+                          return (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 4 }}>
+                              <Text variant="bodySmall" style={{ color: '#6b7280' }}>⏱️ Producción restante estimada:</Text>
+                              <Text variant="bodySmall" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>{tiempoTxt}</Text>
+                            </View>
+                          );
+                        })()}
                       </View>
 
                       <Divider style={{ marginBottom: 10 }} />
@@ -363,6 +438,20 @@ export function PedidosDashboardScreen() {
         {/* === VISTA FINANZAS === */}
         {vista === 'finanzas' && (
           <>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              {['Todos', 'Al Día', 'Por Vencer', 'Atrasado'].map((cat) => (
+                <Chip
+                  key={cat}
+                  selected={filtroFin === cat}
+                  onPress={() => setFiltroFin(cat)}
+                  style={{ marginRight: 8 }}
+                  selectedColor={theme.colors.primary}
+                >
+                  {cat}
+                </Chip>
+              ))}
+            </ScrollView>
+
             {filteredFin.length === 0 ? (
               <View style={styles.emptyState}>
                 <MaterialCommunityIcons name="cash-check" size={48} color="#d1d5db" />
@@ -382,55 +471,51 @@ export function PedidosDashboardScreen() {
                       <View style={styles.headerRow}>
                         <Text variant="titleMedium" style={styles.clienteNombre}>{pedido.razon_social}</Text>
                         <View style={[styles.badge, { backgroundColor: estadoFinColor(estadoFin, theme) }]}>
-                          <Text style={styles.badgeText}>{estadoFinLabel(estadoFin)}</Text>
+                          <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 10 }}>
+                            {estadoFinLabel(estadoFin)}
+                          </Text>
                         </View>
                       </View>
 
                       <Text variant="bodySmall" style={styles.fechaText}>
-                        Vence: {pedido.fecha_vencimiento_credito
-                          ? new Date(pedido.fecha_vencimiento_credito).toLocaleDateString('es-VE')
-                          : '—'}
+                        Vencimiento: {pedido.fecha_vencimiento_credito ? new Date(pedido.fecha_vencimiento_credito).toLocaleDateString('es-VE') : 'N/A'}
                       </Text>
 
-                      <View style={styles.progressLabelRow}>
-                        <Text variant="bodySmall" style={{ color: theme.colors.error }}>
-                          Saldo: ${saldo.toFixed(2)}
-                        </Text>
-                        <Text variant="bodySmall" style={{ color: '#16a34a' }}>
-                          Abonado: ${abonado.toFixed(2)}
-                        </Text>
-                      </View>
-                      <ProgressBar
-                        progress={progreso}
-                        color="#22c55e"
-                        style={styles.progressBar}
-                      />
-
-                      <View style={[styles.actionRow, { marginTop: 12 }]}>
-                        <Text variant="bodyMedium" style={{ fontWeight: 'bold', color: '#374151' }}>
-                          Total: ${total.toFixed(2)} USD
-                        </Text>
-                        <View style={{ flexDirection: 'row', gap: 8 }}>
-                          <Button
-                            mode="outlined"
-                            compact
-                            onPress={() => handleRecordatorioWhatsApp(pedido, saldo, estadoFin)}
-                            icon="whatsapp"
-                            textColor="#25D366"
-                            style={{ borderColor: '#25D366', borderRadius: 8 }}
-                          >
-                            Cobrar
-                          </Button>
-                          <Button
-                            mode="contained"
-                            compact
-                            onPress={() => handleAbrirAbono(pedido)}
-                            icon="cash-plus"
-                            style={{ borderRadius: 8 }}
-                          >
-                            Abonar
-                          </Button>
+                      {/* Barra de progreso de pago */}
+                      <View style={{ marginVertical: 8 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <Text variant="bodySmall" style={{ color: '#4b5563' }}>
+                            Abonado: ${abonado.toFixed(2)} / ${total.toFixed(2)} USD
+                          </Text>
+                          <Text variant="bodySmall" style={{ color: theme.colors.error, fontWeight: 'bold' }}>
+                            Resta: ${saldo.toFixed(2)}
+                          </Text>
                         </View>
+                        <ProgressBar progress={progreso} color={theme.colors.primary} style={{ height: 6, borderRadius: 3 }} />
+                      </View>
+
+                      <Divider style={{ marginBottom: 10 }} />
+
+                      <View style={styles.actionRow}>
+                        <Button
+                          mode="outlined"
+                          compact
+                          icon="whatsapp"
+                          onPress={() => handleRecordatorioWhatsApp(pedido, saldo, estadoFin)}
+                          textColor="#16a34a"
+                          style={{ borderColor: '#16a34a', borderRadius: 8 }}
+                        >
+                          Recordar
+                        </Button>
+                        <Button
+                          mode="contained"
+                          compact
+                          icon="cash"
+                          onPress={() => openAbonoDialog(pedido)}
+                          style={{ borderRadius: 8 }}
+                        >
+                          Abonar
+                        </Button>
                       </View>
                     </View>
                   </CustomCard>
@@ -441,60 +526,67 @@ export function PedidosDashboardScreen() {
         )}
       </ScrollView>
 
-      {/* FAB para nuevo pedido */}
-      {vista === 'logistica' && (
-        <Button
-          mode="contained"
-          icon="plus"
-          style={[globalStyles.fab, { bottom: Math.max(insets.bottom + 16, 16) }]}
-          onPress={() => router.push('/(screens)/nuevo-pedido')}
-        >
-          Nuevo Pedido
-        </Button>
-      )}
+      {/* Botón flotante para nuevo pedido */}
+      <Button
+        mode="contained"
+        icon="plus"
+        onPress={() => router.push('/(screens)/nuevo-pedido')}
+        style={styles.fab}
+        contentStyle={{ paddingVertical: 4 }}
+      >
+        Nuevo Pedido
+      </Button>
 
-      {/* Dialog de Abono */}
+      {/* Dialog para registrar abono */}
       <Portal>
         <Dialog visible={dialogVisible} onDismiss={() => setDialogVisible(false)}>
           <Dialog.Title>Registrar Abono</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium" style={{ marginBottom: 12, color: '#6b7280' }}>
-              Cliente: <Text style={{ fontWeight: 'bold', color: '#111' }}>{pedidoAbonar?.razon_social}</Text>
-            </Text>
+            {pedidoAbonar && (
+              <>
+                <Text variant="bodyMedium" style={{ marginBottom: 8, fontWeight: 'bold' }}>
+                  {pedidoAbonar.razon_social}
+                </Text>
+                <Text variant="bodySmall" style={{ marginBottom: 16, color: '#6b7280' }}>
+                  Saldo Pendiente: ${((pedidoAbonar.monto_total ?? 0) - getAbonado(pedidoAbonar.id)).toFixed(2)} USD
+                </Text>
 
-            <SegmentedButtons
-              value={monedaAbono}
-              onValueChange={(v) => setMonedaAbono(v as 'USD' | 'VES')}
-              buttons={[
-                { value: 'USD', label: 'USD ($)' },
-                { value: 'VES', label: 'Bolívares (Bs.)' },
-              ]}
-              style={{ marginBottom: 12 }}
-            />
+                <SegmentedButtons
+                  value={monedaAbono}
+                  onValueChange={(val) => setMonedaAbono(val as 'USD' | 'VES')}
+                  buttons={[
+                    { value: 'USD', label: 'Dólares ($)' },
+                    { value: 'VES', label: 'Bolívares (Bs.)' },
+                  ]}
+                  style={{ marginBottom: 12 }}
+                />
 
-            <TextInput
-              mode="outlined"
-              label={`Monto en ${monedaAbono}`}
-              value={montoAbono}
-              onChangeText={setMontoAbono}
-              keyboardType="decimal-pad"
-              left={<TextInput.Icon icon={monedaAbono === 'USD' ? 'currency-usd' : 'currency-brl'} />}
-              style={{ marginBottom: 8 }}
-            />
+                <CurrencyInput
+                  label={monedaAbono === 'USD' ? 'Monto en USD ($)' : 'Monto en Bolívares (Bs.)'}
+                  value={montoAbono}
+                  onChangeText={setMontoAbono}
+                  keyboardType="numeric"
+                  mode="outlined"
+                  style={{ marginBottom: 12 }}
+                />
 
-            {monedaAbono === 'VES' && (
-              <TextInput
-                mode="outlined"
-                label="Tasa de cambio (Bs. por USD)"
-                value={tasaAbono}
-                onChangeText={setTasaAbono}
-                keyboardType="decimal-pad"
-                style={{ marginBottom: 4 }}
-              />
+                {monedaAbono === 'VES' && (
+                  <CurrencyInput
+                    label="Tasa de cambio BCV (Bs/USD)"
+                    value={tasaAbono}
+                    onChangeText={setTasaAbono}
+                    keyboardType="numeric"
+                    mode="outlined"
+                    placeholder="Ej. 36.5"
+                    right={loadingTasa ? <TextInput.Icon icon="sync" spin /> : <TextInput.Icon icon="refresh" onPress={fetchTasaAuto} />}
+                    style={{ marginBottom: 12 }}
+                  />
+                )}
+              </>
             )}
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setDialogVisible(false)} disabled={savingAbono}>Cancelar</Button>
+            <Button onPress={() => setDialogVisible(false)}>Cancelar</Button>
             <Button mode="contained" onPress={handleGuardarAbono} loading={savingAbono} disabled={savingAbono}>
               Guardar Abono
             </Button>
@@ -506,24 +598,21 @@ export function PedidosDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  
-  segmentContainer: { padding: 16, backgroundColor: '#ffffff' },
-  filtersContainer: {
-    paddingVertical: 10, paddingHorizontal: 8,
-    backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
-  },
-  chip: { marginHorizontal: 4 },
-  
-  cardContent: { padding: 16 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
-  clienteNombre: { fontWeight: 'bold', color: '#1f2937', flex: 1, marginRight: 8 },
-  fechaText: { color: '#6b7280', marginBottom: 8 },
-  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  badgeText: { fontSize: 11, fontWeight: 'bold', color: '#fff' },
-  actionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
-  progressLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, marginTop: 8 },
-  progressBar: { height: 8, borderRadius: 4 },
-  emptyState: { alignItems: 'center', marginTop: 60, padding: 24 },
+  scrollContent: { padding: 16 },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 48 },
   emptyText: { color: '#9ca3af', marginTop: 12 },
-  
+  cardContent: { padding: 16 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  clienteNombre: { fontWeight: 'bold', flex: 1, marginRight: 8 },
+  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 },
+  badgeText: { color: 'white', fontWeight: 'bold', fontSize: 10 },
+  fechaText: { color: '#6b7280', marginBottom: 4 },
+  actionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 16,
+    borderRadius: 28,
+    elevation: 4,
+  },
 });

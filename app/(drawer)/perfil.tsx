@@ -1,11 +1,13 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text, Avatar, Button, useTheme } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/state/AuthProvider';
 
 export default function PerfilRoute() {
   const theme = useTheme();
   const { session, signOut } = useAuth();
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.container}>
@@ -15,7 +17,7 @@ export default function PerfilRoute() {
         <Text variant="bodyMedium" style={styles.subtitle}>{session?.user?.email || 'admin@erp.com'}</Text>
       </View>
 
-      <View style={styles.content}>
+      <View style={[styles.content, { paddingBottom: Math.max(insets.bottom + 16, 24) }]}>
         <Button mode="contained" onPress={signOut} style={styles.logoutButton} buttonColor={theme.colors.error}>
           Cerrar Sesión
         </Button>
@@ -32,3 +34,4 @@ const styles = StyleSheet.create({
   content: { padding: 24, flex: 1, justifyContent: 'flex-end' },
   logoutButton: { borderRadius: 8, paddingVertical: 8 },
 });
+

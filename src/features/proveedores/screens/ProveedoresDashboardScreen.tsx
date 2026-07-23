@@ -101,7 +101,7 @@ export function ProveedoresDashboardScreen() {
                 <Menu.Item 
                   onPress={() => {
                     setMenuVisibleId(null);
-                    router.push({ pathname: '/(screens)/registrar-proveedor', params: { id: proveedor.id } });
+                    router.push(`/(screens)/registrar-proveedor?id=${proveedor.id}`);
                   }} 
                   title="Editar Información" 
                   leadingIcon="pencil"

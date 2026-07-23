@@ -17,6 +17,8 @@ import { CustomCard } from '@ui/CustomCard';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { CurrencyInput } from '@components/ui/CurrencyInput';
+import { parseCurrency } from '@core/utils/currency';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { ItemFormulario } from '../types/pedidos.types';
 import { getTasaDolarBCV, getTasaEuroBCV } from '@core/api/dolar';
@@ -44,6 +46,8 @@ export function NuevoPedidoScreen() {
   const [menuProductoVisible, setMenuProductoVisible] = useState(false);
   const [idPoteSel, setIdPoteSel] = useState<string | null>(null);
   const [menuPoteVisible, setMenuPoteVisible] = useState(false);
+  const [idTipoPapelSel, setIdTipoPapelSel] = useState<string | null>(null);
+  const [menuTipoPapelVisible, setMenuTipoPapelVisible] = useState(false);
   const [cantidadItem, setCantidadItem] = useState(0);
   const [precioItem, setPrecioItem] = useState('');
 
@@ -56,11 +60,15 @@ export function NuevoPedidoScreen() {
     ['activo']
   );
   const { data: productos = [] } = useQuery(
-    'SELECT id, nombre, peso_nominal_g, precio_USD FROM productos_presentacion WHERE estado = ? ORDER BY peso_nominal_g ASC',
+    'SELECT id, nombre, peso_nominal_g, rollos_por_paquete, precio_USD FROM productos_presentacion WHERE estado = ? ORDER BY peso_nominal_g ASC',
     ['activo']
   );
   const { data: potes = [] } = useQuery(
     'SELECT id, capacidad, precio_venta_usd FROM inventario_potes WHERE estado = ? ORDER BY capacidad ASC',
+    ['activo']
+  );
+  const { data: tiposPapel = [] } = useQuery(
+    'SELECT id, nombre FROM tipos_papel WHERE estado = ? ORDER BY nombre ASC',
     ['activo']
   );
 
@@ -72,13 +80,10 @@ export function NuevoPedidoScreen() {
         getTasaDolarBCV(),
         getTasaEuroBCV()
       ]);
-      
       const dVal = dolarPromedio.toFixed(2);
       setValorDolar(dVal);
       setValorEuro(euroPromedio.toFixed(2));
-
       if (tipoTasa === 'dolar') setTasaCambio(dVal);
-
     } catch (e) {
       console.warn('No se pudo obtener la tasa de cambio:', e);
       Toast.show({ type: 'info', text1: 'Sin tasa automática', text2: 'Ingresa la tasa manualmente.' });
@@ -87,28 +92,26 @@ export function NuevoPedidoScreen() {
     }
   }, [tipoTasa]);
 
-  useEffect(() => {
-    fetchTasa();
-  }, [fetchTasa]);
+  useEffect(() => { fetchTasa(); }, [fetchTasa]);
 
-  // Cambiar la tasa si el usuario cambia el tipo
   useEffect(() => {
     if (tipoTasa === 'dolar') setTasaCambio(valorDolar);
     else if (tipoTasa === 'euro') setTasaCambio(valorEuro);
-    else setTasaCambio(''); // Efectivo (Manual)
+    else setTasaCambio('');
   }, [tipoTasa, valorDolar, valorEuro]);
 
   // --- Helpers ---
-  const clienteSeleccionado = clientes.find((c: any) => c.id === idCliente);
-  const productoSel = productos.find((p: any) => p.id === idProductoSel);
-  const poteSel = potes.find((p: any) => p.id === idPoteSel);
+  const clienteSeleccionado = (clientes as any[]).find(c => c.id === idCliente);
+  const productoSel = (productos as any[]).find(p => p.id === idProductoSel);
+  const poteSel = (potes as any[]).find(p => p.id === idPoteSel);
+  const tipoPapelSel = (tiposPapel as any[]).find(t => t.id === idTipoPapelSel);
 
   const handleAgregarItem = () => {
     if (cantidadItem <= 0) {
       Toast.show({ type: 'error', text1: 'Cantidad inválida', text2: 'Ingresa al menos 1 unidad.' });
       return;
     }
-    const precio = parseFloat(precioItem);
+    const precio = parseCurrency(precioItem);
     if (isNaN(precio) || precio < 0) {
       Toast.show({ type: 'error', text1: 'Precio inválido', text2: 'Ingresa un precio en USD válido.' });
       return;
@@ -117,25 +120,29 @@ export function NuevoPedidoScreen() {
       Toast.show({ type: 'error', text1: 'Presentación requerida', text2: 'Selecciona una presentación de papel.' });
       return;
     }
+    if (tipoItem === 'papel' && !idTipoPapelSel) {
+      Toast.show({ type: 'error', text1: 'Tipo de papel requerido', text2: 'Selecciona el tipo de papel (A, B, etc.).' });
+      return;
+    }
     if (tipoItem === 'pote' && !idPoteSel) {
       Toast.show({ type: 'error', text1: 'Pote requerido', text2: 'Selecciona un tipo de pote.' });
       return;
     }
 
     const nombre = tipoItem === 'papel'
-      ? `${productoSel?.nombre || 'Presentación'}`
+      ? `${productoSel?.nombre || 'Presentación'} (${tipoPapelSel?.nombre ?? 'Tipo ?'})`
       : `Pote ${poteSel?.capacidad || ''}`;
 
     setItems(prev => [...prev, {
       key: uuidv4(),
       tipo: tipoItem,
       id_referencia: tipoItem === 'papel' ? idProductoSel! : idPoteSel!,
+      id_tipo_papel: tipoItem === 'papel' ? idTipoPapelSel : null,
       nombre_display: nombre,
       cantidad: cantidadItem,
       precio_unitario: precio,
     }]);
 
-    // Reset item form
     setCantidadItem(0);
     setPrecioItem('');
   };
@@ -159,7 +166,7 @@ export function NuevoPedidoScreen() {
       Toast.show({ type: 'error', text1: 'Sin productos', text2: 'Agrega al menos un producto al pedido.' });
       return;
     }
-    const tasa = parseFloat(tasaCambio);
+    const tasa = parseCurrency(tasaCambio);
     if (isNaN(tasa) || tasa <= 0) {
       Toast.show({ type: 'error', text1: 'Tasa de cambio inválida', text2: 'Ingresa la tasa VES/USD actual.' });
       return;
@@ -170,7 +177,6 @@ export function NuevoPedidoScreen() {
       const newId = uuidv4();
       const now = new Date().toISOString();
 
-      // Calcular fecha de vencimiento de crédito: fecha de entrega + 30 días
       const fechaEntregaDate = new Date(fechaEntrega);
       fechaEntregaDate.setDate(fechaEntregaDate.getDate() + 30);
       const fechaVencimiento = fechaEntregaDate.toISOString().split('T')[0];
@@ -183,12 +189,13 @@ export function NuevoPedidoScreen() {
 
       for (const item of items) {
         await powerSync.execute(
-          `INSERT INTO detalles_pedido (id, id_pedido, id_producto, id_pote, cantidad_solicitada, precio_unitario)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO detalles_pedido (id, id_pedido, id_producto, id_pote, id_tipo_papel, cantidad_solicitada, precio_unitario)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
             uuidv4(), newId,
             item.tipo === 'papel' ? item.id_referencia : null,
             item.tipo === 'pote' ? item.id_referencia : null,
+            item.id_tipo_papel,
             item.cantidad, item.precio_unitario,
           ]
         );
@@ -221,7 +228,6 @@ export function NuevoPedidoScreen() {
             <View style={styles.cardContent}>
               <Text variant="titleMedium" style={globalStyles.sectionTitle}>1. Cliente y Fecha de Entrega</Text>
 
-              {/* Selector de cliente */}
               <Menu
                 visible={menuClienteVisible}
                 onDismiss={() => setMenuClienteVisible(false)}
@@ -234,11 +240,11 @@ export function NuevoPedidoScreen() {
                     style={styles.menuBtn}
                     textColor={clienteSeleccionado ? theme.colors.primary : '#555'}
                   >
-                    {(clienteSeleccionado as any)?.razon_social ?? 'Seleccionar Cliente...'}
+                    {clienteSeleccionado?.razon_social ?? 'Seleccionar Cliente...'}
                   </Button>
                 }
               >
-                {(clientes as any[]).map((c) => (
+                {(clientes as any[]).map(c => (
                   <Menu.Item key={c.id} onPress={() => { setIdCliente(c.id); setMenuClienteVisible(false); }} title={c.razon_social} />
                 ))}
                 {clientes.length === 0 && <Menu.Item title="No hay clientes activos" disabled />}
@@ -271,7 +277,7 @@ export function NuevoPedidoScreen() {
 
               <SegmentedButtons
                 value={tipoTasa}
-                onValueChange={(v) => setTipoTasa(v as 'dolar' | 'euro' | 'efectivo')}
+                onValueChange={v => setTipoTasa(v as 'dolar' | 'euro' | 'efectivo')}
                 buttons={[
                   { value: 'dolar', label: 'BCV ($)', icon: 'currency-usd' },
                   { value: 'euro', label: 'BCV (€)', icon: 'currency-eur' },
@@ -280,7 +286,7 @@ export function NuevoPedidoScreen() {
                 style={{ marginBottom: 12 }}
               />
 
-              <TextInput
+              <CurrencyInput
                 mode="outlined"
                 label={tipoTasa === 'euro' ? 'Bs. por 1 EUR' : 'Bs. por 1 USD'}
                 value={tasaCambio}
@@ -290,9 +296,9 @@ export function NuevoPedidoScreen() {
                 style={styles.input}
               />
               <HelperText type="info">
-                {tipoTasa === 'efectivo' 
-                  ? 'Ingresa la tasa de divisa en efectivo manualmente.' 
-                  : 'Tasa obtenida de DolarAPI. Puedes editarla de ser necesario para descuentos.'}
+                {tipoTasa === 'efectivo'
+                  ? 'Ingresa la tasa de divisa en efectivo manualmente.'
+                  : 'Tasa obtenida de DolarAPI. Puedes editarla de ser necesario.'}
               </HelperText>
             </View>
           </CustomCard>
@@ -304,10 +310,11 @@ export function NuevoPedidoScreen() {
 
               <SegmentedButtons
                 value={tipoItem}
-                onValueChange={(v) => {
+                onValueChange={v => {
                   setTipoItem(v as 'papel' | 'pote');
                   setIdProductoSel(null);
                   setIdPoteSel(null);
+                  setIdTipoPapelSel(null);
                 }}
                 buttons={[
                   { value: 'papel', label: 'Rollos de Papel', icon: 'package-variant' },
@@ -316,38 +323,71 @@ export function NuevoPedidoScreen() {
                 style={{ marginBottom: 16 }}
               />
 
-              {/* Selector de Presentación / Pote */}
               {tipoItem === 'papel' ? (
-                <Menu
-                  visible={menuProductoVisible}
-                  onDismiss={() => setMenuProductoVisible(false)}
-                  anchor={
-                    <Button
-                      mode="outlined"
-                      onPress={() => setMenuProductoVisible(true)}
-                      icon="package-variant-closed"
-                      contentStyle={{ justifyContent: 'flex-start' }}
-                      style={styles.menuBtn}
-                      textColor={productoSel ? theme.colors.primary : '#555'}
-                    >
-                      {(productoSel as any)?.nombre ?? 'Seleccionar Presentación...'}
-                    </Button>
-                  }
-                >
-                  {(productos as any[]).map(p => (
-                    <Menu.Item 
-                      key={p.id} 
-                      onPress={() => { 
-                        setIdProductoSel(p.id); 
-                        setPrecioItem(p.precio_USD ? p.precio_USD.toString() : '');
-                        setMenuProductoVisible(false); 
-                      }} 
-                      title={p.nombre} 
-                    />
-                  ))}
-                  {productos.length === 0 && <Menu.Item title="No hay presentaciones activas" disabled />}
-                </Menu>
+                <>
+                  {/* Selector de Presentación */}
+                  <Menu
+                    visible={menuProductoVisible}
+                    onDismiss={() => setMenuProductoVisible(false)}
+                    anchor={
+                      <Button
+                        mode="outlined"
+                        onPress={() => setMenuProductoVisible(true)}
+                        icon="package-variant-closed"
+                        contentStyle={{ justifyContent: 'flex-start' }}
+                        style={styles.menuBtn}
+                        textColor={productoSel ? theme.colors.primary : '#555'}
+                      >
+                        {productoSel?.nombre ?? 'Seleccionar Presentación...'}
+                      </Button>
+                    }
+                  >
+                    {(productos as any[]).map(p => (
+                      <Menu.Item
+                        key={p.id}
+                        onPress={() => {
+                          setIdProductoSel(p.id);
+                          setPrecioItem(p.precio_USD ? p.precio_USD.toString() : '');
+                          setMenuProductoVisible(false);
+                        }}
+                        title={p.nombre}
+                      />
+                    ))}
+                    {productos.length === 0 && <Menu.Item title="No hay presentaciones activas" disabled />}
+                  </Menu>
+
+                  {/* Selector de Tipo de Papel */}
+                  <Menu
+                    visible={menuTipoPapelVisible}
+                    onDismiss={() => setMenuTipoPapelVisible(false)}
+                    anchor={
+                      <Button
+                        mode="outlined"
+                        onPress={() => setMenuTipoPapelVisible(true)}
+                        icon="label-variant"
+                        contentStyle={{ justifyContent: 'flex-start' }}
+                        style={[styles.menuBtn, { marginTop: 8 }]}
+                        textColor={tipoPapelSel ? theme.colors.primary : '#555'}
+                      >
+                        {tipoPapelSel?.nombre ?? 'Seleccionar Tipo de Papel...'}
+                      </Button>
+                    }
+                  >
+                    {(tiposPapel as any[]).map(t => (
+                      <Menu.Item
+                        key={t.id}
+                        onPress={() => {
+                          setIdTipoPapelSel(t.id);
+                          setMenuTipoPapelVisible(false);
+                        }}
+                        title={t.nombre}
+                      />
+                    ))}
+                    {tiposPapel.length === 0 && <Menu.Item title="No hay tipos de papel activos" disabled />}
+                  </Menu>
+                </>
               ) : (
+                /* Selector de Pote */
                 <Menu
                   visible={menuPoteVisible}
                   onDismiss={() => setMenuPoteVisible(false)}
@@ -360,19 +400,19 @@ export function NuevoPedidoScreen() {
                       style={styles.menuBtn}
                       textColor={poteSel ? theme.colors.primary : '#555'}
                     >
-                      {(poteSel as any)?.capacidad ? `Pote ${(poteSel as any).capacidad}` : 'Seleccionar Pote...'}
+                      {poteSel?.capacidad ? `Pote ${poteSel.capacidad}` : 'Seleccionar Pote...'}
                     </Button>
                   }
                 >
                   {(potes as any[]).map(p => (
-                    <Menu.Item 
-                      key={p.id} 
-                      onPress={() => { 
-                        setIdPoteSel(p.id); 
+                    <Menu.Item
+                      key={p.id}
+                      onPress={() => {
+                        setIdPoteSel(p.id);
                         setPrecioItem(p.precio_venta_usd ? p.precio_venta_usd.toString() : '');
-                        setMenuPoteVisible(false); 
-                      }} 
-                      title={`Pote ${p.capacidad}`} 
+                        setMenuPoteVisible(false);
+                      }}
+                      title={`Pote ${p.capacidad}`}
                     />
                   ))}
                   {potes.length === 0 && <Menu.Item title="No hay potes activos" disabled />}
@@ -381,16 +421,29 @@ export function NuevoPedidoScreen() {
 
               {/* Cantidad y Precio */}
               <View style={styles.rowBetween}>
-                <Text variant="bodyMedium" style={{ color: '#555', marginTop: 16 }}>Cantidad</Text>
+                <Text variant="bodyMedium" style={{ color: '#555', marginTop: 16 }}>
+                  {tipoItem === 'papel' ? 'Cantidad de Rollos (Unidades)' : 'Cantidad (Unidades)'}
+                </Text>
                 <NumericInput value={cantidadItem} onChange={setCantidadItem} min={0} max={9999} />
               </View>
 
-              <TextInput
+              {tipoItem === 'papel' && productoSel && cantidadItem > 0 && (
+                <HelperText type="info" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
+                  {(() => {
+                    const rpx = productoSel.rollos_por_paquete || 1;
+                    const paqs = Math.floor(cantidadItem / rpx);
+                    const sueltos = cantidadItem % rpx;
+                    return `📦 Equivale a: ${paqs} paq. completos (${rpx} un/paq)${sueltos > 0 ? ` + ${sueltos} rollos sueltos` : ''}`;
+                  })()}
+                </HelperText>
+              )}
+
+              <CurrencyInput
                 mode="outlined"
-                label="Precio Unitario (USD)"
+                label={tipoItem === 'papel' ? 'Precio x Rollo (USD)' : 'Precio Unitario (USD)'}
                 value={precioItem}
                 onChangeText={setPrecioItem}
-                keyboardType="decimal-pad"
+                keyboardType="numeric"
                 left={<TextInput.Icon icon="currency-usd" />}
                 style={[styles.input, { marginTop: 8 }]}
               />
@@ -436,12 +489,11 @@ export function NuevoPedidoScreen() {
                     ${montoTotal.toFixed(2)} USD
                   </Text>
                 </View>
-                {tasaCambio && !isNaN(parseFloat(tasaCambio)) && (
+                {tasaCambio && !isNaN(parseCurrency(tasaCambio)) && parseCurrency(tasaCambio) > 0 && (
                   <Text variant="bodySmall" style={{ color: '#9ca3af', textAlign: 'right', marginTop: 2 }}>
-                    ≈ Bs. {(montoTotal * parseFloat(tasaCambio)).toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+                    ≈ Bs. {(montoTotal * parseCurrency(tasaCambio)).toLocaleString('es-VE', { minimumFractionDigits: 2 })}
                   </Text>
                 )}
-
                 <View style={[styles.infoBox, { backgroundColor: theme.colors.primaryContainer, marginTop: 16 }]}>
                   <MaterialCommunityIcons name="calendar-clock" size={16} color={theme.colors.primary} />
                   <Text variant="bodySmall" style={{ color: theme.colors.onPrimaryContainer, marginLeft: 6, flex: 1 }}>
@@ -471,11 +523,7 @@ export function NuevoPedidoScreen() {
 }
 
 const styles = StyleSheet.create({
-  
-  
-  
   cardContent: { padding: 16 },
-  
   menuBtn: { marginBottom: 4 },
   input: { marginBottom: 4 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -485,7 +533,4 @@ const styles = StyleSheet.create({
     paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f3f4f6',
   },
   infoBox: { flexDirection: 'row', alignItems: 'center', borderRadius: 10, padding: 10 },
-  
-  
-  
 });

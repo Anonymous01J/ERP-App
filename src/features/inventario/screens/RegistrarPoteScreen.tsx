@@ -4,6 +4,8 @@ import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 're
 import { Text, Button, Appbar, useTheme, TextInput } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { usePowerSync } from '@powersync/react';
+import { CurrencyInput } from '@components/ui/CurrencyInput';
+import { parseCurrency } from '@core/utils/currency';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
@@ -66,7 +68,7 @@ export default function RegistrarPoteScreen() {
           `UPDATE inventario_potes 
            SET capacidad = ?, stock_unidades = ?, precio_compra_usd = ?, precio_venta_usd = ? 
            WHERE id = ?`,
-          [capacidad.trim(), parseInt(stock) || 0, parseFloat(precioCompra), parseFloat(precioVenta), id]
+          [capacidad.trim(), parseInt(stock) || 0, parseCurrency(precioCompra), parseCurrency(precioVenta), id]
         );
         Toast.show({
           type: 'success',
@@ -78,7 +80,7 @@ export default function RegistrarPoteScreen() {
         await powerSync.execute(
           `INSERT INTO inventario_potes (id, capacidad, stock_unidades, precio_compra_usd, precio_venta_usd, estado) 
            VALUES (?, ?, ?, ?, ?, 'activo')`,
-          [newId, capacidad.trim(), parseInt(stock) || 0, parseFloat(precioCompra), parseFloat(precioVenta)]
+          [newId, capacidad.trim(), parseInt(stock) || 0, parseCurrency(precioCompra), parseCurrency(precioVenta)]
         );
         Toast.show({
           type: 'success',
@@ -137,7 +139,7 @@ export default function RegistrarPoteScreen() {
             />
 
             <View style={styles.row}>
-              <TextInput
+              <CurrencyInput
                 mode="outlined"
                 label="Precio Compra ($)"
                 value={precioCompra}
@@ -145,7 +147,7 @@ export default function RegistrarPoteScreen() {
                 keyboardType="numeric"
                 style={[styles.input, styles.half]}
               />
-              <TextInput
+              <CurrencyInput
                 mode="outlined"
                 label="Precio Venta ($)"
                 value={precioVenta}
