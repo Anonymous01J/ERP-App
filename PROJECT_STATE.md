@@ -29,6 +29,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 
 - **Flujo Google Sign-In:** Implementado con `@react-native-google-signin/google-signin` e ID Token de Supabase.
 - **Pantalla de Login (`LoginScreen.tsx`):** Rediseño moderno con branding de la app (`assets/icon.png`), selector para ver/ocultar contraseña, integración con `StatusBar` adaptable (`dark`), `useSafeAreaInsets` y `Toast.show`.
+- **Global Loading State (`AppLoader.tsx`):** Animación de Lottie de alta fidelidad que se muestra mientras se resuelve la sesión inicial (Supabase) o se conecta la DB (PowerSync), para evitar saltos en la UI.
 - **Protección de rutas:** Redirige automáticamente a `/login` si no hay sesión activa.
 
 ---
@@ -56,6 +57,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 - Listado con búsqueda en tiempo real y filtro activo/inactivo.
 - Eliminación lógica (desactivar/reactivar).
 - Formulario de clientes con `CurrencyInput` para `limite_credito`.
+- **Integración API CNE/Seniat:** Búsqueda automática por Cédula (V/E) para autocompletar Razón Social y RIF (`cedula.com.ve`).
 - Ruta en Drawer: `app/(drawer)/clientes.tsx`.
 - Modal de creación/edición: `app/(screens)/registrar-cliente.tsx`.
 
@@ -64,7 +66,8 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 ### 🏭 Proveedores (`src/features/proveedores`)
 - CRUD completo offline-first (PowerSync).
 - Dashboard con búsqueda, filtro activo/inactivo y eliminación lógica.
-- Campos: `nombre_empresa`, `teléfono`, `dirección`, `notas`.
+- Campos: `nombre_empresa`, `encargado`, `teléfono`, `dirección`, `notas`, `cedula`, `rif`.
+- **Integración API CNE/Seniat:** Búsqueda automática por Cédula (V/E) para autocompletar el nombre del **Encargado** y el **RIF**, manteniendo independiente la Razón Social de la empresa.
 - Ruta en Drawer: `app/(drawer)/proveedores.tsx`.
 - Modal: `app/(screens)/registrar-proveedor.tsx`.
 
@@ -138,10 +141,11 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 ### 💰 Finanzas / Flujo de Caja (`src/features/finanzas`)
 - **Dashboard General (`FinanzasDashboardScreen`)** accesible globalmente desde las pestañas inferiores:
   - **Sin encabezados duplicados:** Se eliminó el `Appbar.Header` interno para integrarse directamente con la navegación global del Drawer.
-  - **KPIs Financieros (Conversión USD Dinámica):** Consolida cuentas por cobrar, ingresos y egresos del mes actual utilizando la tasa de cambio histórica (VES->USD) almacenada en cada transacción.
+  - **Tu Liquidez Estimada:** Nueva tarjeta principal interactiva que consolida todo el historial de flujo de caja real (abonos y movimientos). Separa con precisión el saldo físico disponible en **Dólares (USD)** y **Bolívares (VES)**, calculando dinámicamente tu liquidez total global convirtiendo los Bolívares usando la **Tasa Oficial BCV** actualizada en tiempo real vía API al ingresar a la pantalla.
+  - **KPIs Financieros:** Consolida las cuentas por cobrar como un bloque compacto superior para no perder visibilidad del capital invertido.
   - **Estado de la Deuda:** Barra gráfica que segmenta porcentualmente si la cartera de crédito está "Al Día", "Por Vencer" (a menos de 5 días) o "Atrasada" (créditos con fecha vencida).
-  - **Flujo de Caja Histórico (Timeline):** Unifica en una sola vista cronológica todas las entradas (`abonos_pagos`) y salidas (`movimientos`).
-  - **Registro de Gastos Generales (`RegistrarGastoGeneralScreen`):** Formulario con `CurrencyInput` para montos y tasas. Clasifica pagos de Nómina, Alquiler, Servicios, Suministros u Otros.
+  - **Flujo de Caja Histórico (Timeline):** Unifica entradas (`abonos_pagos`) y salidas (`movimientos`). Rediseñado con **Agrupación por Fechas Exactas**, iconos circulares direccionales e indicador multi-moneda (ej. Abono en Bs convertido visualmente a dólares debajo del título).
+  - **Registro de Gastos Generales (`RegistrarGastoGeneralScreen`):** Formulario con `CurrencyInput` para montos y tasas. Clasifica pagos de Nómina, Alquiler, Servicios, Suministros u Otros. Se auto-puebla la Tasa BCV al seleccionar VES.
 
 ---
 
@@ -204,6 +208,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 
 | Módulo | Estado | Prioridad |
 |---|---|---|
+| **Notificaciones Push** | No iniciado | Alta |
 | Pago por Destajo a Operarios | No iniciado | Media |
 | Generación de PDF / Notas de Entrega | No iniciado | Media |
 | Exportación a Excel/CSV | No iniciado | Baja |

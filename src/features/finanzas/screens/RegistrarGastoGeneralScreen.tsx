@@ -33,6 +33,30 @@ export function RegistrarGastoGeneralScreen() {
   const [tasaCambio, setTasaCambio] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [saving, setSaving] = useState(false);
+  const [fetchingTasa, setFetchingTasa] = useState(false);
+
+  const fetchTasaBCV = async () => {
+    setFetchingTasa(true);
+    try {
+      const tasa = await getTasaDolarBCV();
+      if (tasa && tasa > 0) {
+        setTasaCambio(formatCurrencyATM(tasa.toFixed(2)));
+      }
+    } catch (error) {
+      console.log('Error obteniendo tasa BCV', error);
+      Toast.show({ type: 'error', text1: 'Error BCV', text2: 'No se pudo obtener la tasa BCV' });
+    } finally {
+      setFetchingTasa(false);
+    }
+  };
+
+  const handleToggleMoneda = () => {
+    const nuevaMoneda = moneda === 'VES' ? 'USD' : 'VES';
+    setMoneda(nuevaMoneda);
+    if (nuevaMoneda === 'VES' && !tasaCambio) {
+      fetchTasaBCV();
+    }
+  };
 
   const handleGuardar = async () => {
     const valMonto = parseCurrency(monto);
@@ -139,7 +163,7 @@ export function RegistrarGastoGeneralScreen() {
                 />
                 <TouchableOpacity
                   style={[styles.monedaToggle, { backgroundColor: moneda === 'USD' ? '#1d4ed8' : theme.colors.primaryContainer }]}
-                  onPress={() => setMoneda(moneda === 'VES' ? 'USD' : 'VES')}
+                  onPress={handleToggleMoneda}
                 >
                   <Text style={[styles.monedaText, { color: moneda === 'USD' ? '#fff' : theme.colors.primary }]}>
                     {moneda}
@@ -149,16 +173,30 @@ export function RegistrarGastoGeneralScreen() {
 
               {/* TASA DE CAMBIO (Si es VES) */}
               {moneda === 'VES' && (
-                <CurrencyInput
-                  mode="outlined"
-                  label="Tasa de Cambio (Ej. 36.5)"
-                  value={tasaCambio}
-                  onChangeText={setTasaCambio}
-                  keyboardType="numeric"
-                  style={styles.tasaInput}
-                  left={<TextInput.Icon icon="calculator" />}
-                  outlineStyle={{ borderRadius: 10 }}
-                />
+                <View style={{ marginBottom: 16 }}>
+                  <CurrencyInput
+                    mode="outlined"
+                    label="Tasa de Cambio (Ej. 36.5)"
+                    value={tasaCambio}
+                    onChangeText={setTasaCambio}
+                    keyboardType="numeric"
+                    style={{ backgroundColor: '#fff' }}
+                    left={<TextInput.Icon icon="calculator" />}
+                    right={
+                      <TextInput.Icon 
+                        icon="refresh" 
+                        disabled={fetchingTasa}
+                        onPress={fetchTasaBCV}
+                      />
+                    }
+                    outlineStyle={{ borderRadius: 10 }}
+                  />
+                  {fetchingTasa && (
+                    <Text variant="labelSmall" style={{ color: theme.colors.primary, marginTop: 4, marginLeft: 4 }}>
+                      Obteniendo tasa BCV...
+                    </Text>
+                  )}
+                </View>
               )}
 
               {/* DESCRIPCIÓN */}

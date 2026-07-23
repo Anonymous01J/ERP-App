@@ -10,6 +10,7 @@ import Toast from 'react-native-toast-message';
 import { SyncStatusNotifier } from '../src/components/ui/SyncStatusNotifier';
 import { LogBox } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { AppLoader } from '../src/components/ui/AppLoader';
 
 LogBox.ignoreLogs([
   'setLayoutAnimationEnabledExperimental is currently a no-op',
@@ -48,6 +49,10 @@ function RootLayoutNav() {
     }
   }, [session, isLoading, segments]);
 
+  if (isLoading) {
+    return <AppLoader />;
+  }
+
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }}>
       <Stack.Screen name="login" />
@@ -85,7 +90,11 @@ export default function RootLayout() {
   }, []);
 
   if (!fontsLoaded && !fontError) {
-    return null;
+    return (
+      <PaperProvider theme={theme}>
+        <AppLoader />
+      </PaperProvider>
+    );
   }
 
   return (

@@ -13,7 +13,7 @@ export function usePullToRefresh() {
 
       await new Promise(resolve => setTimeout(resolve, 1500));
 
-      const status = powerSync.syncStatus;
+      const status = powerSync.currentStatus;
 
       if (!status) {
         Toast.show({
@@ -25,8 +25,8 @@ export function usePullToRefresh() {
         return;
       }
 
-      if (status.error) {
-        Toast.show({ type: 'error', text1: 'Error de Sincronización', text2: status.error.message || 'No se pudo sincronizar.' });
+      if (status.dataFlow?.uploadError || status.dataFlow?.downloadError) {
+        Toast.show({ type: 'error', text1: 'Error de Sincronización', text2: 'No se pudo sincronizar.' });
       } else if (status.connected) {
         Toast.show({ type: 'success', text1: 'Sincronización Exitosa', text2: 'Los cambios han sido subidos y bajados correctamente.' });
       } else {

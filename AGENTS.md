@@ -45,6 +45,7 @@ Always use path aliases defined in `tsconfig.json` to prevent relative path hell
 ## 7. Currency & Input Rules
 - **Monetary Inputs:** ALWAYS use `<CurrencyInput>` from `@components/ui/CurrencyInput` for price, amount, or exchange rate inputs to ensure ATM-style formatting (`1.234,56`).
 - **Database Conversions:** ALWAYS parse formatted currency strings using `parseCurrency` from `@core/utils/currency` before saving/calculating values or inserting into Supabase/PowerSync (`parseCurrency(val)`).
+- **Float Formatting:** When passing a raw float (e.g. from an API or calculation) into `formatCurrencyATM`, ALWAYS use `.toFixed(2)` first (e.g., `formatCurrencyATM(val.toFixed(2))`) to prevent dropping trailing zeros which breaks the ATM parser.
 
 ## 8. Development Environment (Project IDX & Nix)
 - System dependencies, CLIs, Node versions, and VS Code extensions must be configured in `dev.nix` (Nix packages).
@@ -63,3 +64,7 @@ Always use path aliases defined in `tsconfig.json` to prevent relative path hell
     - Add `authenticated` to **JWT Audience**.
     - Remove conflicting manual HS256 secrets.
 - **Connection Management:** Always await `db.init()` before `db.connect()` and use module-level guards to prevent concurrent double-connections during React re-mounts.
+
+## 10. API Integrations & Push Notifications (WIP)
+- **Third-Party APIs (e.g., Cedula/Seniat):** Always prefix environment variables with `EXPO_PUBLIC_` in `.env` to ensure they are bundled correctly in the Expo client. Handle API timeouts and empty responses gracefully (e.g., returning `null` or showing clear `Toast` messages).
+- **Push Notifications:** Set as a high-priority upcoming feature. Will require integrating Expo Push Tokens with Supabase or a third-party service (e.g., OneSignal/Firebase) to alert about pending debts or stock shortages.

@@ -1,7 +1,7 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { Button, Appbar, useTheme, TextInput, Text } from 'react-native-paper';
+import { Button, Appbar, useTheme, TextInput, Text, Menu } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { usePowerSync } from '@powersync/react';
 import { globalStyles } from '@core/theme/globalStyles';
@@ -10,6 +10,8 @@ import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import { CurrencyInput } from '@components/ui/CurrencyInput';
 import { parseCurrency, formatCurrencyATM } from '@core/utils/currency';
+import { consultarCedula } from '@core/api/cedula';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 export function RegistrarClienteScreen() {
   const insets = useSafeAreaInsets();
@@ -19,10 +21,15 @@ export function RegistrarClienteScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const isEditing = !!id;
 
+  const [nacionalidad, setNacionalidad] = useState<'V' | 'E'>('V');
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [cedula, setCedula] = useState('');
+  const [rif, setRif] = useState('');
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
   const [limiteCredito, setLimiteCredito] = useState('');
   const [loading, setLoading] = useState(false);
+  const [searchingCedula, setSearchingCedula] = useState(false);
 
   useEffect(() => {
     if (isEditing && id) {
@@ -33,6 +40,21 @@ export function RegistrarClienteScreen() {
             setNombre(result.razon_social || '');
             setTelefono(result.telefono || '');
             setLimiteCredito(result.limite_credito ? formatCurrencyATM(result.limite_credito.toString()) : '');
+            
+            // Si la cedula existe, extraer nacionalidad y numero
+            if (result.cedula) {
+              const nac = result.cedula.charAt(0);
+              const num = result.cedula.substring(1);
+              if (nac === 'V' || nac === 'E') {
+                setNacionalidad(nac as 'V' | 'E');
+                setCedula(num);
+              } else {
+                setCedula(result.cedula);
+              }
+            }
+            if (result.rif) {
+              setRif(result.rif);
+            }
           }
         } catch (error) {
           console.error('Error cargando cliente:', error);
@@ -43,6 +65,39 @@ export function RegistrarClienteScreen() {
     }
   }, [id, isEditing, powerSync]);
 
+  const handleBuscarCedula = async () => {
+    if (!cedula.trim()) {
+      Toast.show({ type: 'error', text1: 'Error', text2: 'Ingresa un número de cédula válido.' });
+      return;
+    }
+    
+    setSearchingCedula(true);
+    try {
+      const data = await consultarCedula(nacionalidad, cedula.trim());
+      if (data) {
+        // Construir nombre completo
+        const nombres = [data.primer_nombre, data.segundo_nombre].filter(Boolean).join(' ');
+        const apellidos = [data.primer_apellido, data.segundo_apellido].filter(Boolean).join(' ');
+        const nombreCompleto = `${nombres} ${apellidos}`.trim();
+        
+        if (nombreCompleto) {
+          setNombre(nombreCompleto);
+          Toast.show({ type: 'success', text1: 'Datos Encontrados', text2: nombreCompleto });
+        } else {
+          Toast.show({ type: 'info', text1: 'Sin Nombre', text2: 'La API no retornó el nombre.' });
+        }
+        
+        if (data.rif) {
+          setRif(data.rif);
+        }
+      }
+    } catch (error: any) {
+      Toast.show({ type: 'error', text1: 'Error en consulta', text2: error.message || 'No se pudo buscar la cédula' });
+    } finally {
+      setSearchingCedula(false);
+    }
+  };
+
   const handleGuardar = async () => {
     if (!nombre.trim()) {
       Toast.show({ type: 'error', text1: 'Campo Requerido', text2: 'El nombre o razón social es obligatorio.' });
@@ -52,17 +107,18 @@ export function RegistrarClienteScreen() {
     setLoading(true);
     try {
       const creditoNumerico = limiteCredito ? parseCurrency(limiteCredito) : 0;
+      const cedulaCompleta = cedula.trim() ? `${nacionalidad}${cedula.trim()}` : null;
 
       if (isEditing && id) {
         await powerSync.execute(
-          'UPDATE clientes SET razon_social = ?, telefono = ?, limite_credito = ? WHERE id = ?',
-          [nombre.trim(), telefono.trim(), creditoNumerico, id]
+          'UPDATE clientes SET razon_social = ?, telefono = ?, limite_credito = ?, cedula = ?, rif = ? WHERE id = ?',
+          [nombre.trim(), telefono.trim(), creditoNumerico, cedulaCompleta, rif.trim() || null, id]
         );
       } else {
         const newId = uuidv4();
         await powerSync.execute(
-          'INSERT INTO clientes (id, razon_social, telefono, limite_credito, estado, saldo_a_favor_usd) VALUES (?, ?, ?, ?, ?, ?)',
-          [newId, nombre.trim(), telefono.trim(), creditoNumerico, 'activo', 0]
+          'INSERT INTO clientes (id, razon_social, telefono, limite_credito, estado, saldo_a_favor_usd, cedula, rif) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [newId, nombre.trim(), telefono.trim(), creditoNumerico, 'activo', 0, cedulaCompleta, rif.trim() || null]
         );
       }
       
@@ -96,6 +152,63 @@ export function RegistrarClienteScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
+          <Text variant="titleMedium" style={globalStyles.sectionTitle}>Identificación</Text>
+          
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
+            <View style={{ width: 85 }}>
+              <Menu
+                visible={menuVisible}
+                onDismiss={() => setMenuVisible(false)}
+                anchor={
+                  <Button 
+                    mode="outlined" 
+                    onPress={() => setMenuVisible(true)}
+                    style={{ height: 50, justifyContent: 'center', borderRadius: 4, marginTop: 6, borderColor: theme.colors.outline }}
+                    contentStyle={{ height: '100%', flexDirection: 'row-reverse' }}
+                    labelStyle={{ fontSize: 16, fontWeight: 'bold' }}
+                    icon="menu-down"
+                  >
+                    {nacionalidad}
+                  </Button>
+                }
+              >
+                <Menu.Item onPress={() => { setNacionalidad('V'); setMenuVisible(false); }} title="V - Venezolano" />
+                <Menu.Item onPress={() => { setNacionalidad('E'); setMenuVisible(false); }} title="E - Extranjero" />
+              </Menu>
+            </View>
+            <TextInput
+              mode="outlined"
+              label="Número de Cédula"
+              value={cedula}
+              onChangeText={setCedula}
+              keyboardType="number-pad"
+              style={{ flex: 1, marginTop: -6 }}
+              disabled={loading || searchingCedula}
+              right={<TextInput.Icon icon="magnify" onPress={handleBuscarCedula} disabled={loading || searchingCedula} />}
+            />
+          </View>
+
+          <Button 
+            mode="contained-tonal" 
+            onPress={handleBuscarCedula} 
+            loading={searchingCedula} 
+            disabled={loading || searchingCedula || !cedula.trim()}
+            style={{ marginBottom: 24 }}
+            icon="card-search"
+          >
+            Buscar Datos
+          </Button>
+
+          <TextInput
+            mode="outlined"
+            label="Registro de Información Fiscal (RIF)"
+            value={rif}
+            onChangeText={setRif}
+            style={[styles.input, { marginBottom: 24 }]}
+            disabled={loading}
+            placeholder="Ej. J-12345678-9"
+          />
+
           <Text variant="titleMedium" style={globalStyles.sectionTitle}>Datos Principales</Text>
           <TextInput
             mode="outlined"

@@ -1,6 +1,8 @@
 import { column, Schema, Table } from '@powersync/react-native';
 
 const clientes = new Table({
+  cedula: column.text,
+  rif: column.text,
   razon_social: column.text,
   telefono: column.text,
   limite_credito: column.real,
@@ -33,6 +35,9 @@ const tipos_papel = new Table({
 });
 
 const proveedores = new Table({
+  cedula: column.text,
+  rif: column.text,
+  encargado: column.text,
   nombre_empresa: column.text,
   telefono: column.text,
   direccion: column.text,
