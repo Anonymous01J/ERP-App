@@ -29,7 +29,14 @@
     },
     "plugins": [
       "expo-router",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      [
+        "@sentry/react-native",
+        {
+          "organization": "anonymous01j",
+          "project": "erp-app"
+        }
+      ]
     ],
     "scheme": "erp-app",
     "extra": {

@@ -11,6 +11,13 @@ import { SyncStatusNotifier } from '../src/components/ui/SyncStatusNotifier';
 import { LogBox } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { AppLoader } from '../src/components/ui/AppLoader';
+import * as Sentry from '@sentry/react-native';
+
+Sentry.init({
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN || '',
+  tracesSampleRate: 1.0,
+  enabled: process.env.NODE_ENV === 'production' || !!process.env.EXPO_PUBLIC_SENTRY_DSN,
+});
 
 LogBox.ignoreLogs([
   'setLayoutAnimationEnabledExperimental is currently a no-op',
@@ -73,7 +80,7 @@ function RootLayoutNav() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     ...MaterialCommunityIcons.font,
   });
@@ -110,3 +117,5 @@ export default function RootLayout() {
     </AuthProvider>
   );
 }
+
+export default Sentry.wrap(RootLayout);

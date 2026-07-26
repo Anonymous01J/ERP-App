@@ -10,6 +10,7 @@ import {
   IconButton, TextInput, SegmentedButtons, HelperText,
 } from 'react-native-paper';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { usePowerSync, useQuery } from '@powersync/react';
 import { NumericInput } from '@ui/NumericInput';
 import { DatePickerInput } from '@ui/DatePickerInput';
@@ -18,7 +19,7 @@ import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import { CurrencyInput } from '@components/ui/CurrencyInput';
-import { parseCurrency } from '@core/utils/currency';
+import { parseCurrency, formatCurrencyATM } from '@core/utils/currency';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { ItemFormulario } from '../types/pedidos.types';
 import { getTasaDolarBCV, getTasaEuroBCV } from '@core/api/dolar';
@@ -80,9 +81,9 @@ export function NuevoPedidoScreen() {
         getTasaDolarBCV(),
         getTasaEuroBCV()
       ]);
-      const dVal = dolarPromedio.toFixed(2);
+      const dVal = formatCurrencyATM(dolarPromedio.toFixed(2));
       setValorDolar(dVal);
-      setValorEuro(euroPromedio.toFixed(2));
+      setValorEuro(formatCurrencyATM(euroPromedio.toFixed(2)));
       if (tipoTasa === 'dolar') setTasaCambio(dVal);
     } catch (e) {
       console.warn('No se pudo obtener la tasa de cambio:', e);
@@ -215,6 +216,7 @@ export function NuevoPedidoScreen() {
 
   return (
     <View style={globalStyles.containerWhite}>
+      <StatusBar style="dark" />
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} disabled={isSaving} />
         <Appbar.Content title="Nuevo Pedido" subtitle="Crédito a 30 días" />
@@ -347,7 +349,7 @@ export function NuevoPedidoScreen() {
                         key={p.id}
                         onPress={() => {
                           setIdProductoSel(p.id);
-                          setPrecioItem(p.precio_USD ? p.precio_USD.toString() : '');
+                          setPrecioItem(p.precio_USD ? formatCurrencyATM(Number(p.precio_USD).toFixed(2)) : '');
                           setMenuProductoVisible(false);
                         }}
                         title={p.nombre}
@@ -409,7 +411,7 @@ export function NuevoPedidoScreen() {
                       key={p.id}
                       onPress={() => {
                         setIdPoteSel(p.id);
-                        setPrecioItem(p.precio_venta_usd ? p.precio_venta_usd.toString() : '');
+                        setPrecioItem(p.precio_venta_usd ? formatCurrencyATM(Number(p.precio_venta_usd).toFixed(2)) : '');
                         setMenuPoteVisible(false);
                       }}
                       title={`Pote ${p.capacidad}`}
@@ -420,8 +422,8 @@ export function NuevoPedidoScreen() {
               )}
 
               {/* Cantidad y Precio */}
-              <View style={styles.rowBetween}>
-                <Text variant="bodyMedium" style={{ color: '#555', marginTop: 16 }}>
+              <View style={[styles.rowBetween, { marginTop: 16 }]}>
+                <Text variant="bodyMedium" style={{ color: '#555', flex: 1, paddingRight: 8 }}>
                   {tipoItem === 'papel' ? 'Cantidad de Rollos (Unidades)' : 'Cantidad (Unidades)'}
                 </Text>
                 <NumericInput value={cantidadItem} onChange={setCantidadItem} min={0} max={9999} />
@@ -447,6 +449,18 @@ export function NuevoPedidoScreen() {
                 left={<TextInput.Icon icon="currency-usd" />}
                 style={[styles.input, { marginTop: 8 }]}
               />
+
+              {(() => {
+                const p = parseCurrency(precioItem);
+                if (cantidadItem > 0 && !isNaN(p) && p > 0) {
+                  return (
+                    <Text variant="titleMedium" style={{ textAlign: 'right', marginTop: 12, color: theme.colors.primary, fontWeight: 'bold' }}>
+                      Subtotal: ${(cantidadItem * p).toFixed(2)} USD
+                    </Text>
+                  );
+                }
+                return null;
+              })()}
 
               <Button
                 mode="contained-tonal"

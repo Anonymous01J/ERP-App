@@ -36,7 +36,8 @@ export const NumericInput: React.FC<NumericInputProps> = ({
         mode="contained"
         containerColor={theme.colors.secondaryContainer}
         iconColor={theme.colors.onSecondaryContainer}
-        size={32}
+        size={24}
+        style={{ margin: 0 }}
         onPress={handleDecrement}
         disabled={disabled || value <= min}
       />
@@ -44,6 +45,8 @@ export const NumericInput: React.FC<NumericInputProps> = ({
         mode="outlined"
         value={value.toString()}
         label={label}
+        dense
+        contentStyle={{ textAlign: 'center' }}
         keyboardType="numeric"
         onChangeText={(text) => {
           const num = parseInt(text, 10);
@@ -61,7 +64,8 @@ export const NumericInput: React.FC<NumericInputProps> = ({
         mode="contained"
         containerColor={theme.colors.primary}
         iconColor={theme.colors.onPrimary}
-        size={32}
+        size={24}
+        style={{ margin: 0 }}
         onPress={handleIncrement}
         disabled={disabled || value >= max}
       />
@@ -74,11 +78,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 8,
   },
   input: {
-    width: 80,
+    width: 70,
     textAlign: 'center',
     marginHorizontal: 8,
+    backgroundColor: 'transparent',
   },
 });
