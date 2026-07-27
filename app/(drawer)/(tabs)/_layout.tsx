@@ -81,6 +81,16 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="reportes"
+        options={{
+          title: 'Reportes',
+          tabBarLabel: 'Reportes',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="chart-box" size={size} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

@@ -204,16 +204,30 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 
 ---
 
+### 📈 Reportes y Estadísticas (`src/features/reportes`)
+- **Dashboard Dual/Triple (`ReportesDashboardScreen`)** conectado offline-first:
+  - **Producción:** Analíticas de eficiencia de materia prima (Mermas vs Papel Útil) con gráfico tipo Pie.
+  - **Finanzas:** Flujo de caja comparativo (Ventas, Cobranzas, Cuentas por Cobrar) con gráfico de Barras multi-columna.
+  - **Logística:** Desglose del presupuesto gastado en ruta (Gasolina, Peaje, Viáticos) con gráfico tipo Donut interactivo, convertido a USD automáticamente.
+- **Filtros Globales de Tiempo:** Selector unificado (1 Mes, 3 Meses, Rango Personalizado "Desde-Hasta").
+- **Motor de Exportación PDF Avanzado (`generatePdf.ts`):** 
+  - **Gráficos Incrustados:** Captura en tiempo real del gráfico activo (Base64) mediante `react-native-view-shot`.
+  - **Selector de Nivel de Detalle:** Permite emitir un "Resumen" gerencial o un reporte "Detallado" con tablas de registro exacto (ej. lista de facturas emitidas, historia de viáticos).
+  - **Análisis Automatizado:** Los PDF generan texto explicativo (KPIs) automático basado en los porcentajes calculados (ej. Eficiencia de Mermas, Deuda vs Facturado).
+  - **Formato Corporativo:** Cabeceras HTML profesionales y uso de CSS (`page-break-before`) para paginación controlada al imprimir.
+  - **Animación y UX:** Botón de descarga interactivo con loader para evitar dobles clics durante el renderizado asíncrono.
+
+---
+
 ## 8. Módulos Pendientes
 
 | Módulo | Estado | Prioridad |
 |---|---|---|
+| **Mejoras Visuales en PDF (Gráficos Base64 y Tablas)** | ✅ Completado | Media |
 | **Notificaciones Push** | No iniciado | Alta |
-| Pago por Destajo a Operarios | No iniciado | Media |
-| Generación de PDF / Notas de Entrega | No iniciado | Media |
+| **Gestión de Usuarios y Roles (RBAC)** | Pendiente | Alta |
 | Exportación a Excel/CSV | No iniciado | Baja |
 | **Refactoring: Queries a Custom Hooks** | Pendiente | Media |
-| **Gestión de Usuarios y Roles (UI)** | Pendiente | Media |
 
 ---
 
