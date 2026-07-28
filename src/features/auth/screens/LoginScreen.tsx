@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import Toast from 'react-native-toast-message';
 import { supabase } from '../../../core/supabase/client';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { useNetInfo } from '@react-native-community/netinfo';
 
 export function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -14,6 +15,7 @@ export function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const netInfo = useNetInfo();
 
   useEffect(() => {
     // Inicializar Google Sign-In
@@ -111,6 +113,17 @@ export function LoginScreen() {
 
           {/* Form Card */}
           <Surface style={styles.card} elevation={2}>
+            {netInfo.isConnected === false && (
+              <View style={{ backgroundColor: theme.colors.errorContainer, padding: 12, borderRadius: 8, marginBottom: 16 }}>
+                <Text style={{ color: theme.colors.onErrorContainer, textAlign: 'center', fontWeight: 'bold' }}>
+                  Sin conexión a Internet
+                </Text>
+                <Text style={{ color: theme.colors.onErrorContainer, textAlign: 'center', fontSize: 12 }}>
+                  Debes conectarte a una red para iniciar sesión por primera vez.
+                </Text>
+              </View>
+            )}
+
             <Text variant="titleMedium" style={styles.cardHeader}>
               Iniciar Sesión
             </Text>

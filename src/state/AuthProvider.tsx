@@ -60,6 +60,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
+    const initAuth = async () => {
+      try {
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('[AuthProvider] getSession error:', error);
+        }
+        
+        if (initialSession) {
+          console.log('[AuthProvider] Initial session found, setting session');
+          setSession(initialSession);
+          connectPowerSync().catch(console.error);
+        }
+      } catch (err) {
+        console.error('[AuthProvider] Error fetching initial session:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initAuth();
+
     // Escuchar cambios en la sesión (onAuthStateChange maneja la sesión inicial automáticamente)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
