@@ -5,6 +5,7 @@ import { Text, Appbar, useTheme, TextInput, IconButton, Button } from 'react-nat
 import { useRouter } from 'expo-router';
 import { CustomCard } from '@components/ui/CustomCard';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { StatusBar } from 'expo-status-bar';
 
 export function RegistrarGastoScreen() {
   const router = useRouter();
@@ -44,6 +45,7 @@ export function RegistrarGastoScreen() {
 
   return (
     <View style={globalStyles.containerWhite}>
+      <StatusBar style="dark" />
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Agenda de Gastos" titleStyle={{ fontWeight: 'bold' }} />

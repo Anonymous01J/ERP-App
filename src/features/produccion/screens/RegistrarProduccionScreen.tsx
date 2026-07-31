@@ -9,6 +9,7 @@ import { CustomCard } from '@components/ui/CustomCard';
 import { usePowerSync, useQuery } from '@powersync/react';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
+import { StatusBar } from 'expo-status-bar';
 import { v4 as uuidv4 } from 'uuid';
 import { ProductoPresentacion, BobinaGrande } from '../../core/powersync/types';
 
@@ -253,6 +254,7 @@ export function RegistrarProduccionScreen() {
 
   return (
     <View style={globalStyles.containerWhite}>
+      <StatusBar style="dark" />
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} disabled={saving} />
         <Appbar.Content title="Registrar Producción" />

@@ -9,6 +9,7 @@ import { CustomCard } from '@components/ui/CustomCard';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { StatusBar } from 'expo-status-bar';
 import { CurrencyInput } from '@components/ui/CurrencyInput';
 import { parseCurrency, formatCurrencyATM } from '@core/utils/currency';
 import { getTasaDolarBCV } from '@core/api/dolar';
@@ -81,8 +82,8 @@ export function RegistrarGastoGeneralScreen() {
         : `Gasto General: ${catLabel}`;
 
       await powerSync.execute(
-        `INSERT INTO movimientos (id, descripcion, tipo, monto, moneda, tasa_cambio, fecha) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [uuidv4(), descripFinal, tipo, valMonto, moneda, valTasa, new Date().toISOString()]
+        `INSERT INTO movimientos (id, descripcion, tipo, monto, moneda, tasa_cambio, categoria, fecha) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [uuidv4(), descripFinal, tipo, valMonto, moneda, valTasa, categoria, new Date().toISOString()]
       );
 
       Toast.show({ type: 'success', text1: 'Movimiento registrado', text2: 'El balance general ha sido actualizado.' });
@@ -97,6 +98,7 @@ export function RegistrarGastoGeneralScreen() {
 
   return (
     <View style={globalStyles.containerWhite}>
+      <StatusBar style="dark" />
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} disabled={saving} />
         <Appbar.Content title="Registrar Gasto / Ingreso" />

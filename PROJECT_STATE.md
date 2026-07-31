@@ -11,6 +11,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 - **Entorno:** Configurado con `.idx/dev.nix` para un entorno aislado y reproducible (NixPackages en Firebase Studio).
 - **Tipado y Alias:** `tsconfig.json` con alias (`@components`, `@ui`, `@features`, `@state`, `@core`).
 - **Cliente de Desarrollo:** Cliente personalizado Android generado via EAS Build con dependencias nativas incluidas.
+- **UI & Navegación:** Barras de estado (`StatusBar`) dinámicas por contexto (claro/oscuro) para garantizar contraste, y ruteo inicial fijado en Dashboard (`initialRouteName="index"`).
 
 ---
 
@@ -28,9 +29,11 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 ## 3. Autenticación
 
 - **Flujo Google Sign-In:** Implementado con `@react-native-google-signin/google-signin` e ID Token de Supabase.
-- **Pantalla de Login (`LoginScreen.tsx`):** Rediseño moderno con branding de la app (`assets/icon.png`), selector para ver/ocultar contraseña, integración con `StatusBar` adaptable (`dark`), `useSafeAreaInsets` y `Toast.show`.
-- **Global Loading State (`AppLoader.tsx`):** Animación de Lottie de alta fidelidad que se muestra mientras se resuelve la sesión inicial (Supabase) o se conecta la DB (PowerSync), para evitar saltos en la UI.
-- **Protección de rutas:** Redirige automáticamente a `/login` si no hay sesión activa.
+- **Creación de Perfiles (Trigger):** Supabase ejecuta un trigger (`handle_new_user`) que automáticamente crea un perfil con rol `operador` y estado inactivo (`activo = false`) al registrar un nuevo usuario vía OAuth.
+- **Pantalla de Login (`LoginScreen.tsx`):** Rediseño moderno con branding de la app, selector de contraseña y loaders.
+- **Protección de Navegación (`app/_layout.tsx`):** 
+  - Redirige a `/login` si no hay sesión.
+  - Redirige a `CuentaInactivaScreen` si el usuario está autenticado pero su perfil tiene `activo = false` (hasta que el Admin lo apruebe).
 
 ---
 
@@ -57,7 +60,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 - Listado con búsqueda en tiempo real y filtro activo/inactivo.
 - Eliminación lógica (desactivar/reactivar).
 - Formulario de clientes con `CurrencyInput` para `limite_credito`.
-- **Integración API CNE/Seniat:** Búsqueda automática por Cédula (V/E) para autocompletar Razón Social y RIF (`cedula.com.ve`).
+- **Integración API CNE/Seniat:** Búsqueda automática y soporte para Documentos Personales y Jurídicos (V, E, J, G, P, C) permitiendo un registro amplio de identidades.
 - Ruta en Drawer: `app/(drawer)/clientes.tsx`.
 - Modal de creación/edición: `app/(screens)/registrar-cliente.tsx`.
 
@@ -67,7 +70,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 - CRUD completo offline-first (PowerSync).
 - Dashboard con búsqueda, filtro activo/inactivo y eliminación lógica.
 - Campos: `nombre_empresa`, `encargado`, `teléfono`, `dirección`, `notas`, `cedula`, `rif`.
-- **Integración API CNE/Seniat:** Búsqueda automática por Cédula (V/E) para autocompletar el nombre del **Encargado** y el **RIF**, manteniendo independiente la Razón Social de la empresa.
+- **Integración API CNE/Seniat:** Búsqueda automática y soporte completo (V, E, J, G, P, C) para registrar identidad y RIF. En la BD (`Supabase`) solo el **Nombre de la Empresa** es estrictamente obligatorio (`NOT NULL`).
 - Ruta en Drawer: `app/(drawer)/proveedores.tsx`.
 - Modal: `app/(screens)/registrar-proveedor.tsx`.
 
@@ -93,6 +96,12 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - Al guardar: inserta en `pedidos` + cada ítem en `detalles_pedido`.
   - Fecha de vencimiento de crédito calculada automáticamente: fecha entrega + 30 días.
 - Ruta Modal: `app/(screens)/nuevo-pedido.tsx`.
+- **Generación de Notas de Entrega en PDF**:
+  - Diseño calcado y profesional del talonario físico con CSS Grid, usando `expo-print`.
+  - Número de secuencia global gestionado a través de la tabla `configuracion` (sincronizada en PowerSync). El consecutivo avanza dinámicamente y se bloquea para el pedido impreso.
+  - Formato de fecha dinámico: usa `fecha_entrega` si está entregado, o fecha actual (`new Date()`) en otro estado.
+  - Los archivos generados se guardan usando `expo-file-system/legacy` y se nombran automáticamente con el Nro y Razón Social del cliente para compartir profesionalmente vía `expo-sharing`.
+  - Aviso legal obligatorio incluido en el diseño ("NO TIENE VALIDEZ FISCAL").
 
 ---
 
@@ -219,13 +228,25 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 
 ---
 
+### 🛡️ Gestión de Usuarios y Permisos (RBAC) (`src/features/usuarios`)
+- **Sistema Basado en Roles:** Soporte para 4 roles: `admin`, `operador`, `chofer`, `vendedor`.
+- **Dashboard de Usuarios (`UsuariosDashboardScreen`):** Panel exclusivo para administradores que lista usuarios activos y pendientes de activación.
+- **Edición de Perfiles:** Permite al administrador cambiar el rol de cualquier usuario y alternar su estado de acceso (`activo`).
+- **Matriz de Permisos (`MatrizPermisosScreen`):**
+  - Interfaz de grid/tabla donde el admin configura con 'switches' qué rol tiene acceso a qué módulo de la app.
+  - El rol `admin` tiene acceso total bloqueado por defecto.
+  - Sincronización en tiempo real con PowerSync, propagando las restricciones a los dispositivos offline.
+- **Controladores de UI:** El Hook `usePermissions()` determina qué pantallas, menús (Drawer) y pestañas (Tabs) son visibles según la configuración de la matriz para el rol actual del usuario.
+
+---
+
 ## 8. Módulos Pendientes
 
 | Módulo | Estado | Prioridad |
 |---|---|---|
 | **Mejoras Visuales en PDF (Gráficos Base64 y Tablas)** | ✅ Completado | Media |
 | **Notificaciones Push** | No iniciado | Alta |
-| **Gestión de Usuarios y Roles (RBAC)** | Pendiente | Alta |
+| **Gestión de Usuarios y Roles (RBAC)** | ✅ Completado | Alta |
 | Exportación a Excel/CSV | No iniciado | Baja |
 | **Refactoring: Queries a Custom Hooks** | Pendiente | Media |
 

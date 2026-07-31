@@ -17,6 +17,7 @@ Este proyecto utiliza un entorno basado en Nix (`.idx/dev.nix`) en Firebase Stud
 
 ## 3. Expo & Framework Versions
 - **CRITICAL: Expo HAS CHANGED.** Read the exact versioned docs at https://docs.expo.dev/versions/v54.0.0/ before writing any code.
+- **`expo-file-system` in SDK 54:** The default export uses a new File/Directory API. If you need methods like `moveAsync` or `readAsStringAsync` from the previous API, you MUST import them from the legacy module: `import * as FileSystem from 'expo-file-system/legacy';`
 
 ## 4. Architecture (Feature-Based Design)
 The project strictly follows a Feature-Based Architecture to maintain scalability.
@@ -41,6 +42,7 @@ Always use path aliases defined in `tsconfig.json` to prevent relative path hell
 * **Logística de Viajes:** Registro flexible de gastos (gasolina, peajes, viáticos) durante o después del viaje.
 * **Venta de Potes:** Control de stock y salidas independiente de los rollos de papel.
 * **Finanzas:** Ventas a crédito a 30 días (una sola cuota), soporte para abonos, adelantos y notas de entrega.
+* **Identidades (Cédula/RIF):** Soporte global para todos los tipos fiscales y personales de Venezuela (V, E, J, G, P, C).
 
 ## 7. Currency & Input Rules
 - **Monetary Inputs:** ALWAYS use `<CurrencyInput>` from `@components/ui/CurrencyInput` for price, amount, or exchange rate inputs to ensure ATM-style formatting (`1.234,56`).
@@ -57,6 +59,7 @@ Always use path aliases defined in `tsconfig.json` to prevent relative path hell
 - **Database Permissions & Replication (Supabase):**
   - Execute `GRANT SELECT ON ALL TABLES IN SCHEMA public TO powersync_role;` and `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO powersync_role;` so PowerSync can replicate data.
   - Set `ALTER TABLE <tabla> REPLICA IDENTITY FULL;` for all public tables.
+  - **Publication:** The `powersync` publication in this project is configured as `FOR ALL TABLES`. Therefore, you do **NOT** need to execute `ALTER PUBLICATION powersync ADD TABLE...` when creating new tables; they are included automatically.
 - **Client Auth Configuration (PowerSync Dashboard):**
   - Supabase signs JWTs with `ES256` algorithm and `aud: "authenticated"`.
   - In PowerSync Dashboard -> Client Auth:
@@ -64,7 +67,55 @@ Always use path aliases defined in `tsconfig.json` to prevent relative path hell
     - Add `authenticated` to **JWT Audience**.
     - Remove conflicting manual HS256 secrets.
 - **Connection Management:** Always await `db.init()` before `db.connect()` and use module-level guards to prevent concurrent double-connections during React re-mounts.
+- **Upload Queue Blockages:** If a pending local change lacks required columns (e.g., added after the change was made) or violates constraints, the PowerSync Edge Function will return a 500 error. This stalls the local upload queue and blocks further syncs. To resolve in development, instruct the user to clear app data (wipe SQLite cache) or delete the offending record locally.
 
 ## 10. API Integrations & Push Notifications (WIP)
 - **Third-Party APIs (e.g., Cedula/Seniat):** Always prefix environment variables with `EXPO_PUBLIC_` in `.env` to ensure they are bundled correctly in the Expo client. Handle API timeouts and empty responses gracefully (e.g., returning `null` or showing clear `Toast` messages).
 - **Push Notifications:** Set as a high-priority upcoming feature. Will require integrating Expo Push Tokens with Supabase or a third-party service (e.g., OneSignal/Firebase) to alert about pending debts or stock shortages.
+
+## 11. Clean Code & Component Architecture Guidelines
+To maintain a clean, maintainable, and scalable codebase, strictly adhere to the following coding standards:
+
+### 🎨 UI & Status Bar (Contraste)
+- **Global/Drawer Layouts:** Usar `<StatusBar style="light" backgroundColor={theme.colors.primary} />` si la cabecera es oscura/azul, para que los íconos del sistema se fundan con la cabecera en Android.
+- **Pantallas Modales (Fondos Blancos):** Siempre incluir `<StatusBar style="dark" />` dentro del `<View>` principal para asegurar que los íconos de batería y señal sean visibles (negros) sobre el fondo blanco.
+
+### 📦 Import Grouping & Ordering
+Imports must be grouped in a clean, consistent order separated by empty lines:
+1. **External Core:** React, React Native, Expo libraries (`react`, `react-native`, `expo-router`, `expo-*`).
+2. **Third-Party Packages:** UI, Database & State (`react-native-paper`, `@powersync/react`, `@supabase/supabase-js`, `react-native-toast-message`).
+3. **Internal Path Aliases:** Imports using aliases (`@core/*`, `@state/*`, `@ui/*`, `@components/*`, `@features/*`).
+4. **Local / Feature Imports:** Relative imports for local types, components, or sub-hooks.
+
+```typescript
+// 1. External Core
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet } from 'react.native';
+import { useRouter } from 'expo-router';
+
+// 2. Third-Party
+import { Text, Button, Surface } from 'react-native-paper';
+import { useQuery } from '@powersync/react';
+
+// 3. Path Aliases
+import { parseCurrency, formatCurrencyATM } from '@core/utils/currency';
+import { CurrencyInput } from '@ui/CurrencyInput';
+import { useAuth } from '@state/AuthProvider';
+
+// 4. Local / Feature Imports
+import { FeatureItem } from '../components/FeatureItem';
+import type { FeatureType } from '../types';
+```
+
+### 🧠 Separation of Concerns & Custom Hooks
+- **Screen Responsibilities:** Screens inside `src/features/<domain>/screens/` should focus on rendering layout, managing local UI state (modals, active inputs), and handling user interactions.
+- **Extract Business & Query Logic into Custom Hooks:** Complex SQL queries (`useQuery`), PowerSync mutations, calculations, and data transformations should be extracted into custom hooks inside `src/features/<domain>/hooks/` (e.g., `useInventario.ts`, `useReportesData.ts`).
+- **Reactive Query Fallbacks:** When calling `useQuery` from `@powersync/react`, always assign fallback defaults to prevent `undefined` crashes during initial data sync:
+  ```typescript
+  const { data: bobinas = [], isLoading } = useQuery('SELECT * FROM bobinas ORDER BY fecha_llegada DESC');
+  ```
+
+### 🏷️ Strict Type Safety & Clean Contracts
+- **No `any`:** Interfaces and types must be explicitly declared in `src/features/<domain>/types/index.ts` or `@core/types/`.
+- **Component Props:** Always type props using interfaces/types (`type ComponentProps = { ... }`).
+

@@ -13,4 +13,9 @@ export const db = new PowerSyncDatabase({
 export const setupPowerSync = async () => {
   // Configurar e inicializar
   await db.init();
+  try {
+    await db.execute(`UPDATE movimientos SET categoria = 'otros' WHERE categoria IS NULL OR categoria = ''`);
+  } catch (e) {
+    // Ignorar si la tabla aún no existe o no tiene registros
+  }
 };

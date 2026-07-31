@@ -1,5 +1,22 @@
 import { column, Schema, Table } from '@powersync/react-native';
 
+const perfiles = new Table({
+  nombre: column.text,
+  rol: column.text,
+  activo: column.integer,
+});
+
+const rol_permisos = new Table({
+  rol: column.text,
+  modulo: column.text,
+  habilitado: column.integer,
+});
+
+const configuracion = new Table({
+  clave: column.text,
+  valor: column.text,
+});
+
 const clientes = new Table({
   cedula: column.text,
   rif: column.text,
@@ -65,7 +82,9 @@ const pedidos = new Table({
   estado_pago: column.text,
   fecha_vencimiento_credito: column.text,
   monto_total: column.real,
-  tasa_cambio_creacion: column.real
+  tasa_cambio_creacion: column.real,
+  nota_entrega_numero: column.integer,
+  tasa_cambio_pago: column.real
 });
 
 const abonos_pagos = new Table({
@@ -149,5 +168,8 @@ export const AppSchema = new Schema({
   detalles_pedido,
   entregas_viaje,
   movimientos,
-  tipos_papel
+  tipos_papel,
+  perfiles,
+  rol_permisos,
+  configuracion,
 });

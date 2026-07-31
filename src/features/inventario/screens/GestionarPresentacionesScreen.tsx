@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { usePowerSync, useQuery } from '@powersync/react';
 import { CustomCard } from '@components/ui/CustomCard';
 import Toast from 'react-native-toast-message';
+import { StatusBar } from 'expo-status-bar';
 
 export function GestionarPresentacionesScreen() {
   const { refreshing, onRefresh } = usePullToRefresh();
@@ -64,7 +65,8 @@ export function GestionarPresentacionesScreen() {
   };
 
   return (
-    <View style={globalStyles.container}>
+    <View style={globalStyles.containerWhite}>
+      <StatusBar style="dark" />
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Tipos de Rollo (Presentaciones)" />

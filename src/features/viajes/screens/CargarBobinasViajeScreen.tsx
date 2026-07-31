@@ -8,6 +8,7 @@ import { usePowerSync, useQuery } from '@powersync/react';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { StatusBar } from 'expo-status-bar';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 import { Menu } from 'react-native-paper';
@@ -130,6 +131,7 @@ export function CargarBobinasViajeScreen() {
 
   return (
     <View style={globalStyles.containerWhite}>
+      <StatusBar style="dark" />
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} disabled={isSaving} />
         <Appbar.Content title="Cargar Bobinas" subtitle="Registra el material adquirido" />

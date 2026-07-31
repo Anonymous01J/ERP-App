@@ -6,6 +6,7 @@ import { Text, Appbar, useTheme, Divider, Chip } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@powersync/react';
 import { CustomCard } from '@components/ui/CustomCard';
+import { StatusBar } from 'expo-status-bar';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 export function HistorialProduccionScreen() {
@@ -73,6 +74,7 @@ export function HistorialProduccionScreen() {
 
   return (
     <View style={globalStyles.containerWhite}>
+      <StatusBar style="dark" />
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Historial de Producción" subtitle="Lotes procesados" />

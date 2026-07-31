@@ -9,6 +9,7 @@ import { consultarCedula } from '@core/api/cedula';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { StatusBar } from 'expo-status-bar';
 
 export function RegistrarProveedorScreen() {
   const insets = useSafeAreaInsets();
@@ -20,7 +21,7 @@ export function RegistrarProveedorScreen() {
 
   const esEdicion = !!idProveedor;
 
-  const [nacionalidad, setNacionalidad] = useState<'V' | 'E'>('V');
+  const [nacionalidad, setNacionalidad] = useState<string>('V');
   const [menuVisible, setMenuVisible] = useState(false);
   const [cedula, setCedula] = useState('');
   const [rif, setRif] = useState('');
@@ -50,8 +51,8 @@ export function RegistrarProveedorScreen() {
       if (p.cedula) {
         const nac = p.cedula.charAt(0);
         const num = p.cedula.substring(1);
-        if (nac === 'V' || nac === 'E') {
-          setNacionalidad(nac as 'V' | 'E');
+        if (['V', 'E', 'J', 'G', 'P', 'C'].includes(nac)) {
+          setNacionalidad(nac);
           setCedula(num);
         } else {
           setCedula(p.cedula);
@@ -136,6 +137,7 @@ export function RegistrarProveedorScreen() {
 
   return (
     <View style={globalStyles.containerWhite}>
+      <StatusBar style="dark" />
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} disabled={isLoading} />
         <Appbar.Content title={esEdicion ? "Editar Proveedor" : "Nuevo Proveedor"} />
@@ -165,11 +167,15 @@ export function RegistrarProveedorScreen() {
               >
                 <Menu.Item onPress={() => { setNacionalidad('V'); setMenuVisible(false); }} title="V - Venezolano" />
                 <Menu.Item onPress={() => { setNacionalidad('E'); setMenuVisible(false); }} title="E - Extranjero" />
+                <Menu.Item onPress={() => { setNacionalidad('J'); setMenuVisible(false); }} title="J - Jurídico" />
+                <Menu.Item onPress={() => { setNacionalidad('G'); setMenuVisible(false); }} title="G - Gubernamental" />
+                <Menu.Item onPress={() => { setNacionalidad('P'); setMenuVisible(false); }} title="P - Pasaporte" />
+                <Menu.Item onPress={() => { setNacionalidad('C'); setMenuVisible(false); }} title="C - Comuna" />
               </Menu>
             </View>
             <TextInput
               mode="outlined"
-              label="Número de Cédula"
+              label="Documento (Cédula o RIF)"
               value={cedula}
               onChangeText={setCedula}
               keyboardType="number-pad"

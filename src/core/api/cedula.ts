@@ -21,7 +21,7 @@ export interface CedulaResponse {
   data?: CedulaData;
 }
 
-export const consultarCedula = async (nacionalidad: 'V' | 'E', numero: string): Promise<CedulaData | null> => {
+export const consultarCedula = async (nacionalidad: string, numero: string): Promise<CedulaData | null> => {
   try {
     const appId = process.env.EXPO_PUBLIC_CEDULA_APP_ID;
     const token = process.env.EXPO_PUBLIC_CEDULA_TOKEN;

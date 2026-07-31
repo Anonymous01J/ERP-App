@@ -9,6 +9,7 @@ import { parseCurrency } from '@core/utils/currency';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { StatusBar } from 'expo-status-bar';
 
 export default function RegistrarPresentacionScreen() {
   const router = useRouter();
@@ -110,6 +111,7 @@ export default function RegistrarPresentacionScreen() {
 
   return (
     <View style={globalStyles.containerWhite}>
+      <StatusBar style="dark" />
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title={isEditing ? 'Editar Presentación' : 'Nueva Presentación'} />

@@ -1,11 +1,12 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useCallback } from 'react';
+import { generateNotaEntregaPdf } from '../utils/pdfNotaEntrega';
 import { getTasaDolarBCV } from '@core/api/dolar';
 import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
 import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, ScrollView, Linking, RefreshControl } from 'react-native';
 import {
-  Chip, Text, ProgressBar, Button, useTheme,
+  Chip, Text, ProgressBar, Button, useTheme, IconButton,
   SegmentedButtons, Divider, Dialog, Portal, TextInput,
 } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -41,6 +42,7 @@ interface DetallePedidoConNombresRow {
   tiempo_x_paquete_min: number | null;
   cantidad_solicitada: number;
   cantidad_producida: number | null;
+  precio_unitario: number;
 }
 
 // Calcula el estado financiero de un pedido a partir de la fecha de vencimiento
@@ -112,7 +114,7 @@ export function PedidosDashboardScreen() {
   };
 
   const { data: pedidosLog = [] } = useQuery<PedidoLogisticaRow>(`
-    SELECT p.id, p.estado, p.monto_total, p.fecha_entrega_estimada, c.razon_social
+    SELECT p.id, p.estado, p.monto_total, p.fecha_entrega_estimada, p.id_cliente, p.nota_entrega_numero, p.fecha_creacion, p.fecha_entrega, c.razon_social
     FROM pedidos p
     JOIN clientes c ON c.id = p.id_cliente
     WHERE 1=1 ${filtrosLogSQL[filtroLog]}
@@ -142,7 +144,8 @@ export function PedidosDashboardScreen() {
       pp.rollos_por_paquete,
       pp.tiempo_x_paquete_min,
       dp.cantidad_solicitada,
-      dp.cantidad_producida
+      dp.cantidad_producida,
+      dp.precio_unitario
     FROM detalles_pedido dp
     LEFT JOIN productos_presentacion pp ON pp.id = dp.id_producto
     LEFT JOIN inventario_potes ip ON ip.id = dp.id_pote
@@ -189,6 +192,36 @@ export function PedidosDashboardScreen() {
       Toast.show({ type: 'success', text1: 'Estado actualizado', text2: estadoFisicoLabel(siguiente) });
     } catch {
       Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo actualizar el pedido.' });
+    }
+  };
+
+  // --- Generar Nota de Entrega ---
+  const handleImprimirNota = async (pedido: PedidoLogisticaRow, detalles: DetallePedidoConNombresRow[]) => {
+    try {
+      let numNota = pedido.nota_entrega_numero;
+
+      if (!numNota) {
+        const rs = await powerSync.getAll(`SELECT valor FROM configuracion WHERE clave = 'secuencia_nota_entrega'`);
+        if (rs.length === 0) {
+          Toast.show({ type: 'error', text1: 'Error', text2: 'No se encontró la secuencia en Configuración.' });
+          return;
+        }
+        numNota = parseInt(rs[0].valor, 10);
+
+        await powerSync.execute(`UPDATE pedidos SET nota_entrega_numero = ? WHERE id = ?`, [numNota, pedido.id]);
+        await powerSync.execute(`UPDATE configuracion SET valor = ? WHERE clave = 'secuencia_nota_entrega'`, [(numNota + 1).toString()]);
+      }
+
+      const clienteRs = await powerSync.getAll(`SELECT razon_social, cedula, rif, telefono FROM clientes WHERE id = ?`, [pedido.id_cliente]);
+      const cliente = clienteRs.length > 0 ? clienteRs[0] : { razon_social: pedido.razon_social };
+
+      const exito = await generateNotaEntregaPdf(pedido, cliente, detalles, numNota);
+      if (exito) {
+        Toast.show({ type: 'success', text1: 'Nota Generada', text2: `Nota Nº ${String(numNota).padStart(6, '0')}` });
+      }
+    } catch (e) {
+      console.error('Error generando nota:', e);
+      Toast.show({ type: 'error', text1: 'Error', text2: 'Ocurrió un error al generar la nota de entrega.' });
     }
   };
 
@@ -411,21 +444,32 @@ export function PedidosDashboardScreen() {
                         <Text variant="bodyMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
                           ${pedido.monto_total?.toFixed(2)} USD
                         </Text>
-                        {pedido.estado === 'pendiente' && (
-                          <Button
-                            mode="contained-tonal"
-                            compact
-                            onPress={() => handleAvanzarEstado(pedido.id, 'pendiente')}
-                            style={{ borderRadius: 8 }}
-                          >
-                            En Producción →
-                          </Button>
-                        )}
-                        {pedido.estado === 'listo' && (
-                          <Chip icon="check-circle" mode="flat" style={{ backgroundColor: '#dcfce7' }}>
-                            Listo para entregar
-                          </Chip>
-                        )}
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          {pedido.estado === 'pendiente' && (
+                            <Button
+                              mode="contained-tonal"
+                              compact
+                              onPress={() => handleAvanzarEstado(pedido.id, 'pendiente')}
+                              style={{ borderRadius: 8 }}
+                            >
+                              En Producción →
+                            </Button>
+                          )}
+                          {pedido.estado === 'listo' && (
+                            <Chip icon="check-circle" mode="flat" style={{ backgroundColor: '#dcfce7' }}>
+                              Listo
+                            </Chip>
+                          )}
+                          <IconButton
+                            icon="printer"
+                            mode="contained"
+                            containerColor={theme.colors.secondaryContainer}
+                            iconColor={theme.colors.onSecondaryContainer}
+                            size={20}
+                            style={{ margin: 0 }}
+                            onPress={() => handleImprimirNota(pedido, detalles)}
+                          />
+                        </View>
                       </View>
                     </View>
                   </CustomCard>

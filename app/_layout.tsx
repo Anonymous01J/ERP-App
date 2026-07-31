@@ -11,6 +11,7 @@ import { SyncStatusNotifier } from '../src/components/ui/SyncStatusNotifier';
 import { LogBox } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { AppLoader } from '../src/components/ui/AppLoader';
+import { CuentaInactivaScreen } from '../src/features/auth/screens/CuentaInactivaScreen';
 import * as Sentry from '@sentry/react-native';
 
 Sentry.init({
@@ -38,7 +39,7 @@ const theme = {
 };
 
 function RootLayoutNav() {
-  const { session, isLoading } = useAuth();
+  const { session, isLoading, perfil, isLoadingPerfil } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -48,16 +49,19 @@ function RootLayoutNav() {
     const inAuthGroup = segments[0] === 'login';
 
     if (!session && !inAuthGroup) {
-      // Redirigir al login si no hay sesión y no estamos ya en login
       router.replace('/login');
     } else if (session && inAuthGroup) {
-      // Redirigir al inicio (tabs dentro de drawer) si hay sesión y estamos intentando ver el login
       router.replace('/(drawer)/(tabs)');
     }
   }, [session, isLoading, segments]);
 
-  if (isLoading) {
+  if (isLoading || (session && isLoadingPerfil)) {
     return <AppLoader />;
+  }
+
+  // Usuario autenticado pero cuenta inactiva → pantalla de espera
+  if (session && perfil && !perfil.activo) {
+    return <CuentaInactivaScreen />;
   }
 
   return (
@@ -76,6 +80,8 @@ function RootLayoutNav() {
       <Stack.Screen name="(screens)/cargar-bobinas-viaje" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="(screens)/historial-bobinas" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="(screens)/historial-produccion" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="(screens)/editar-usuario" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="(screens)/matriz-permisos" options={{ presentation: 'fullScreenModal' }} />
     </Stack>
   );
 }
@@ -111,7 +117,7 @@ function RootLayout() {
           <RootLayoutNav />
           <SyncStatusNotifier />
           <Toast />
-          <StatusBar style="light" />
+          <StatusBar style="light" backgroundColor="#0D47A1" />
         </PaperProvider>
       </PowerSyncContext.Provider>
     </AuthProvider>
