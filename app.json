@@ -2,7 +2,7 @@
   "expo": {
     "name": "ERP App",
     "slug": "erp-app",
-    "version": "1.5.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
