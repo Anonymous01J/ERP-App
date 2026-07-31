@@ -69,9 +69,9 @@ Always use path aliases defined in `tsconfig.json` to prevent relative path hell
 - **Connection Management:** Always await `db.init()` before `db.connect()` and use module-level guards to prevent concurrent double-connections during React re-mounts.
 - **Upload Queue Blockages:** If a pending local change lacks required columns (e.g., added after the change was made) or violates constraints, the PowerSync Edge Function will return a 500 error. This stalls the local upload queue and blocks further syncs. To resolve in development, instruct the user to clear app data (wipe SQLite cache) or delete the offending record locally.
 
-## 10. API Integrations & Push Notifications (WIP)
+## 10. API Integrations & Push Notifications
 - **Third-Party APIs (e.g., Cedula/Seniat):** Always prefix environment variables with `EXPO_PUBLIC_` in `.env` to ensure they are bundled correctly in the Expo client. Handle API timeouts and empty responses gracefully (e.g., returning `null` or showing clear `Toast` messages).
-- **Push Notifications:** Set as a high-priority upcoming feature. Will require integrating Expo Push Tokens with Supabase or a third-party service (e.g., OneSignal/Firebase) to alert about pending debts or stock shortages.
+- **Push Notifications (Native):** Implemented using Expo Push Notifications and Supabase Edge Functions (`notify` and `check_cobranzas`). Push tokens are collected via the `usePushNotifications` hook on login and stored in the `push_tokens` table. Automated alerts (e.g. stock drops, order creation) are triggered directly from Postgres via `pg_net` calling the edge function. No third-party services like OneSignal are used.
 
 ## 11. Clean Code & Component Architecture Guidelines
 To maintain a clean, maintainable, and scalable codebase, strictly adhere to the following coding standards:

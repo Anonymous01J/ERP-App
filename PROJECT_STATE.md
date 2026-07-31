@@ -21,8 +21,9 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - **Conector (`Connector.ts`):** Actúa en nombre del usuario autenticado y respeta RLS.
   - **Edge Function `powersync`:** Recibe las operaciones CRUD enviadas desde la app y las ejecuta en Supabase utilizando el token JWT del usuario.
   - **Replicación y Permisos de BD:** `powersync_role` cuenta con permisos `GRANT SELECT` en todas las tablas (`ALTER DEFAULT PRIVILEGES`), tablas registradas en la publicación de replicación y con `REPLICA IDENTITY FULL`.
-  - **Autenticación PowerSync:** Validada mediante JWKS con la URI de Supabase (`https://<ref>.supabase.co/auth/v1/.well-known/jwks.json`), soportando algoritmos `ES256` y audience `authenticated`.
+- **Autenticación PowerSync:** Validada mediante JWKS con la URI de Supabase (`https://<ref>.supabase.co/auth/v1/.well-known/jwks.json`), soportando algoritmos `ES256` y audience `authenticated`.
 - **Manejo de Sesión:** `AuthProvider.tsx` gestiona globalmente el estado de autenticación de Supabase y sincronización de PowerSync con protección contra dobles conexiones en re-montajes.
+- **Notificaciones Push (Nativas):** Integración mediante Edge Functions (`notify`, `check_cobranzas`) y Triggers en PostgreSQL (`pg_net`). Los tokens de Expo se recolectan vía `usePushNotifications` al hacer login.
 
 ---
 
@@ -245,7 +246,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 | Módulo | Estado | Prioridad |
 |---|---|---|
 | **Mejoras Visuales en PDF (Gráficos Base64 y Tablas)** | ✅ Completado | Media |
-| **Notificaciones Push** | No iniciado | Alta |
+| **Notificaciones Push (Nativas Expo + Edge Functions)** | ✅ Completado | Alta |
 | **Gestión de Usuarios y Roles (RBAC)** | ✅ Completado | Alta |
 | Exportación a Excel/CSV | No iniciado | Baja |
 | **Refactoring: Queries a Custom Hooks** | Pendiente | Media |

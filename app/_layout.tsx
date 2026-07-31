@@ -13,6 +13,7 @@ import { StatusBar } from 'expo-status-bar';
 import { AppLoader } from '../src/components/ui/AppLoader';
 import { CuentaInactivaScreen } from '../src/features/auth/screens/CuentaInactivaScreen';
 import * as Sentry from '@sentry/react-native';
+import { usePushNotifications } from '../src/core/hooks/usePushNotifications';
 
 Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN || '',
@@ -42,6 +43,9 @@ function RootLayoutNav() {
   const { session, isLoading, perfil, isLoadingPerfil } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  // Initialize push notifications if user is logged in
+  usePushNotifications(session?.user?.id);
 
   useEffect(() => {
     if (isLoading) return;
