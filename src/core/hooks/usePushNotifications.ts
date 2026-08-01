@@ -20,76 +20,93 @@ export function usePushNotifications(userId?: string | null) {
   );
   const notificationListener = useRef<Notifications.Subscription>();
   const responseListener = useRef<Notifications.Subscription>();
+  // Guard to avoid multiple registration attempts
+  const isRegistering = useRef(false);
 
-  async function registerForPushNotificationsAsync() {
-    let token;
-
-    if (Platform.OS === 'android') {
-      Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-      });
+  async function registerForPushNotificationsAsync(): Promise<string | undefined> {
+    // Don't register if not on a real device
+    if (!Device.isDevice) {
+      console.log('[usePushNotifications] Must use physical device for Push Notifications');
+      return undefined;
     }
 
-    if (Device.isDevice) {
+    // Prevent concurrent calls
+    if (isRegistering.current) return undefined;
+    isRegistering.current = true;
+
+    try {
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'default',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+        });
+      }
+
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
+
       if (existingStatus !== 'granted') {
         const { status } = await Notifications.requestPermissionsAsync();
         finalStatus = status;
       }
+
       if (finalStatus !== 'granted') {
-        console.log('Failed to get push token for push notification!');
-        return;
-      }
-      const projectId =
-        Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
-      
-      if (!projectId) {
-        console.warn('EAS projectId not found. If this is a bare workflow, token generation might fail.');
+        console.log('[usePushNotifications] Permission not granted for push notifications.');
+        return undefined;
       }
 
-      try {
-        const pushTokenString = (
-          await Notifications.getExpoPushTokenAsync({
-            projectId,
-          })
-        ).data;
-        console.log('[usePushNotifications] Expo Push Token:', pushTokenString);
-        return pushTokenString;
-      } catch (e: unknown) {
-        console.error('[usePushNotifications] Error getting token:', e);
+      const projectId =
+        Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+
+      if (!projectId) {
+        console.warn('[usePushNotifications] EAS projectId not found in app config.');
+        return undefined;
       }
-    } else {
-      console.log('Must use physical device for Push Notifications');
+
+      const pushToken = await Notifications.getExpoPushTokenAsync({ projectId });
+      console.log('[usePushNotifications] Expo Push Token:', pushToken.data);
+      return pushToken.data;
+    } catch (e: unknown) {
+      // Catch ANY native or JS exception to prevent crash
+      console.error('[usePushNotifications] Error getting push token (non-fatal):', e);
+      return undefined;
+    } finally {
+      isRegistering.current = false;
     }
   }
 
   useEffect(() => {
+    // Only attempt registration if userId is available (user is authenticated)
+    if (!userId) return;
+
     let isMounted = true;
 
-    // Register token and save to Supabase
-    registerForPushNotificationsAsync().then((token) => {
-      if (token && isMounted) {
-        setExpoPushToken(token);
-        
-        // Save to Supabase if userId is provided
-        if (userId) {
+    // Wrap in an outer catch to guarantee no crash bubbles up
+    registerForPushNotificationsAsync()
+      .then((token) => {
+        if (token && isMounted) {
+          setExpoPushToken(token);
           saveTokenToSupabase(userId, token);
         }
+      })
+      .catch((err) => {
+        // Absolute safety net - should never reach here due to internal try/catch
+        console.error('[usePushNotifications] Unexpected error in registration:', err);
+      });
+
+    notificationListener.current = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        if (isMounted) setNotification(notification);
       }
-    });
+    );
 
-    notificationListener.current = Notifications.addNotificationReceivedListener((notification) => {
-      setNotification(notification);
-    });
-
-    responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
-      console.log('User interacted with notification:', response);
-      // Here you could handle deep linking or navigation based on response.notification.request.content.data
-    });
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        console.log('[usePushNotifications] User interacted with notification:', response);
+      }
+    );
 
     return () => {
       isMounted = false;
@@ -100,7 +117,7 @@ export function usePushNotifications(userId?: string | null) {
         Notifications.removeNotificationSubscription(responseListener.current);
       }
     };
-  }, [userId]);
+  }, [userId]); // Only runs when userId changes (i.e. user logs in/out)
 
   const saveTokenToSupabase = async (uid: string, token: string) => {
     try {
@@ -111,10 +128,10 @@ export function usePushNotifications(userId?: string | null) {
       if (error) {
         console.error('[usePushNotifications] Error saving token to Supabase:', error);
       } else {
-        console.log('[usePushNotifications] Token successfully saved to Supabase for user', uid);
+        console.log('[usePushNotifications] Token saved to Supabase for user', uid);
       }
     } catch (err) {
-      console.error('[usePushNotifications] Exception saving token:', err);
+      console.error('[usePushNotifications] Exception saving token (non-fatal):', err);
     }
   };
 
