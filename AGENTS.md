@@ -72,7 +72,11 @@ Always use path aliases defined in `tsconfig.json` to prevent relative path hell
 ## 10. API Integrations & Push Notifications
 - **Third-Party APIs (e.g., Cedula/Seniat):** Always prefix environment variables with `EXPO_PUBLIC_` in `.env` to ensure they are bundled correctly in the Expo client. Handle API timeouts and empty responses gracefully (e.g., returning `null` or showing clear `Toast` messages).
 - **Push Notifications (Native):** Implemented using Expo Push Notifications and Supabase Edge Functions (`notify` and `check_cobranzas`). Push tokens are collected via the `usePushNotifications` hook on login and stored in the `push_tokens` table. Automated alerts (e.g. stock drops, order creation) are triggered directly from Postgres via `pg_net` calling the edge function. No third-party services like OneSignal are used.
-  - **CRITICAL - Android Standalone Builds:** *Only if the app uses push notifications (`expo-notifications`)*, to prevent native crashes when requesting tokens on Android (`eas build -p android`), Firebase Cloud Messaging (FCM V1) **must** be configured. The `google-services.json` must be present in the root and referenced in `app.json` (`android.googleServicesFile`). Additionally, the FCM V1 Service Account JSON key must be uploaded via `eas credentials -> Google Service Account`.
+  - **CRITICAL - Android Standalone Builds:** *Only if the app uses push notifications (`expo-notifications`)*, to prevent native crashes when requesting tokens on Android (`eas build -p android`), Firebase Cloud Messaging (FCM V1) **must** be configured:
+    1. The `google-services.json` must be present in the root, referenced in `app.json` (`android.googleServicesFile`), and **explicitly tracked in Git** (`git add google-services.json`).
+    2. `"expo-notifications"` MUST be declared in the `plugins` array of `app.json` so native FCM services/permissions are injected into `AndroidManifest.xml`.
+    3. The FCM V1 Service Account JSON key must be uploaded via `eas credentials -> Google Service Account`.
+- **PowerSync + Auth Race Condition Safety:** When handling `onAuthStateChange` in `AuthProvider.tsx`, ALWAYS `await connectPowerSync()` BEFORE calling `loadPerfil(userId)` to ensure the SQLite database is initialized before querying.
 
 ## 11. Clean Code & Component Architecture Guidelines
 To maintain a clean, maintainable, and scalable codebase, strictly adhere to the following coding standards:

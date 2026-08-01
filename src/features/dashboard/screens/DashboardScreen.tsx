@@ -10,13 +10,18 @@ import { useQuery } from '@powersync/react';
 import { useRouter } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
+import { useAuth } from '@state/AuthProvider';
 
 export function DashboardScreen() {
   const { refreshing, onRefresh } = usePullToRefresh();
   const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { perfil } = useAuth();
+  const isAdmin = perfil?.rol === 'admin';
   const [chartPeriod, setChartPeriod] = useState('Día');
+  const [prodPeriod, setProdPeriod] = useState('Semana');
+  const [metricaProduccion, setMetricaProduccion] = useState<'rollos' | 'kg'>('rollos');
   const [fabOpen, setFabOpen] = useState(false);
   const [modalAlertasVisible, setModalAlertasVisible] = useState(false);
 
@@ -51,14 +56,29 @@ export function DashboardScreen() {
     FROM inventario_potes
   `);
 
-  // 5. Flujo de Caja (Para Gráficos)
-  const { data: flujoCaja = [] } = useQuery(`
+  // 5. Flujo de Caja (Para Gráficos — solo Admin)
+  const { data: flujoCaja = [] } = useQuery(
+    isAdmin ? `
     SELECT fecha, tipo, 
       CASE WHEN moneda = 'USD' THEN monto ELSE monto / COALESCE(tasa_cambio, 1) END as monto_usd
     FROM movimientos
     UNION ALL
     SELECT fecha_pago as fecha, 'ingreso' as tipo, monto_equivalente_usd as monto_usd
     FROM abonos_pagos
+  ` : 'SELECT NULL as fecha, NULL as tipo, NULL as monto_usd WHERE 1=0'
+  );
+
+  // 6. Producción — todos los períodos (para operadores)
+  const { data: produccionRaw = [] } = useQuery(`
+    SELECT 
+      pd.fecha,
+      SUM(pd.cantidad_rollos_total) as total_rollos,
+      COALESCE(SUM(cb.kg_consumidos), 0) as total_kg
+    FROM produccion_diaria pd
+    LEFT JOIN consumo_bobinas cb ON cb.id_produccion = pd.id
+    WHERE pd.fecha >= DATE('now', '-27 days')
+    GROUP BY pd.fecha
+    ORDER BY pd.fecha ASC
   `);
 
   // --- HELPER WHATSAPP ---
@@ -247,6 +267,76 @@ export function DashboardScreen() {
     return { lineDataIngresos: outIngresos, lineDataEgresos: outEgresos };
   }, [flujoCaja, chartPeriod]);
 
+  // --- PROCESAMIENTO GRÁFICO PRODUCCIÓN ---
+  const lineDataProduccion = useMemo(() => {
+    const dataMap: Record<string, number> = {};
+    const labelsEnOrden: string[] = [];
+    const hoy = new Date();
+    hoy.setHours(23, 59, 59, 999);
+
+    if (prodPeriod === 'Día') {
+      // Solo el día de hoy, agrupado cada 4 horas (producción no tiene hora, muestra valor del día)
+      const hoyStr = hoy.toISOString().split('T')[0];
+      const hourBlocks = [0, 4, 8, 12, 16, 20];
+      hourBlocks.forEach(h => {
+        const key = `${h.toString().padStart(2, '0')}:00`;
+        labelsEnOrden.push(key);
+        dataMap[key] = 0;
+      });
+      // La producción diaria no tiene hora, repartimos el total del día en el bloque de mediodía
+      const rowHoy = (produccionRaw as any[]).find((r: any) => r.fecha === hoyStr);
+      if (rowHoy) {
+        const val = metricaProduccion === 'rollos' ? (rowHoy.total_rollos ?? 0) : (rowHoy.total_kg ?? 0);
+        dataMap['08:00'] = val;
+      }
+    } else if (prodPeriod === 'Semana') {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(hoy.getTime() - i * 86400000);
+        const key = d.toISOString().split('T')[0];
+        labelsEnOrden.push(key);
+        dataMap[key] = 0;
+      }
+      for (const row of produccionRaw as any[]) {
+        const f = row.fecha?.split('T')[0] ?? row.fecha;
+        if (dataMap[f] !== undefined) {
+          dataMap[f] = metricaProduccion === 'rollos' ? (row.total_rollos ?? 0) : (row.total_kg ?? 0);
+        }
+      }
+    } else {
+      // Mes: 4 semanas
+      for (let i = 3; i >= 0; i--) {
+        const start = new Date(hoy.getTime() - (i * 7 + 6) * 86400000);
+        const startStr = start.toISOString().split('T')[0].slice(5);
+        const key = `Sem ${4 - i} (${startStr})`;
+        labelsEnOrden.push(key);
+        dataMap[key] = 0;
+      }
+      for (const row of produccionRaw as any[]) {
+        const f = row.fecha?.split('T')[0] ?? row.fecha;
+        if (!f) continue;
+        const d = new Date(f);
+        const diffDays = Math.floor((hoy.getTime() - d.getTime()) / 86400000);
+        if (diffDays >= 0 && diffDays < 28) {
+          const semIndex = 3 - Math.floor(diffDays / 7);
+          const key = labelsEnOrden[semIndex];
+          const val = metricaProduccion === 'rollos' ? (row.total_rollos ?? 0) : (row.total_kg ?? 0);
+          dataMap[key] = (dataMap[key] ?? 0) + val;
+        }
+      }
+    }
+
+    const formatLabel = (lbl: string) => {
+      if (prodPeriod === 'Día') return lbl.substring(0, 5);
+      if (prodPeriod === 'Semana') {
+        const parts = lbl.split('-');
+        return `${parts[2]}/${parts[1]}`;
+      }
+      return lbl.split(' ')[0];
+    };
+
+    return labelsEnOrden.map(lbl => ({ value: dataMap[lbl], label: formatLabel(lbl), dataLabel: formatLabel(lbl) }));
+  }, [produccionRaw, prodPeriod, metricaProduccion]);
+
   return (
     <View style={globalStyles.container}>
       <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
@@ -288,8 +378,8 @@ export function DashboardScreen() {
           </CustomCard>
         </View>
 
-        {/* Alertas Financieras Clickables */}
-        {(metrics.pagosPorVencer > 0 || metrics.pagosVencidos > 0) && (
+        {/* Alertas Financieras Clickables — solo Admin */}
+        {isAdmin && (metrics.pagosPorVencer > 0 || metrics.pagosVencidos > 0) && (
           <TouchableOpacity activeOpacity={0.8} onPress={handleCardAlertasPress}>
             <CustomCard style={{ backgroundColor: metrics.pagosVencidos > 0 ? '#fee2e2' : '#FFF3E0', marginBottom: 16 }}>
               <View style={styles.alertContent}>
@@ -317,57 +407,58 @@ export function DashboardScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Gráfico Financiero */}
-        <CustomCard style={{ marginBottom: 16 }}>
-          <View style={styles.chartHeader}>
-            <Text variant="titleMedium" style={{ fontWeight: 'bold', marginBottom: 16, color: '#374151' }}>
-              Ingresos vs Egresos ($)
-            </Text>
-            <SegmentedButtons
-              value={chartPeriod}
-              onValueChange={setChartPeriod}
-              buttons={[
-                { value: 'Día', label: 'Día' },
-                { value: 'Semana', label: 'Semana' },
-                { value: 'Mes', label: 'Mes' },
-              ]}
-              density="small"
-            />
-          </View>
-          
-          <View style={styles.chartContainer}>
-            <LineChart
-              areaChart
-              curved
-              data={lineDataIngresos}
-              data2={lineDataEgresos}
-              height={220}
-              width={Dimensions.get('window').width - 120}
-              spacing={lineDataIngresos.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataIngresos.length - 1) : 45}
-              initialSpacing={15}
-              endSpacing={15}
-              pointerConfig={{
-                pointerStripHeight: 160,
-                pointerStripColor: 'lightgray',
-                pointerStripWidth: 2,
-                pointerColor: 'lightgray',
-                radius: 6,
-                pointerLabelWidth: 100,
-                pointerLabelHeight: 90,
-                activatePointersOnLongPress: false,
-                autoAdjustPointerLabelPosition: true,
-                pointerLabelComponent: (items: any) => {
-                  const item1 = items[0];
-                  const item2 = items.length > 1 ? items[1] : null;
-                  return (
-                    <View
-                      style={{
-                        padding: 8,
-                        backgroundColor: '#1f2937',
-                        borderRadius: 8,
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                      }}>
+        {/* Gráfico Financiero — Admin */}
+        {isAdmin && (
+          <CustomCard style={{ marginBottom: 16 }}>
+            <View style={styles.chartHeader}>
+              <Text variant="titleMedium" style={{ fontWeight: 'bold', marginBottom: 16, color: '#374151' }}>
+                Ingresos vs Egresos ($)
+              </Text>
+              <SegmentedButtons
+                value={chartPeriod}
+                onValueChange={setChartPeriod}
+                buttons={[
+                  { value: 'Día', label: 'Día' },
+                  { value: 'Semana', label: 'Semana' },
+                  { value: 'Mes', label: 'Mes' },
+                ]}
+                density="small"
+              />
+            </View>
+            
+            <View style={styles.chartContainer}>
+              <LineChart
+                areaChart
+                curved
+                data={lineDataIngresos}
+                data2={lineDataEgresos}
+                height={220}
+                width={Dimensions.get('window').width - 120}
+                spacing={lineDataIngresos.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataIngresos.length - 1) : 45}
+                initialSpacing={15}
+                endSpacing={15}
+                pointerConfig={{
+                  pointerStripHeight: 160,
+                  pointerStripColor: 'lightgray',
+                  pointerStripWidth: 2,
+                  pointerColor: 'lightgray',
+                  radius: 6,
+                  pointerLabelWidth: 100,
+                  pointerLabelHeight: 90,
+                  activatePointersOnLongPress: false,
+                  autoAdjustPointerLabelPosition: true,
+                  pointerLabelComponent: (items: any) => {
+                    const item1 = items[0];
+                    const item2 = items.length > 1 ? items[1] : null;
+                    return (
+                      <View
+                        style={{
+                          padding: 8,
+                          backgroundColor: '#1f2937',
+                          borderRadius: 8,
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}>
                       <Text style={{color: '#d1d5db', fontSize: 12, marginBottom: 4}}>{item1?.dataLabel || ''}</Text>
                       <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 2}}>
                         <View style={{width: 8, height: 8, borderRadius: 4, backgroundColor: '#16a34a', marginRight: 6}} />
@@ -380,44 +471,144 @@ export function DashboardScreen() {
                         </View>
                       )}
                     </View>
-                  );
-                },
-              }}
-              color1="#16a34a"
-              startFillColor1="#16a34a"
-              endFillColor1="#16a34a"
-              startOpacity1={0.3}
-              endOpacity1={0.05}
-              color2="#dc2626"
-              startFillColor2="#dc2626"
-              endFillColor2="#dc2626"
-              startOpacity2={0.3}
-              endOpacity2={0.05}
-              yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
-              xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
-              yAxisLabelPrefix="$"
-              yAxisThickness={0}
-              xAxisThickness={1}
-              xAxisColor="#e5e7eb"
-              rulesColor="#f3f4f6"
-              rulesType="dashed"
-              showVerticalLines
-              verticalLinesColor="#f3f4f6"
-              verticalLinesType="dashed"
-              noOfSections={4}
-            />
-          </View>
-          <View style={styles.legendRow}>
-             <View style={styles.legendItem}>
-               <View style={[styles.legendDot, { backgroundColor: '#16a34a' }]} />
-               <Text variant="bodySmall">Ingresos</Text>
-             </View>
-             <View style={styles.legendItem}>
-               <View style={[styles.legendDot, { backgroundColor: '#dc2626' }]} />
-               <Text variant="bodySmall">Egresos</Text>
-             </View>
-          </View>
-        </CustomCard>
+                    );
+                  },
+                }}
+                color1="#16a34a"
+                startFillColor1="#16a34a"
+                endFillColor1="#16a34a"
+                startOpacity1={0.3}
+                endOpacity1={0.05}
+                color2="#dc2626"
+                startFillColor2="#dc2626"
+                endFillColor2="#dc2626"
+                startOpacity2={0.3}
+                endOpacity2={0.05}
+                yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
+                xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
+                yAxisLabelPrefix="$"
+                yAxisThickness={0}
+                xAxisThickness={1}
+                xAxisColor="#e5e7eb"
+                rulesColor="#f3f4f6"
+                rulesType="dashed"
+                showVerticalLines
+                verticalLinesColor="#f3f4f6"
+                verticalLinesType="dashed"
+                noOfSections={4}
+              />
+            </View>
+            <View style={styles.legendRow}>
+               <View style={styles.legendItem}>
+                 <View style={[styles.legendDot, { backgroundColor: '#16a34a' }]} />
+                 <Text variant="bodySmall">Ingresos</Text>
+               </View>
+               <View style={styles.legendItem}>
+                 <View style={[styles.legendDot, { backgroundColor: '#dc2626' }]} />
+                 <Text variant="bodySmall">Egresos</Text>
+               </View>
+            </View>
+          </CustomCard>
+        )}
+
+        {/* Gráfico de Producción — Operadores y demás roles */}
+        {!isAdmin && (
+          <CustomCard style={{ marginBottom: 16 }}>
+            <View style={styles.chartHeader}>
+              <Text variant="titleMedium" style={{ fontWeight: 'bold', marginBottom: 12, color: '#374151' }}>
+                📦 Mi Producción
+              </Text>
+              {/* Toggle de métrica */}
+              <SegmentedButtons
+                value={metricaProduccion}
+                onValueChange={(v) => setMetricaProduccion(v as 'rollos' | 'kg')}
+                buttons={[
+                  { value: 'rollos', label: '🧻 Rollos', icon: 'counter' },
+                  { value: 'kg', label: '⚖️ Kg', icon: 'weight-kilogram' },
+                ]}
+                density="small"
+                style={{ marginBottom: 12 }}
+              />
+              {/* Filtro de período */}
+              <SegmentedButtons
+                value={prodPeriod}
+                onValueChange={setProdPeriod}
+                buttons={[
+                  { value: 'Día', label: 'Hoy' },
+                  { value: 'Semana', label: 'Semana' },
+                  { value: 'Mes', label: 'Mes' },
+                ]}
+                density="small"
+              />
+            </View>
+            <View style={styles.chartContainer}>
+              {lineDataProduccion.every(d => d.value === 0) ? (
+                <Text variant="bodyMedium" style={{ color: '#9ca3af', textAlign: 'center', paddingVertical: 40 }}>
+                  Sin producción registrada en este período.
+                </Text>
+              ) : (
+                <LineChart
+                  areaChart
+                  curved
+                  data={lineDataProduccion}
+                  height={220}
+                  width={Dimensions.get('window').width - 120}
+                  spacing={lineDataProduccion.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataProduccion.length - 1) : 45}
+                  initialSpacing={15}
+                  endSpacing={15}
+                  pointerConfig={{
+                    pointerStripHeight: 160,
+                    pointerStripColor: 'lightgray',
+                    pointerStripWidth: 2,
+                    pointerColor: 'lightgray',
+                    radius: 6,
+                    pointerLabelWidth: 100,
+                    pointerLabelHeight: 72,
+                    activatePointersOnLongPress: false,
+                    autoAdjustPointerLabelPosition: true,
+                    pointerLabelComponent: (items: any) => {
+                      const item = items[0];
+                      return (
+                        <View style={{ padding: 8, backgroundColor: '#1f2937', borderRadius: 8, alignItems: 'center' }}>
+                          <Text style={{ color: '#d1d5db', fontSize: 12, marginBottom: 4 }}>{item?.dataLabel || ''}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.primary, marginRight: 6 }} />
+                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>
+                              {metricaProduccion === 'rollos' ? `${item?.value ?? 0} rollos` : `${(item?.value ?? 0).toFixed(1)} kg`}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    },
+                  }}
+                  color={theme.colors.primary}
+                  startFillColor={theme.colors.primary}
+                  endFillColor={theme.colors.primary}
+                  startOpacity={0.3}
+                  endOpacity={0.05}
+                  yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
+                  xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
+                  yAxisLabelSuffix={metricaProduccion === 'rollos' ? '' : ' kg'}
+                  yAxisThickness={0}
+                  xAxisThickness={1}
+                  xAxisColor="#e5e7eb"
+                  rulesColor="#f3f4f6"
+                  rulesType="dashed"
+                  showVerticalLines
+                  verticalLinesColor="#f3f4f6"
+                  verticalLinesType="dashed"
+                  noOfSections={4}
+                />
+              )}
+            </View>
+            <View style={styles.legendRow}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: theme.colors.primary }]} />
+                <Text variant="bodySmall">{metricaProduccion === 'rollos' ? 'Rollos producidos' : 'Kg procesados'}</Text>
+              </View>
+            </View>
+          </CustomCard>
+        )}
       </ScrollView>
 
       {/* Dialog para seleccionar a cuál cliente enviar WhatsApp si hay más de uno */}

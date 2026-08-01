@@ -160,13 +160,12 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 ---
 
 ### 📊 Dashboard de Inicio (`src/features/dashboard`)
-- **Panel de Control Principal (`DashboardScreen`)** conectado a PowerSync:
-  - **Card de Alerta de Cobranza Dinámica:** 
-    - Se muestra en **Rojo** (`#fee2e2`) cuando hay pagos vencidos (`pagosVencidos > 0`).
-    - Se muestra en **Naranja** (`#FFF3E0`) cuando hay pagos por vencer en los próximos 5 días.
-    - **Acción al presionar:** Si hay 1 solo cliente moroso, abre directamente WhatsApp con el mensaje pre-redactado. Si hay múltiples clientes con deuda, despliega un **Modal / Diálogo** interactivo que lista a cada cliente con su saldo y un botón verde directo de WhatsApp `💬`.
-  - **Gráfico Interactivo de Liquidez:** Muestra el flujo de Ingresos (verde) vs Egresos (rojo) en USD con agrupación dinámica por Día, Semana o Mes.
+- **Panel de Control Principal (`DashboardScreen`)** conectado a PowerSync y con **Control de Acceso (RBAC)**:
+  - **Diferenciación por Rol:**
+    - **Administrador:** Visualiza las Alertas Financieras de Cobranza (Rojo/Naranja) y el Gráfico Financiero de Ingresos vs Egresos ($) con agrupación por Día, Semana o Mes.
+    - **Operador / Otros:** El gráfico financiero se reemplaza por el **Gráfico de Producción** (LineChart con área) con toggle de métrica (🧻 Rollos / ⚖️ Kg) y filtros de período (Hoy / Semana / Mes).
   - **Métricas Operativas:** Tarjetas con contadores en tiempo real de Pedidos Pendientes, Pedidos Listos, Kilos de Papel Disponible y Unidades de Potes en Stock.
+  - **Botón Flotante (FAB):** Acceso rápido preservado para registro inmediato de pedidos, producción y viajes.
 
 ---
 
@@ -191,7 +190,8 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - **`MovimientosViaje`:** Historial de gastos/ingresos registrados en el viaje con resumen Egresos / Balance / Ingresos.
   - **`GastoViajeForm`:** Formulario de movimiento rápido conectado a PowerSync con `CurrencyInput`.
 - **`RegistrarViajeScreen`:** Formulario conectado a pedidos reales de PowerSync. Selección de orden de paradas visual. Inserta en `viajes` + `entregas_viaje`.
-- **`CargarBobinasViajeScreen`:** Filas dinámicas de bobinas (tipo de papel + peso kg). Inserta en `bobinas_grandes` y avanza el viaje a `retornando`.
+- **`RegistrarViajeScreen`:** Formulario conectado a pedidos reales de PowerSync. Selección de orden de paradas visual. Inserta en `viajes` + `entregas_viaje`.
+- **`CargarBobinasViajeScreen` ("Cargar Mercancía"):** Pantalla rediseñada con pestañas (`SegmentedButtons`) para registrar **🧻 Bobinas** (tipo + peso en kg) y **🫙 Potes** (cantidades por tipo). Actualiza `inventario_potes.stock_actual` e inserta en `bobinas_grandes`, avanzando el viaje a `retornando`.
 
 ---
 
@@ -246,8 +246,10 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 | Módulo | Estado | Prioridad |
 |---|---|---|
 | **Mejoras Visuales en PDF (Gráficos Base64 y Tablas)** | ✅ Completado | Media |
-| **Notificaciones Push (Nativas Expo + Edge Functions)** | ✅ Completado | Alta |
+| **Notificaciones Push (Nativas Expo + Edge Functions + FCM V1)** | ✅ Completado | Alta |
 | **Gestión de Usuarios y Roles (RBAC)** | ✅ Completado | Alta |
+| **Pestaña Mi Perfil (Switch Notificaciones + Info Real)** | ✅ Completado | Media |
+| **Carga de Mercancía en Viajes (Bobinas + Potes)** | ✅ Completado | Alta |
 | Exportación a Excel/CSV | No iniciado | Baja |
 | **Refactoring: Queries a Custom Hooks** | Pendiente | Media |
 

@@ -148,7 +148,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setIsLoading(false);
 
         if (currentSession) {
-          connectPowerSync().catch(console.error);
+          await connectPowerSync();
           await loadPerfil(currentSession.user.id);
         } else {
           isPowerSyncConnecting = false;
