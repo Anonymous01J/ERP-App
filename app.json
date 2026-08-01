@@ -30,6 +30,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
       "@react-native-google-signin/google-signin",
       [
         "@sentry/react-native",
