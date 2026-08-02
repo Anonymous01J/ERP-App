@@ -114,6 +114,19 @@ export function RegistrarProduccionScreen() {
     return total;
   }, [cantidades, presentaciones]);
 
+  // Calcular peso estimado consumido y restante
+  const metricasPeso = useMemo(() => {
+    let consumido = 0;
+    for (const prod of presentaciones) {
+      const q = cantidades[prod.id] || 0;
+      if (q <= 0 || !prod.peso_real_g) continue;
+      consumido += (q * prod.peso_real_g) / 1000;
+    }
+    const pesoBobina = bobinaSeleccionada ? (bobinaSeleccionada.peso_actual_kg ?? bobinaSeleccionada.peso_inicial_kg) : 0;
+    const restante = Math.max(0, pesoBobina - consumido);
+    return { consumido, restante, pesoBobina, excedido: consumido > pesoBobina };
+  }, [cantidades, presentaciones, bobinaSeleccionada]);
+
   const formatTiempo = (minutos: number): string => {
     if (minutos <= 0) return '';
     const h = Math.floor(minutos / 60);
@@ -280,7 +293,7 @@ export function RegistrarProduccionScreen() {
                     contentStyle={{ flexDirection: 'row-reverse' }}
                   >
                     {bobinaSeleccionada
-                      ? `Bobina Tipo ${bobinaSeleccionada.tipo_papel_nombre ?? '?'} (${(bobinaSeleccionada.peso_actual_kg ?? bobinaSeleccionada.peso_inicial_kg).toFixed(1)}kg)`
+                      ? `Tipo ${bobinaSeleccionada.tipo_papel_nombre ?? '?'} (#${bobinaSeleccionada.id.split('-')[0].substring(0, 4).toUpperCase()}) - ${(bobinaSeleccionada.peso_actual_kg ?? bobinaSeleccionada.peso_inicial_kg).toFixed(1)}kg`
                       : 'Seleccionar Bobina'}
                   </Button>
                 }
@@ -289,7 +302,7 @@ export function RegistrarProduccionScreen() {
                   <Menu.Item
                     key={bob.id}
                     onPress={() => { setBobinaSeleccionada(bob); setMenuVisible(false); }}
-                    title={`Tipo ${bob.tipo_papel_nombre ?? '?'} (${(bob.peso_actual_kg ?? bob.peso_inicial_kg).toFixed(1)}kg disponibles)`}
+                    title={`Tipo ${bob.tipo_papel_nombre ?? '?'} (#${bob.id.split('-')[0].substring(0, 4).toUpperCase()}) - ${(bob.peso_actual_kg ?? bob.peso_inicial_kg).toFixed(1)}kg libres`}
                   />
                 ))}
                 {bobinas.length === 0 && <Menu.Item title="No hay bobinas activas" disabled />}
@@ -324,6 +337,20 @@ export function RegistrarProduccionScreen() {
                   <Text variant="bodyMedium" style={{ color: theme.colors.onSecondaryContainer, textAlign: 'center' }}>
                     ⏱️ Tiempo estimado de producción: <Text style={{ fontWeight: 'bold' }}>{formatTiempo(tiempoEstimadoMin)}</Text>
                   </Text>
+                </View>
+              )}
+
+              {/* Estimado de peso restante */}
+              {bobinaSeleccionada && metricasPeso.consumido > 0 && (
+                <View style={[styles.infoBox, { backgroundColor: metricasPeso.excedido ? '#fee2e2' : '#e0e7ff', marginTop: 12 }]}>
+                  <Text variant="bodyMedium" style={{ color: metricasPeso.excedido ? '#991b1b' : '#3730a3', textAlign: 'center' }}>
+                    ⚖️ Consumo est.: <Text style={{ fontWeight: 'bold' }}>{metricasPeso.consumido.toFixed(2)} kg</Text> | Restante: <Text style={{ fontWeight: 'bold' }}>{metricasPeso.restante.toFixed(2)} kg</Text>
+                  </Text>
+                  {metricasPeso.excedido && (
+                    <Text variant="bodySmall" style={{ color: '#991b1b', textAlign: 'center', marginTop: 4, fontWeight: 'bold' }}>
+                      ⚠️ Estás excediendo el peso disponible de la bobina.
+                    </Text>
+                  )}
                 </View>
               )}
             </View>

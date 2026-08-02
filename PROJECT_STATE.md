@@ -112,10 +112,11 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 - **Dashboard (`InventarioDashboardScreen`)** conectado a datos reales de `bobinas_grandes`:
   - **Panel de resumen:** total de bobinas activas, kg totales, conteo por tipo de papel.
   - **Lista de bobinas** con barra de progreso de consumo por bobina (cambia de verde → amarillo → rojo según los kg restantes).
-  - **Diálogo de Merma/Core:** descuenta `merma_core_kg` y `peso_muerto_kg` del `peso_actual_kg`. Marca la bobina como `agotada` automáticamente cuando llega a 0.
+  - **Diálogo de Merma:** descuenta `merma_core_kg` del `peso_actual_kg`. El sistema calcula automáticamente el `peso_muerto_kg` (el resto de la bobina), marca la bobina como `agotada` y registra la fecha de gasto exacta (`fecha_gasto = now()`).
 - **Historial (`HistorialBobinasScreen`)** conectado a `bobinas_grandes` con `estado = 'agotada'`:
+  - Selector de Filtros de Tiempo (1 Mes, 3 Meses, 6 Meses, 1 Año, Rango Personalizado).
   - Balance completo: peso inicial → merma → core → rendimiento útil.
-  - Calcula y muestra **% de eficiencia** con indicador de color (verde/amarillo/rojo).
+  - Calcula y muestra **% de eficiencia** con indicador de color (verde/amarillo/rojo). Flex wrap incorporado para evitar overflows visuales.
 
 #### Tab: Rollos (Presentaciones)
 - Datos reales de `productos_presentacion` (nombre, stock suelto, paquetes calculados, precio USD, tiempo estimado x paquete en minutos).
@@ -123,6 +124,9 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 #### Tab: Potes
 - Datos reales de `inventario_potes` (capacidad, stock actual, precio).
 - Alerta visual "⚠️ Stock bajo" si hay menos de 20 unidades.
+- **Historial de Salidas (`HistorialPotesScreen`)**:
+  - Filtros de tiempo por fecha.
+  - Muestra un desglose histórico de los potes consumidos en `detalles_pedido` (descontados por pedidos confirmados o cancelados).
 
 #### CRUD de Presentaciones y Potes
 - `GestionarPresentacionesScreen` y `RegistrarPresentacionScreen` (incluye campo de `tiempo_x_paquete_min` y `precio_USD` con `CurrencyInput`).
@@ -143,6 +147,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - El excedente de producción o producción sin pedido destino va automáticamente al stock general (`productos_presentacion.stock_unidades_sueltas`).
   - Actualización automática del estado del pedido a `listo` si se completan todos los productos requeridos.
 - **Historial (`HistorialProduccionScreen`)**:
+  - Filtros de tiempo por fecha incorporados.
   - Muestra un timeline de lotes agrupados por la fecha exacta de inserción.
   - Detalla cuántos kg se le descontaron a la bobina, los rollos producidos y su destino (Stock General o Pedido Específico).
 
@@ -216,7 +221,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 
 ### 📈 Reportes y Estadísticas (`src/features/reportes`)
 - **Dashboard Dual/Triple (`ReportesDashboardScreen`)** conectado offline-first:
-  - **Producción:** Analíticas de eficiencia de materia prima (Mermas vs Papel Útil) con gráfico tipo Pie.
+  - **Producción:** Analíticas de eficiencia de materia prima (Mermas vs Papel Útil) con gráfico tipo Pie. Historial de producción en gráficos de línea para **Rollos Producidos** y **Kg Consumidos**.
   - **Finanzas:** Flujo de caja comparativo (Ventas, Cobranzas, Cuentas por Cobrar) con gráfico de Barras multi-columna.
   - **Logística:** Desglose del presupuesto gastado en ruta (Gasolina, Peaje, Viáticos) con gráfico tipo Donut interactivo, convertido a USD automáticamente.
 - **Filtros Globales de Tiempo:** Selector unificado (1 Mes, 3 Meses, Rango Personalizado "Desde-Hasta").
@@ -252,6 +257,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 | **Carga de Mercancía en Viajes (Bobinas + Potes)** | ✅ Completado | Alta |
 | Exportación a Excel/CSV | No iniciado | Baja |
 | **Refactoring: Queries a Custom Hooks** | Pendiente | Media |
+| **Limpieza de Tokens Push Muertos (`DeviceNotRegistered`) en Edge Functions** | Pendiente | Alta |
 
 ---
 

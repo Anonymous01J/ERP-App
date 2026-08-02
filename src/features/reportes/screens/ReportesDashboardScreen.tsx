@@ -1,14 +1,15 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { View, StyleSheet, ScrollView, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView, Platform, Dimensions } from 'react-native';
 import { Text, Appbar, useTheme, SegmentedButtons, Button, Divider } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { globalStyles } from '@core/theme/globalStyles';
 import { CustomCard } from '@components/ui/CustomCard';
 import { DatePickerInput } from '@components/ui/DatePickerInput';
 import { useQuery } from '@powersync/react';
-import { PieChart, BarChart } from 'react-native-gifted-charts';
+import { PieChart, BarChart, LineChart } from 'react-native-gifted-charts';
 import Toast from 'react-native-toast-message';
 import ViewShot from 'react-native-view-shot';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { generateProductionPDF, generateFinancePDF, generateLogisticsPDF } from '../utils/generatePdf';
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -35,6 +36,8 @@ export function ReportesDashboardScreen() {
   const [tipoReporte, setTipoReporte] = useState('resumido');
 
   const chartRef = useRef<ViewShot>(null);
+  const chartRefRollos = useRef<ViewShot>(null);
+  const chartRefKg = useRef<ViewShot>(null);
 
   // Determinar la fecha de inicio según el filtro
   const fechaInicio = useMemo(() => {
@@ -57,7 +60,7 @@ export function ReportesDashboardScreen() {
   // Consultas PowerSync
   const queryData = useMemo(() => {
     let queryStr = `
-      SELECT peso_inicial_kg, peso_actual_kg, peso_muerto_kg, merma_core_kg
+      SELECT id, peso_inicial_kg, peso_actual_kg, peso_muerto_kg, merma_core_kg, fecha_llegada, fecha_gasto
       FROM bobinas_grandes
       WHERE fecha_llegada >= ?
     `;
@@ -111,9 +114,36 @@ export function ReportesDashboardScreen() {
     return { queryStr, params };
   }, [fechaInicio, filtroTiempo, fechaFinPersonalizada]);
 
+  const queryDataProduccion = useMemo(() => {
+    let queryStr = `
+      SELECT 
+        pd.fecha,
+        pp.nombre as presentacion,
+        cb.id_bobina,
+        SUM(pd.cantidad_rollos_total) as total_rollos,
+        COALESCE(SUM(cb.kg_consumidos), 0) as total_kg
+      FROM produccion_diaria pd
+      LEFT JOIN consumo_bobinas cb ON cb.id_produccion = pd.id
+      LEFT JOIN productos_presentacion pp ON pd.id_producto = pp.id
+      WHERE pd.fecha >= ?
+    `;
+    let params: any[] = [fechaInicio];
+    
+    if (filtroTiempo === 'personalizado' && fechaFinPersonalizada) {
+      queryStr += ` AND pd.fecha <= ?`;
+      const end = new Date(fechaFinPersonalizada);
+      end.setHours(23, 59, 59, 999);
+      params.push(end.toISOString());
+    }
+    queryStr += ` GROUP BY pd.fecha, pp.nombre, cb.id_bobina ORDER BY pd.fecha ASC`;
+    
+    return { queryStr, params };
+  }, [fechaInicio, filtroTiempo, fechaFinPersonalizada]);
+
   const { data: pedidosFin = [] } = useQuery(queryDataPedidos.queryStr, queryDataPedidos.params);
   const { data: abonosFin = [] } = useQuery(queryDataAbonos.queryStr, queryDataAbonos.params);
   const { data: gastosViaje = [] } = useQuery(queryDataLogistica.queryStr, queryDataLogistica.params);
+  const { data: produccionRaw = [] } = useQuery(queryDataProduccion.queryStr, queryDataProduccion.params);
 
   // Cálculos de Mermas
   const metricasMermas = useMemo(() => {
@@ -135,6 +165,140 @@ export function ReportesDashboardScreen() {
 
     return { bruto, desperdicio, util };
   }, [bobinas]);
+
+  // Cálculos Producción (Líneas)
+  const { lineDataRollos, lineDataKg } = useMemo(() => {
+    const dataRollosMap: Record<string, number> = {};
+    const dataKgMap: Record<string, number> = {};
+    const labelsEnOrden: string[] = [];
+    const hoy = new Date();
+    hoy.setHours(23, 59, 59, 999);
+
+    if (filtroTiempo === 'personalizado' && fechaInicioPersonalizada && fechaFinPersonalizada) {
+      // Diferencia en días para rango personalizado
+      const inicio = new Date(fechaInicioPersonalizada);
+      const fin = new Date(fechaFinPersonalizada);
+      fin.setHours(23, 59, 59, 999);
+      const diffDays = Math.floor((fin.getTime() - inicio.getTime()) / 86400000);
+      
+      if (diffDays <= 31) {
+        // Agrupar por días
+        for (let i = diffDays; i >= 0; i--) {
+          const d = new Date(fin.getTime() - i * 86400000);
+          const key = d.toISOString().split('T')[0];
+          labelsEnOrden.push(key);
+          dataRollosMap[key] = 0;
+          dataKgMap[key] = 0;
+        }
+      } else {
+        // Agrupar por semanas si es mayor a un mes
+        const diffWeeks = Math.floor(diffDays / 7);
+        for (let i = diffWeeks; i >= 0; i--) {
+          const start = new Date(fin.getTime() - (i * 7 + 6) * 86400000);
+          const startStr = start.toISOString().split('T')[0].slice(5);
+          const key = `Sem (${startStr})`;
+          labelsEnOrden.push(key);
+          dataRollosMap[key] = 0;
+          dataKgMap[key] = 0;
+        }
+      }
+    } else if (filtroTiempo === 'mensual') {
+      for (let i = 3; i >= 0; i--) {
+        const start = new Date(hoy.getTime() - (i * 7 + 6) * 86400000);
+        const startStr = start.toISOString().split('T')[0].slice(5);
+        const key = `Sem ${4 - i} (${startStr})`;
+        labelsEnOrden.push(key);
+        dataRollosMap[key] = 0;
+        dataKgMap[key] = 0;
+      }
+    } else if (filtroTiempo === 'trimestral') {
+      for (let i = 2; i >= 0; i--) {
+        const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+        const key = d.toISOString().split('T')[0].slice(0, 7); // YYYY-MM
+        labelsEnOrden.push(key);
+        dataRollosMap[key] = 0;
+        dataKgMap[key] = 0;
+      }
+    } else if (filtroTiempo === 'semestral') {
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+        const key = d.toISOString().split('T')[0].slice(0, 7); // YYYY-MM
+        labelsEnOrden.push(key);
+        dataRollosMap[key] = 0;
+        dataKgMap[key] = 0;
+      }
+    } else if (filtroTiempo === 'anual') {
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+        const key = d.toISOString().split('T')[0].slice(0, 7); // YYYY-MM
+        labelsEnOrden.push(key);
+        dataRollosMap[key] = 0;
+        dataKgMap[key] = 0;
+      }
+    }
+
+    for (const row of produccionRaw as any[]) {
+      const f = row.fecha?.split('T')[0] ?? row.fecha;
+      if (!f) continue;
+      const d = new Date(f);
+      const rollos = row.total_rollos ?? 0;
+      const kg = row.total_kg ?? 0;
+
+      if (filtroTiempo === 'personalizado') {
+        const inicio = new Date(fechaInicioPersonalizada);
+        const fin = new Date(fechaFinPersonalizada);
+        fin.setHours(23, 59, 59, 999);
+        const diffDays = Math.floor((fin.getTime() - inicio.getTime()) / 86400000);
+        if (diffDays <= 31) {
+          if (dataRollosMap[f] !== undefined) {
+            dataRollosMap[f] += rollos;
+            dataKgMap[f] += kg;
+          }
+        } else {
+          const pastDays = Math.floor((fin.getTime() - d.getTime()) / 86400000);
+          const semIndex = Math.floor(pastDays / 7);
+          const keyIndex = labelsEnOrden.length - 1 - semIndex;
+          if (keyIndex >= 0 && keyIndex < labelsEnOrden.length) {
+            const key = labelsEnOrden[keyIndex];
+            dataRollosMap[key] += rollos;
+            dataKgMap[key] += kg;
+          }
+        }
+      } else if (filtroTiempo === 'mensual') {
+        const diffDays = Math.floor((hoy.getTime() - d.getTime()) / 86400000);
+        if (diffDays >= 0 && diffDays < 28) {
+          const semIndex = 3 - Math.floor(diffDays / 7);
+          const key = labelsEnOrden[semIndex];
+          dataRollosMap[key] += rollos;
+          dataKgMap[key] += kg;
+        }
+      } else {
+        const key = f.slice(0, 7); // YYYY-MM
+        if (dataRollosMap[key] !== undefined) {
+          dataRollosMap[key] += rollos;
+          dataKgMap[key] += kg;
+        }
+      }
+    }
+
+    const formatLabel = (lbl: string) => {
+      if (lbl.startsWith('Sem')) return lbl.split(' ')[0]; // Sem X
+      if (lbl.length === 7) { // YYYY-MM
+        const parts = lbl.split('-');
+        return `${parts[1]}/${parts[0].slice(2)}`; // MM/YY
+      }
+      if (lbl.length === 10) { // YYYY-MM-DD
+        const parts = lbl.split('-');
+        return `${parts[2]}/${parts[1]}`; // DD/MM
+      }
+      return lbl;
+    };
+
+    const outRollos = labelsEnOrden.map(lbl => ({ value: dataRollosMap[lbl], label: formatLabel(lbl), dataLabel: formatLabel(lbl) }));
+    const outKg = labelsEnOrden.map(lbl => ({ value: dataKgMap[lbl], label: formatLabel(lbl), dataLabel: formatLabel(lbl) }));
+    
+    return { lineDataRollos: outRollos, lineDataKg: outKg };
+  }, [produccionRaw, filtroTiempo, fechaInicioPersonalizada, fechaFinPersonalizada]);
 
   // Cálculos Finanzas
   const metricasFinanzas = useMemo(() => {
@@ -164,11 +328,14 @@ export function ReportesDashboardScreen() {
     return { desglose, totalGastos };
   }, [gastosViaje]);
 
-  // Datos para el gráfico de torta (Donut)
-  const pieData = [
-    { value: metricasMermas.util, color: theme.colors.primary, text: 'Útil' },
-    { value: metricasMermas.desperdicio, color: theme.colors.error, text: 'Mermas' },
-  ];
+    const totalPie = metricasMermas.util + metricasMermas.desperdicio;
+    const utilPct = totalPie > 0 ? ((metricasMermas.util / totalPie) * 100).toFixed(0) + '%' : '0%';
+    const mermaPct = totalPie > 0 ? ((metricasMermas.desperdicio / totalPie) * 100).toFixed(0) + '%' : '0%';
+
+    const pieData = [
+      { value: metricasMermas.util, color: theme.colors.primary, text: utilPct },
+      { value: metricasMermas.desperdicio, color: theme.colors.error, text: mermaPct },
+    ];
 
   const handleExportPDF = async () => {
     setIsGenerating(true);
@@ -183,17 +350,25 @@ export function ReportesDashboardScreen() {
       }
       
       let chartBase64 = '';
+      let chartBase64Rollos = '';
+      let chartBase64Kg = '';
       try {
         if (chartRef.current?.capture) {
           // Obtenemos la captura del gráfico directamente en Base64
           chartBase64 = await chartRef.current.capture();
+        }
+        if (chartRefRollos.current?.capture) {
+          chartBase64Rollos = await chartRefRollos.current.capture();
+        }
+        if (chartRefKg.current?.capture) {
+          chartBase64Kg = await chartRefKg.current.capture();
         }
       } catch (e) {
         console.warn('No se pudo capturar el gráfico, el PDF se generará sin él', e);
       }
       
       if (vista === 'produccion') {
-        await generateProductionPDF(label, metricasMermas, chartBase64, tipoReporte === 'detallado', bobinas);
+        await generateProductionPDF(label, metricasMermas, chartBase64, chartBase64Rollos, chartBase64Kg, tipoReporte === 'detallado', bobinas, produccionRaw);
       } else if (vista === 'finanzas') {
         await generateFinancePDF(label, metricasFinanzas, chartBase64, tipoReporte === 'detallado', pedidosFin, abonosFin);
       } else {
@@ -267,50 +442,205 @@ export function ReportesDashboardScreen() {
         )}
 
         {vista === 'produccion' ? (
-          <CustomCard>
-            <View style={styles.cardContent}>
-              <Text variant="titleMedium" style={globalStyles.sectionTitle}>Eficiencia de Materia Prima</Text>
+          <>
+            {/* Gráfico de Mermas */}
+            <CustomCard style={{ marginBottom: 16 }}>
+              <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 }}>
+                <Text variant="titleMedium" style={globalStyles.sectionTitle}>
+                  Resumen de Materia Prima
+                </Text>
+              </View>
               
-              {metricasMermas.bruto > 0 ? (
-                <ViewShot ref={chartRef} options={{ format: 'jpg', quality: 0.9, result: 'base64' }} style={styles.chartContainer}>
-                  <PieChart
-                    donut
-                    data={pieData}
-                    radius={100}
-                    innerRadius={60}
-                    centerLabelComponent={() => {
-                      const porcentajeUtil = ((metricasMermas.util / (metricasMermas.util + metricasMermas.desperdicio)) * 100).toFixed(1);
-                      return (
+              {metricasMermas.bruto === 0 ? (
+                <Text style={{ textAlign: 'center', color: '#9ca3af', paddingVertical: 20 }}>
+                  No hay consumo registrado en este período.
+                </Text>
+              ) : (
+                <ViewShot ref={chartRef} options={{ format: 'png', quality: 0.9, result: 'base64' }}>
+                  <View style={{ alignItems: 'center', backgroundColor: theme.colors.surface, paddingBottom: 16 }}>
+                    <PieChart
+                      data={pieData}
+                      donut
+                      showText
+                      textColor="white"
+                      radius={120}
+                      innerRadius={60}
+                      textSize={14}
+                      centerLabelComponent={() => (
                         <View style={{ justifyContent: 'center', alignItems: 'center' }}>
-                          <Text style={{ fontSize: 22, fontWeight: 'bold' }}>{porcentajeUtil}%</Text>
-                          <Text style={{ fontSize: 12 }}>Eficiencia</Text>
+                          <Text style={{ fontSize: 22, fontWeight: 'bold' }}>
+                            {((metricasMermas.util / (metricasMermas.util + metricasMermas.desperdicio)) * 100).toFixed(0)}%
+                          </Text>
+                          <Text style={{ fontSize: 14 }}>Útil</Text>
                         </View>
-                      );
-                    }}
-                  />
-                  
-                  <View style={styles.legendContainer}>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendColor, { backgroundColor: theme.colors.primary }]} />
-                      <Text variant="bodyMedium">Papel Útil: {metricasMermas.util.toFixed(2)} kg</Text>
-                    </View>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendColor, { backgroundColor: theme.colors.error }]} />
-                      <Text variant="bodyMedium">Mermas (Core + Muerto): {metricasMermas.desperdicio.toFixed(2)} kg</Text>
-                    </View>
-                    <Divider style={{ marginVertical: 8 }} />
-                    <Text variant="bodySmall" style={{ color: '#6b7280' }}>
-                      Total Bruto Comprado: {metricasMermas.bruto.toFixed(2)} kg
-                    </Text>
+                      )}
+                    />
                   </View>
                 </ViewShot>
-              ) : (
-                <View style={styles.emptyState}>
-                  <Text variant="bodyMedium" style={{ color: '#9ca3af' }}>No hay registros de bobinas en este período.</Text>
-                </View>
               )}
-            </View>
-          </CustomCard>
+              
+                <View style={{ marginTop: 24, gap: 12, paddingHorizontal: 16, paddingBottom: 16 }}>
+                  <View style={styles.legendRow}>
+                    <View style={[styles.legendDot, { backgroundColor: theme.colors.primary }]} />
+                    <Text variant="bodyMedium" style={{ flex: 1 }}>Papel Útil Procesado</Text>
+                    <Text variant="bodyMedium" style={{ fontWeight: 'bold' }}>{metricasMermas.util.toFixed(2)} kg</Text>
+                  </View>
+                  <Divider />
+                  <View style={styles.legendRow}>
+                    <View style={[styles.legendDot, { backgroundColor: theme.colors.error }]} />
+                    <Text variant="bodyMedium" style={{ flex: 1 }}>Desperdicio (Mermas + Core)</Text>
+                    <Text variant="bodyMedium" style={{ fontWeight: 'bold' }}>{metricasMermas.desperdicio.toFixed(2)} kg</Text>
+                  </View>
+                </View>
+            </CustomCard>
+
+            {/* Gráfico Rollos */}
+            <CustomCard style={{ marginBottom: 16 }}>
+              <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 }}>
+                <Text variant="titleMedium" style={globalStyles.sectionTitle}>
+                  Tendencia de Producción (Rollos)
+                </Text>
+              </View>
+              <ViewShot ref={chartRefRollos} options={{ format: 'png', quality: 0.9, result: 'base64' }}>
+                <View style={{ paddingHorizontal: 16, paddingBottom: 16, alignItems: 'center', backgroundColor: theme.colors.surface }}>
+                  {lineDataRollos.every(d => d.value === 0) ? (
+                    <Text variant="bodyMedium" style={{ color: '#9ca3af', textAlign: 'center', paddingVertical: 40 }}>
+                      Sin producción en este período.
+                    </Text>
+                  ) : (
+                    <LineChart
+                      areaChart
+                      curved
+                      data={lineDataRollos}
+                      height={200}
+                      width={Dimensions.get('window').width - 120}
+                      color={theme.colors.primary}
+                      startFillColor={theme.colors.primary}
+                      endFillColor={theme.colors.primary}
+                      startOpacity={0.3}
+                      endOpacity={0.05}
+                      yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
+                      xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
+                      yAxisThickness={0}
+                      xAxisThickness={1}
+                      xAxisColor="#e5e7eb"
+                      rulesColor="#f3f4f6"
+                      rulesType="dashed"
+                      noOfSections={4}
+                      spacing={lineDataRollos.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataRollos.length - 1) : 45}
+                      initialSpacing={15}
+                      endSpacing={15}
+                      pointerConfig={{
+                        pointerStripHeight: 160,
+                        pointerStripColor: 'lightgray',
+                        pointerStripWidth: 2,
+                        pointerColor: 'lightgray',
+                        radius: 6,
+                        pointerLabelWidth: 100,
+                        pointerLabelHeight: 72,
+                        activatePointersOnLongPress: false,
+                        autoAdjustPointerLabelPosition: true,
+                        pointerLabelComponent: (items: any) => {
+                          const item = items[0];
+                          return (
+                            <View style={{ padding: 8, backgroundColor: '#1f2937', borderRadius: 8, alignItems: 'center' }}>
+                              <Text style={{ color: '#d1d5db', fontSize: 12, marginBottom: 4 }}>{item?.dataLabel || ''}</Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.primary, marginRight: 6 }} />
+                                <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>
+                                  {item?.value ?? 0} rollos
+                                </Text>
+                              </View>
+                            </View>
+                          );
+                        },
+                      }}
+                    />
+                  )}
+                </View>
+              </ViewShot>
+              <View style={{ flexDirection: 'row', justifyContent: 'center', paddingBottom: 16 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: theme.colors.primary }} />
+                  <Text variant="bodySmall">Rollos producidos</Text>
+                </View>
+              </View>
+            </CustomCard>
+
+            {/* Gráfico Kg */}
+            <CustomCard style={{ marginBottom: 16 }}>
+              <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 }}>
+                <Text variant="titleMedium" style={globalStyles.sectionTitle}>
+                  Tendencia de Producción (Kg)
+                </Text>
+              </View>
+              <ViewShot ref={chartRefKg} options={{ format: 'png', quality: 0.9, result: 'base64' }}>
+                <View style={{ paddingHorizontal: 16, paddingBottom: 16, alignItems: 'center', backgroundColor: theme.colors.surface }}>
+                  {lineDataKg.every(d => d.value === 0) ? (
+                    <Text variant="bodyMedium" style={{ color: '#9ca3af', textAlign: 'center', paddingVertical: 40 }}>
+                      Sin consumo en este período.
+                    </Text>
+                  ) : (
+                    <LineChart
+                      areaChart
+                      curved
+                      data={lineDataKg}
+                      height={200}
+                      width={Dimensions.get('window').width - 120}
+                      color="#f59e0b"
+                      startFillColor="#f59e0b"
+                      endFillColor="#f59e0b"
+                      startOpacity={0.3}
+                      endOpacity={0.05}
+                      yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
+                      xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
+                      yAxisThickness={0}
+                      xAxisThickness={1}
+                      xAxisColor="#e5e7eb"
+                      rulesColor="#f3f4f6"
+                      rulesType="dashed"
+                      noOfSections={4}
+                      spacing={lineDataKg.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataKg.length - 1) : 45}
+                      initialSpacing={15}
+                      endSpacing={15}
+                      yAxisLabelSuffix=" kg"
+                      pointerConfig={{
+                        pointerStripHeight: 160,
+                        pointerStripColor: 'lightgray',
+                        pointerStripWidth: 2,
+                        pointerColor: 'lightgray',
+                        radius: 6,
+                        pointerLabelWidth: 100,
+                        pointerLabelHeight: 72,
+                        activatePointersOnLongPress: false,
+                        autoAdjustPointerLabelPosition: true,
+                        pointerLabelComponent: (items: any) => {
+                          const item = items[0];
+                          return (
+                            <View style={{ padding: 8, backgroundColor: '#1f2937', borderRadius: 8, alignItems: 'center' }}>
+                              <Text style={{ color: '#d1d5db', fontSize: 12, marginBottom: 4 }}>{item?.dataLabel || ''}</Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#f59e0b', marginRight: 6 }} />
+                                <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>
+                                  {(item?.value ?? 0).toFixed(1)} kg
+                                </Text>
+                              </View>
+                            </View>
+                          );
+                        },
+                      }}
+                    />
+                  )}
+                </View>
+              </ViewShot>
+              <View style={{ flexDirection: 'row', justifyContent: 'center', paddingBottom: 16 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#f59e0b' }} />
+                  <Text variant="bodySmall">Kg consumidos</Text>
+                </View>
+              </View>
+            </CustomCard>
+          </>
         ) : vista === 'finanzas' ? (
           <CustomCard>
             <View style={styles.cardContent}>
@@ -453,5 +783,15 @@ const styles = StyleSheet.create({
     padding: 32,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  legendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
   }
 });

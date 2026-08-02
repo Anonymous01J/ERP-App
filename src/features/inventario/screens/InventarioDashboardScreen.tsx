@@ -28,7 +28,6 @@ export function InventarioDashboardScreen() {
   const [dialogVisible, setDialogVisible] = useState(false);
   const [bobinaSeleccionada, setBobinaSeleccionada] = useState<BobinaActivaRow | null>(null);
   const [mermaKg, setMermaKg] = useState('');
-  const [pesoMuertoKg, setPesoMuertoKg] = useState('');
   const [savingMerma, setSavingMerma] = useState(false);
 
   // --- Queries ---
@@ -72,38 +71,39 @@ export function InventarioDashboardScreen() {
   const handleAbrirMerma = (bobina: BobinaActivaRow) => {
     setBobinaSeleccionada(bobina);
     setMermaKg('');
-    setPesoMuertoKg('');
     setDialogVisible(true);
   };
 
   const handleGuardarMerma = async () => {
     const merma = parseFloat(mermaKg) || 0;
-    const muerto = parseFloat(pesoMuertoKg) || 0;
-    if (merma <= 0 && muerto <= 0) {
-      Toast.show({ type: 'error', text1: 'Ingresa al menos un valor de merma o peso muerto.' });
+    if (merma <= 0) {
+      Toast.show({ type: 'error', text1: 'Ingresa el valor de la merma.' });
       return;
     }
     setSavingMerma(true);
     try {
       if (!bobinaSeleccionada) return;
       const pesoActual = bobinaSeleccionada.peso_actual_kg ?? bobinaSeleccionada.peso_inicial_kg;
-      const nuevoPeso = Math.max(0, pesoActual - merma - muerto);
-      const nuevoEstado = nuevoPeso <= 0 ? 'agotada' : 'en_uso';
+      const muerto = Math.max(0, pesoActual - merma);
+      const nuevoPeso = 0;
+      const nuevoEstado = 'agotada';
+      const fechaGasto = new Date().toISOString();
 
       await powerSync.execute(
         `UPDATE bobinas_grandes SET
            peso_actual_kg = ?,
            merma_core_kg = COALESCE(merma_core_kg, 0) + ?,
            peso_muerto_kg = COALESCE(peso_muerto_kg, 0) + ?,
-           estado = ?
+           estado = ?,
+           fecha_gasto = ?
          WHERE id = ?`,
-        [nuevoPeso, merma, muerto, nuevoEstado, bobinaSeleccionada.id]
+        [nuevoPeso, merma, muerto, nuevoEstado, fechaGasto, bobinaSeleccionada.id]
       );
 
       Toast.show({
         type: 'success',
-        text1: nuevoEstado === 'agotada' ? 'Bobina Agotada' : 'Merma Registrada',
-        text2: `Peso actual: ${nuevoPeso.toFixed(1)} kg`,
+        text1: 'Bobina Agotada',
+        text2: `Merma y core registrados exitosamente.`,
       });
       setDialogVisible(false);
     } catch (error) {
@@ -174,7 +174,7 @@ export function InventarioDashboardScreen() {
           return (
             <List.Accordion
               key={bobina.id}
-              title={`Tipo ${bobina.tipo_papel_nombre ?? '?'} — ${pesoActual.toFixed(1)} kg restantes`}
+              title={`Tipo ${bobina.tipo_papel_nombre ?? '?'} (#${bobina.id.split('-')[0].substring(0, 4).toUpperCase()}) — ${pesoActual.toFixed(1)} kg`}
               description={`Inicial: ${pesoInicial} kg · ${new Date(bobina.fecha_llegada).toLocaleDateString('es-VE')}`}
               left={props => (
                 <List.Icon
@@ -185,6 +185,7 @@ export function InventarioDashboardScreen() {
               )}
               style={styles.accordion}
               titleStyle={{ fontWeight: 'bold' }}
+              titleNumberOfLines={2}
             >
               <View style={styles.accordionContent}>
                 {/* Barra de progreso de kilos */}
@@ -281,9 +282,14 @@ export function InventarioDashboardScreen() {
     <View>
       <View style={styles.headerRow}>
         <Text variant="titleMedium" style={globalStyles.sectionTitle}>Inventario de Potes</Text>
-        <Button mode="text" icon="cog" compact onPress={() => router.push('/(screens)/gestionar-potes')}>
-          Gestionar
-        </Button>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Button mode="text" compact onPress={() => router.push('/(screens)/historial-potes')}>
+            Historial
+          </Button>
+          <Button mode="text" compact onPress={() => router.push('/(screens)/gestionar-potes')}>
+            Gestionar
+          </Button>
+        </View>
       </View>
       {potesActivos.length === 0 ? (
         <View style={styles.emptyState}>
@@ -338,31 +344,24 @@ export function InventarioDashboardScreen() {
           <Dialog.Title>Registrar Merma / Core</Dialog.Title>
           <Dialog.Content>
             <Text variant="bodyMedium" style={{ marginBottom: 4, color: '#6b7280' }}>
-              Bobina Tipo {bobinaSeleccionada?.tipo_papel_nombre ?? '?'} —{' '}
+              Bobina Tipo {bobinaSeleccionada?.tipo_papel_nombre ?? '?'} (#{(bobinaSeleccionada?.id || '').split('-')[0].substring(0, 4).toUpperCase()}) —{' '}
               <Text style={{ fontWeight: 'bold', color: '#111' }}>
                 {(bobinaSeleccionada?.peso_actual_kg ?? bobinaSeleccionada?.peso_inicial_kg ?? 0).toFixed(1)} kg actuales
               </Text>
             </Text>
-            <Text variant="bodySmall" style={{ color: '#9ca3af', marginBottom: 16 }}>
-              Ingresa los kilos que se perdieron por merma (papel roto/sobrante) y/o por el core (tubo vacío).
-            </Text>
-            <TextInput
-              mode="outlined"
-              label="Merma (kg)"
-              value={mermaKg}
-              onChangeText={setMermaKg}
-              keyboardType="decimal-pad"
-              left={<TextInput.Icon icon="alert-circle-outline" />}
-              style={{ marginBottom: 12 }}
-            />
-            <TextInput
-              mode="outlined"
-              label="Peso Muerto / Core (kg)"
-              value={pesoMuertoKg}
-              onChangeText={setPesoMuertoKg}
-              keyboardType="decimal-pad"
-              left={<TextInput.Icon icon="recycle" />}
-            />
+            <View style={{ gap: 12 }}>
+              <Text variant="bodyMedium" style={{ color: '#6b7280' }}>
+                Ingresa los kilos de merma. El peso restante de la bobina será registrado automáticamente como peso muerto (core). La bobina pasará al estado "Agotada".
+              </Text>
+              <TextInput
+                mode="outlined"
+                label="Merma (kg)"
+                value={mermaKg}
+                onChangeText={setMermaKg}
+                keyboardType="decimal-pad"
+                left={<TextInput.Icon icon="alert-circle-outline" />}
+              />
+            </View>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setDialogVisible(false)} disabled={savingMerma}>Cancelar</Button>

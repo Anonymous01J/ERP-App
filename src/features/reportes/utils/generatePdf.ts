@@ -4,16 +4,21 @@ export const generateProductionPDF = async (
   filtroTiempoLabel: string, 
   metricasMermas: { bruto: number, desperdicio: number, util: number },
   chartBase64: string = '',
+  chartBase64Rollos: string = '',
+  chartBase64Kg: string = '',
   isDetailed: boolean = false,
-  bobinas: any[] = []
+  bobinas: any[] = [],
+  produccionRaw: any[] = []
 ) => {
   try {
     let PrintModule: typeof import('expo-print');
     let SharingModule: typeof import('expo-sharing');
+    let FileSystemModule: typeof import('expo-file-system/legacy');
     
     try {
       PrintModule = await import('expo-print');
       SharingModule = await import('expo-sharing');
+      FileSystemModule = await import('expo-file-system/legacy');
 
       if (!PrintModule || typeof PrintModule.printToFileAsync !== 'function') {
         throw new Error('ExpoPrint native module not available');
@@ -30,25 +35,28 @@ export const generateProductionPDF = async (
 
     const eficiencia = ((metricasMermas.util / (metricasMermas.util + metricasMermas.desperdicio)) * 100).toFixed(1);
     
+    const totalRollos = produccionRaw.reduce((acc, row) => acc + Number(row.total_rollos || 0), 0);
+    const totalKgProd = produccionRaw.reduce((acc, row) => acc + Number(row.total_kg || 0), 0);
+    
     const html = `
       <html>
         <head>
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
           <style>
-            body { font-family: 'Helvetica', sans-serif; padding: 20px; color: #333; }
-            .corporate-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1e3a8a; padding-bottom: 20px; margin-bottom: 20px; }
+            body { font-family: 'Helvetica', sans-serif; padding: 10px; color: #333; }
+            .corporate-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 10px; }
             .corporate-logo { width: 60px; height: 60px; background-color: #1e3a8a; border-radius: 8px; display: flex; justify-content: center; align-items: center; color: white; font-weight: bold; font-size: 24px; }
             .corporate-info { text-align: right; font-size: 12px; color: #6b7280; }
-            h1 { color: #1e3a8a; margin: 0 0 10px 0; font-size: 24px; }
-            .header-date { display: flex; justify-content: space-between; margin-bottom: 30px; font-size: 14px; color: #6b7280; }
-            .card { background-color: #f3f4f6; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-            .card-title { font-size: 18px; font-weight: bold; margin-bottom: 10px; color: #111827; }
-            .stat-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
-            .stat-label { font-weight: bold; color: #4b5563; }
-            .stat-val { color: #111827; }
-            .highlight { color: #16a34a; font-weight: bold; font-size: 24px; }
-            .error { color: #dc2626; font-weight: bold; }
-            .chart-img { max-width: 100%; height: auto; border-radius: 8px; margin: 20px auto; display: block; }
+            h1 { color: #1e3a8a; margin: 0 0 10px 0; font-size: 22px; }
+            .header-date { display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 13px; color: #6b7280; }
+            .card { background-color: #f3f4f6; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
+            .card-title { font-size: 16px; font-weight: bold; margin-bottom: 8px; color: #111827; }
+            .stat-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
+            .stat-label { font-weight: bold; color: #4b5563; font-size: 13px; }
+            .stat-val { color: #111827; font-size: 13px; }
+            .highlight { color: #16a34a; font-weight: bold; font-size: 20px; }
+            .error { color: #dc2626; font-weight: bold; font-size: 13px; }
+            .chart-img { max-width: 100%; max-height: 170px; object-fit: contain; border-radius: 8px; margin: 10px auto; display: block; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
             th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; }
             th { background-color: #e5e7eb; color: #374151; }
@@ -98,21 +106,42 @@ export const generateProductionPDF = async (
               <div style="text-align: center; margin-top: 20px;">
                 <div style="font-size: 14px; color: #6b7280; margin-bottom: 5px;">Eficiencia de Conversión</div>
                 <div class="highlight">${isNaN(Number(eficiencia)) ? '0.0' : eficiencia}%</div>
+                <div style="font-size: 14px; color: #4b5563; margin-top: 5px;">(Útil / Bruto Comprado)</div>
               </div>
             </div>
             
             ${chartBase64 ? `
-            <div style="flex: 1; min-width: 300px; display: flex; align-items: center; justify-content: center; background-color: #f9fafb; border-radius: 8px; padding: 10px;">
-              <img class="chart-img" src="data:image/png;base64,${chartBase64}" />
+            <div class="card" style="flex: 1; min-width: 300px; text-align: center;">
+              <div class="card-title">Distribución de Material</div>
+              <img src="data:image/png;base64,${chartBase64}" class="chart-img" />
             </div>
             ` : ''}
           </div>
+
+          ${chartBase64Rollos || chartBase64Kg ? `
+          <div style="display: flex; gap: 15px; flex-wrap: wrap; page-break-inside: avoid; margin-bottom: 15px;">
+            ${chartBase64Rollos ? `
+            <div class="card" style="flex: 1; min-width: 300px; text-align: center; margin-bottom: 0;">
+              <div class="card-title">Producción (Rollos)</div>
+              <img src="data:image/png;base64,${chartBase64Rollos}" class="chart-img" />
+            </div>
+            ` : ''}
+            ${chartBase64Kg ? `
+            <div class="card" style="flex: 1; min-width: 300px; text-align: center; margin-bottom: 0;">
+              <div class="card-title">Consumo (Kg)</div>
+              <img src="data:image/png;base64,${chartBase64Kg}" class="chart-img" />
+            </div>
+            ` : ''}
+          </div>
+          ` : ''}
 
           <div class="card" style="background-color: #e0f2fe; border-left: 4px solid #0284c7;">
             <div style="font-size: 14px; color: #075985;">
               <strong>💡 Resumen:</strong><br/>
               Las mermas y desperdicios representaron el <strong>${isNaN(Number(eficiencia)) ? '0.0' : (100 - Number(eficiencia)).toFixed(1)}%</strong> del papel procesado durante este período. 
               ${Number(eficiencia) >= 95 ? 'Este valor refleja un uso altamente óptimo de la materia prima.' : 'Se recomienda revisar los cortes o rollos dañados para mejorar la eficiencia.'}
+              <br/><br/>
+              Adicionalmente, se logró una producción total de <strong>${totalRollos} rollos</strong> terminados, con un consumo asociado de <strong>${totalKgProd.toFixed(1)} kg</strong> de papel para empaque.
             </div>
           </div>
 
@@ -122,11 +151,13 @@ export const generateProductionPDF = async (
             <table>
               <thead>
                 <tr>
-                  <th>Fecha Llegada</th>
-                  <th>Peso Bruto (kg)</th>
-                  <th>Peso Muerto (kg)</th>
+                  <th>ID</th>
+                  <th>Llegada</th>
+                  <th>Agotada</th>
+                  <th>Bruto (kg)</th>
+                  <th>Muerto (kg)</th>
                   <th>Core (kg)</th>
-                  <th>Papel Útil (kg)</th>
+                  <th>Útil (kg)</th>
                 </tr>
               </thead>
               <tbody>
@@ -137,7 +168,9 @@ export const generateProductionPDF = async (
                   const util = bruto - muerto - core;
                   return `
                   <tr>
+                    <td>#${b.id ? b.id.split('-')[0].substring(0, 4).toUpperCase() : '---'}</td>
                     <td>${b.fecha_llegada ? new Date(b.fecha_llegada).toLocaleDateString('es-VE') : 'N/A'}</td>
+                    <td>${b.fecha_gasto ? new Date(b.fecha_gasto).toLocaleDateString('es-VE') : '---'}</td>
                     <td>${bruto.toFixed(2)}</td>
                     <td style="color: #dc2626;">${muerto.toFixed(2)}</td>
                     <td style="color: #dc2626;">${core.toFixed(2)}</td>
@@ -147,6 +180,35 @@ export const generateProductionPDF = async (
                 }).join('')}
               </tbody>
             </table>
+
+            ${produccionRaw.length > 0 ? `
+            <div style="margin-top: 30px;"></div>
+            <h2 style="color: #1e3a8a; font-size: 18px;">Historial de Producción (Rollos y Kg Consumidos)</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha de Producción</th>
+                  <th>Bobina</th>
+                  <th>Presentación</th>
+                  <th>Rollos Producidos</th>
+                  <th>Kg Consumidos</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${produccionRaw.map(p => {
+                  return `
+                  <tr>
+                    <td>${p.fecha ? new Date(p.fecha).toLocaleDateString('es-VE') : 'N/A'}</td>
+                    <td>#${p.id_bobina ? p.id_bobina.split('-')[0].substring(0, 4).toUpperCase() : '---'}</td>
+                    <td>${p.presentacion || 'Desconocida'}</td>
+                    <td>${p.total_rollos || 0}</td>
+                    <td>${(p.total_kg || 0).toFixed(2)}</td>
+                  </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+            ` : ''}
           ` : ''}
 
           <div style="margin-top: 60px; font-size: 12px; color: #9ca3af; text-align: center;">
@@ -161,10 +223,16 @@ export const generateProductionPDF = async (
       margins: { left: 40, right: 40, top: 40, bottom: 40 }
     });
 
+    const sanitizedLabel = filtroTiempoLabel.replace(/[^a-zA-Z0-9-]/g, '_');
+    const fileName = `Reporte_Produccion_${sanitizedLabel}.pdf`;
+    const newUri = `${FileSystemModule.cacheDirectory}${fileName}`;
+    
+    await FileSystemModule.copyAsync({ from: uri, to: newUri });
+
     if (await SharingModule.isAvailableAsync()) {
-      await SharingModule.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+      await SharingModule.shareAsync(newUri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: fileName });
     } else {
-      Toast.show({ type: 'success', text1: 'PDF Generado', text2: `Guardado en: ${uri}` });
+      Toast.show({ type: 'success', text1: 'PDF Generado', text2: `Guardado en: ${newUri}` });
     }
   } catch (error) {
     console.error('Error al generar PDF:', error);
@@ -183,10 +251,12 @@ export const generateFinancePDF = async (
   try {
     let PrintModule: typeof import('expo-print');
     let SharingModule: typeof import('expo-sharing');
+    let FileSystemModule: typeof import('expo-file-system/legacy');
     
     try {
       PrintModule = await import('expo-print');
       SharingModule = await import('expo-sharing');
+      FileSystemModule = await import('expo-file-system/legacy');
       if (!PrintModule || typeof PrintModule.printToFileAsync !== 'function') {
         throw new Error('ExpoPrint native module not available');
       }
@@ -205,8 +275,8 @@ export const generateFinancePDF = async (
         <head>
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
           <style>
-            body { font-family: 'Helvetica', sans-serif; padding: 20px; color: #333; }
-            .corporate-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1e3a8a; padding-bottom: 20px; margin-bottom: 20px; }
+            body { font-family: 'Helvetica', sans-serif; padding: 10px; color: #333; }
+            .corporate-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 10px; }
             .corporate-logo { width: 60px; height: 60px; background-color: #1e3a8a; border-radius: 8px; display: flex; justify-content: center; align-items: center; color: white; font-weight: bold; font-size: 24px; }
             .corporate-info { text-align: right; font-size: 12px; color: #6b7280; }
             h1 { color: #1e3a8a; margin: 0 0 10px 0; font-size: 24px; }
@@ -319,10 +389,16 @@ export const generateFinancePDF = async (
       margins: { left: 40, right: 40, top: 40, bottom: 40 }
     });
 
+    const sanitizedLabel = filtroTiempoLabel.replace(/[^a-zA-Z0-9-]/g, '_');
+    const fileName = `Reporte_Financiero_${sanitizedLabel}.pdf`;
+    const newUri = `${FileSystemModule.cacheDirectory}${fileName}`;
+    
+    await FileSystemModule.copyAsync({ from: uri, to: newUri });
+
     if (await SharingModule.isAvailableAsync()) {
-      await SharingModule.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+      await SharingModule.shareAsync(newUri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: fileName });
     } else {
-      Toast.show({ type: 'success', text1: 'PDF Generado', text2: `Guardado en: ${uri}` });
+      Toast.show({ type: 'success', text1: 'PDF Generado', text2: `Guardado en: ${newUri}` });
     }
   } catch (error) {
     console.error('Error al generar PDF financiero:', error);
@@ -340,10 +416,12 @@ export const generateLogisticsPDF = async (
   try {
     let PrintModule: typeof import('expo-print');
     let SharingModule: typeof import('expo-sharing');
+    let FileSystemModule: typeof import('expo-file-system/legacy');
     
     try {
       PrintModule = await import('expo-print');
       SharingModule = await import('expo-sharing');
+      FileSystemModule = await import('expo-file-system/legacy');
       if (!PrintModule || typeof PrintModule.printToFileAsync !== 'function') {
         throw new Error('ExpoPrint native module not available');
       }
@@ -481,10 +559,16 @@ export const generateLogisticsPDF = async (
       margins: { left: 40, right: 40, top: 40, bottom: 40 }
     });
 
+    const sanitizedLabel = filtroTiempoLabel.replace(/[^a-zA-Z0-9-]/g, '_');
+    const fileName = `Reporte_Logistica_${sanitizedLabel}.pdf`;
+    const newUri = `${FileSystemModule.cacheDirectory}${fileName}`;
+    
+    await FileSystemModule.copyAsync({ from: uri, to: newUri });
+
     if (await SharingModule.isAvailableAsync()) {
-      await SharingModule.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+      await SharingModule.shareAsync(newUri, { UTI: '.pdf', mimeType: 'application/pdf', dialogTitle: fileName });
     } else {
-      Toast.show({ type: 'success', text1: 'PDF Generado', text2: `Guardado en: ${uri}` });
+      Toast.show({ type: 'success', text1: 'PDF Generado', text2: `Guardado en: ${newUri}` });
     }
   } catch (error) {
     console.error('Error al generar PDF logístico:', error);

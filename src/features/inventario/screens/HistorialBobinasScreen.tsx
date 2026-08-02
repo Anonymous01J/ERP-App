@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
 import { globalStyles } from '@core/theme/globalStyles';
-import {  View, StyleSheet, ScrollView , RefreshControl } from 'react-native';
-import { Text, Appbar, useTheme, Divider, Chip } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { Text, Appbar, useTheme, Divider, Chip, SegmentedButtons } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@powersync/react';
 import { CustomCard } from '@ui/CustomCard';
+import { DatePickerInput } from '@components/ui/DatePickerInput';
 import { StatusBar } from 'expo-status-bar';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
@@ -14,16 +15,53 @@ export function HistorialBobinasScreen() {
   const router = useRouter();
   const theme = useTheme();
 
-  const { data: bobinasAgotadas = [] } = useQuery(`
-    SELECT bg.id, bg.id_tipo_papel, bg.peso_inicial_kg, bg.peso_actual_kg,
-           bg.merma_core_kg, bg.peso_muerto_kg, bg.costo_bobina,
-           bg.fecha_llegada, bg.fecha_uso, bg.fecha_gasto,
-           tp.nombre as tipo_papel_nombre
-    FROM bobinas_grandes bg
-    LEFT JOIN tipos_papel tp ON bg.id_tipo_papel = tp.id
-    WHERE bg.estado = 'agotada'
-    ORDER BY bg.fecha_gasto DESC
-  `);
+  // Filtro de Tiempo
+  const [filtroTiempo, setFiltroTiempo] = useState('trimestral');
+  const [fechaInicioPersonalizada, setFechaInicioPersonalizada] = useState('');
+  const [fechaFinPersonalizada, setFechaFinPersonalizada] = useState('');
+
+  const fechaInicio = useMemo(() => {
+    if (filtroTiempo === 'personalizado' && fechaInicioPersonalizada) {
+      return new Date(fechaInicioPersonalizada).toISOString();
+    }
+    const date = new Date();
+    if (filtroTiempo === 'mensual' || filtroTiempo === 'personalizado') {
+      date.setMonth(date.getMonth() - 1);
+    } else if (filtroTiempo === 'trimestral') {
+      date.setMonth(date.getMonth() - 3);
+    } else if (filtroTiempo === 'semestral') {
+      date.setMonth(date.getMonth() - 6);
+    } else if (filtroTiempo === 'anual') {
+      date.setFullYear(date.getFullYear() - 1);
+    }
+    return date.toISOString();
+  }, [filtroTiempo, fechaInicioPersonalizada]);
+
+  const queryData = useMemo(() => {
+    let queryStr = `
+      SELECT bg.id, bg.id_tipo_papel, bg.peso_inicial_kg, bg.peso_actual_kg,
+             bg.merma_core_kg, bg.peso_muerto_kg, bg.costo_bobina,
+             bg.fecha_llegada, bg.fecha_uso, bg.fecha_gasto,
+             tp.nombre as tipo_papel_nombre
+      FROM bobinas_grandes bg
+      LEFT JOIN tipos_papel tp ON bg.id_tipo_papel = tp.id
+      WHERE bg.estado = 'agotada' AND bg.fecha_gasto >= ?
+    `;
+    let params: any[] = [fechaInicio];
+
+    if (filtroTiempo === 'personalizado' && fechaFinPersonalizada) {
+      queryStr += ` AND bg.fecha_gasto <= ?`;
+      const end = new Date(fechaFinPersonalizada);
+      end.setHours(23, 59, 59, 999);
+      params.push(end.toISOString());
+    }
+    
+    queryStr += ` ORDER BY bg.fecha_gasto DESC`;
+    
+    return { queryStr, params };
+  }, [fechaInicio, filtroTiempo, fechaFinPersonalizada]);
+
+  const { data: bobinasAgotadas = [] } = useQuery(queryData.queryStr, queryData.params);
 
   const formatFecha = (f: string | null) => {
     if (!f) return '—';
@@ -39,6 +77,39 @@ export function HistorialBobinasScreen() {
       </Appbar.Header>
 
       <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
+        
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+          <SegmentedButtons
+            value={filtroTiempo}
+            onValueChange={setFiltroTiempo}
+            buttons={[
+              { value: 'mensual', label: '1 Mes' },
+              { value: 'trimestral', label: '3 Meses' },
+              { value: 'semestral', label: '6 Meses' },
+              { value: 'anual', label: '1 Año' },
+              { value: 'personalizado', label: 'Rango' },
+            ]}
+          />
+        </ScrollView>
+
+        {filtroTiempo === 'personalizado' && (
+          <View style={styles.rangoFechasContainer}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <DatePickerInput 
+                label="Desde" 
+                value={fechaInicioPersonalizada} 
+                onChange={setFechaInicioPersonalizada} 
+              />
+            </View>
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <DatePickerInput 
+                label="Hasta" 
+                value={fechaFinPersonalizada} 
+                onChange={setFechaFinPersonalizada} 
+              />
+            </View>
+          </View>
+        )}
         {(bobinasAgotadas as any[]).length === 0 ? (
           <View style={styles.emptyState}>
             <MaterialCommunityIcons name="archive-check-outline" size={56} color="#d1d5db" />
@@ -63,20 +134,17 @@ export function HistorialBobinasScreen() {
                   {/* Header */}
                   <View style={styles.headerRow}>
                     <View style={styles.tipoContainer}>
-                      <View style={[
-                        styles.tipoBadge,
-                        { backgroundColor: '#6366f1' }
-                      ]}>
+                      <View style={[styles.tipoBadge, { backgroundColor: '#6366f1' }]}>
                         <Text style={styles.tipoBadgeText}>Tipo {bobina.tipo_papel_nombre ?? '?'}</Text>
                       </View>
-                      <Text variant="titleMedium" style={styles.titulo}>
-                        Bobina #{(bobinasAgotadas as any[]).length - index}
+                      <Text variant="titleMedium" style={[styles.titulo, { flexShrink: 1 }]}>
+                        Bobina #{bobina.id.split('-')[0].substring(0, 4).toUpperCase()}
                       </Text>
                     </View>
                     <Chip
                       icon="check-circle"
                       mode="flat"
-                      style={{ backgroundColor: '#f3f4f6' }}
+                      style={{ backgroundColor: '#f3f4f6', flexShrink: 0 }}
                       textStyle={{ color: '#6b7280', fontSize: 11 }}
                     >
                       Agotada
@@ -160,7 +228,7 @@ export function HistorialBobinasScreen() {
                       size={16}
                       color={parseFloat(eficiencia) >= 95 ? '#16a34a' : parseFloat(eficiencia) >= 90 ? '#d97706' : theme.colors.error}
                     />
-                    <Text variant="bodySmall" style={{ marginLeft: 6, fontWeight: 'bold' }}>
+                    <Text variant="bodySmall" style={{ marginLeft: 6, fontWeight: 'bold', flex: 1, flexWrap: 'wrap' }}>
                       Eficiencia: {eficiencia}% de la bobina convertida en producto útil
                     </Text>
                   </View>
@@ -186,7 +254,7 @@ const styles = StyleSheet.create({
   card: { marginBottom: 12, borderRadius: 16 },
   cardContent: { padding: 16 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  tipoContainer: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  tipoContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8, flexWrap: 'wrap' },
   tipoBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   tipoBadgeText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
   titulo: { fontWeight: 'bold', color: '#1f2937' },
@@ -198,4 +266,5 @@ const styles = StyleSheet.create({
   eficienciaBox: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, padding: 10, marginTop: 8 },
   emptyState: { alignItems: 'center', marginTop: 60, padding: 24 },
   emptyText: { color: '#9ca3af', marginTop: 16, textAlign: 'center' },
+  rangoFechasContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
 });

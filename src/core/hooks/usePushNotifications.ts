@@ -111,10 +111,10 @@ export function usePushNotifications(userId?: string | null) {
     return () => {
       isMounted = false;
       if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
+        notificationListener.current.remove();
       }
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+        responseListener.current.remove();
       }
     };
   }, [userId]); // Only runs when userId changes (i.e. user logs in/out)

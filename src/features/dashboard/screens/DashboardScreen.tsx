@@ -1,15 +1,16 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
 import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, ScrollView, Dimensions, RefreshControl, Linking, TouchableOpacity } from 'react-native';
-import { Text, useTheme, Avatar, SegmentedButtons, FAB, Dialog, Portal, Button, Chip } from 'react-native-paper';
+import { Text, useTheme, Avatar, SegmentedButtons, FAB, Dialog, Portal, Button, Chip, IconButton } from 'react-native-paper';
 import { CustomCard } from '@components/ui/CustomCard';
 import { LineChart } from 'react-native-gifted-charts';
 import { useQuery } from '@powersync/react';
 import { useRouter } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
+import PagerView from 'react-native-pager-view';
 import { useAuth } from '@state/AuthProvider';
 
 export function DashboardScreen() {
@@ -24,7 +25,8 @@ export function DashboardScreen() {
   const [metricaProduccion, setMetricaProduccion] = useState<'rollos' | 'kg'>('rollos');
   const [fabOpen, setFabOpen] = useState(false);
   const [modalAlertasVisible, setModalAlertasVisible] = useState(false);
-
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const pagerRef = useRef<PagerView>(null);
   // 1. Pedidos (Contadores)
   const { data: pedidosStats = [] } = useQuery(`
     SELECT estado, COUNT(*) as count 
@@ -337,6 +339,82 @@ export function DashboardScreen() {
     return labelsEnOrden.map(lbl => ({ value: dataMap[lbl], label: formatLabel(lbl), dataLabel: formatLabel(lbl) }));
   }, [produccionRaw, prodPeriod, metricaProduccion]);
 
+  // --- PROCESAMIENTO GRÁFICO PRODUCCIÓN (ADMIN SWIPER) ---
+  const { lineDataRollosAdmin, lineDataKgAdmin } = useMemo(() => {
+    if (!isAdmin) return { lineDataRollosAdmin: [], lineDataKgAdmin: [] };
+    
+    const dataRollosMap: Record<string, number> = {};
+    const dataKgMap: Record<string, number> = {};
+    const labelsEnOrden: string[] = [];
+    const hoy = new Date();
+    hoy.setHours(23, 59, 59, 999);
+
+    if (chartPeriod === 'Día') {
+      const hoyStr = hoy.toISOString().split('T')[0];
+      const hourBlocks = [0, 4, 8, 12, 16, 20];
+      hourBlocks.forEach(h => {
+        const key = `${h.toString().padStart(2, '0')}:00`;
+        labelsEnOrden.push(key);
+        dataRollosMap[key] = 0;
+        dataKgMap[key] = 0;
+      });
+      const rowHoy = (produccionRaw as any[]).find((r: any) => r.fecha === hoyStr);
+      if (rowHoy) {
+        dataRollosMap['08:00'] = rowHoy.total_rollos ?? 0;
+        dataKgMap['08:00'] = rowHoy.total_kg ?? 0;
+      }
+    } else if (chartPeriod === 'Semana') {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(hoy.getTime() - i * 86400000);
+        const key = d.toISOString().split('T')[0];
+        labelsEnOrden.push(key);
+        dataRollosMap[key] = 0;
+        dataKgMap[key] = 0;
+      }
+      for (const row of produccionRaw as any[]) {
+        const f = row.fecha?.split('T')[0] ?? row.fecha;
+        if (dataRollosMap[f] !== undefined) {
+          dataRollosMap[f] = row.total_rollos ?? 0;
+          dataKgMap[f] = row.total_kg ?? 0;
+        }
+      }
+    } else {
+      for (let i = 3; i >= 0; i--) {
+        const start = new Date(hoy.getTime() - (i * 7 + 6) * 86400000);
+        const startStr = start.toISOString().split('T')[0].slice(5);
+        const key = `Sem ${4 - i} (${startStr})`;
+        labelsEnOrden.push(key);
+        dataRollosMap[key] = 0;
+        dataKgMap[key] = 0;
+      }
+      for (const row of produccionRaw as any[]) {
+        const f = row.fecha?.split('T')[0] ?? row.fecha;
+        if (!f) continue;
+        const d = new Date(f);
+        const diffDays = Math.floor((hoy.getTime() - d.getTime()) / 86400000);
+        if (diffDays >= 0 && diffDays < 28) {
+          const semIndex = 3 - Math.floor(diffDays / 7);
+          const key = labelsEnOrden[semIndex];
+          dataRollosMap[key] = (dataRollosMap[key] ?? 0) + (row.total_rollos ?? 0);
+          dataKgMap[key] = (dataKgMap[key] ?? 0) + (row.total_kg ?? 0);
+        }
+      }
+    }
+
+    const formatLabel = (lbl: string) => {
+      if (chartPeriod === 'Día') return lbl.substring(0, 5);
+      if (chartPeriod === 'Semana') {
+        const parts = lbl.split('-');
+        return `${parts[2]}/${parts[1]}`;
+      }
+      return lbl.split(' ')[0];
+    };
+
+    const outRollos = labelsEnOrden.map(lbl => ({ value: dataRollosMap[lbl], label: formatLabel(lbl), dataLabel: formatLabel(lbl) }));
+    const outKg = labelsEnOrden.map(lbl => ({ value: dataKgMap[lbl], label: formatLabel(lbl), dataLabel: formatLabel(lbl) }));
+    return { lineDataRollosAdmin: outRollos, lineDataKgAdmin: outKg };
+  }, [produccionRaw, chartPeriod, isAdmin]);
+
   return (
     <View style={globalStyles.container}>
       <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
@@ -409,10 +487,10 @@ export function DashboardScreen() {
 
         {/* Gráfico Financiero — Admin */}
         {isAdmin && (
-          <CustomCard style={{ marginBottom: 16 }}>
+          <CustomCard style={{ marginBottom: 16, paddingBottom: 0 }}>
             <View style={styles.chartHeader}>
               <Text variant="titleMedium" style={{ fontWeight: 'bold', marginBottom: 16, color: '#374151' }}>
-                Ingresos vs Egresos ($)
+                {currentSlide === 0 ? 'Flujo de Caja (USD)' : currentSlide === 1 ? 'Rollos Producidos' : 'Kg Consumidos'}
               </Text>
               <SegmentedButtons
                 value={chartPeriod}
@@ -426,87 +504,203 @@ export function DashboardScreen() {
               />
             </View>
             
-            <View style={styles.chartContainer}>
-              <LineChart
-                areaChart
-                curved
-                data={lineDataIngresos}
-                data2={lineDataEgresos}
-                height={220}
-                width={Dimensions.get('window').width - 120}
-                spacing={lineDataIngresos.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataIngresos.length - 1) : 45}
-                initialSpacing={15}
-                endSpacing={15}
-                pointerConfig={{
-                  pointerStripHeight: 160,
-                  pointerStripColor: 'lightgray',
-                  pointerStripWidth: 2,
-                  pointerColor: 'lightgray',
-                  radius: 6,
-                  pointerLabelWidth: 100,
-                  pointerLabelHeight: 90,
-                  activatePointersOnLongPress: false,
-                  autoAdjustPointerLabelPosition: true,
-                  pointerLabelComponent: (items: any) => {
-                    const item1 = items[0];
-                    const item2 = items.length > 1 ? items[1] : null;
-                    return (
-                      <View
-                        style={{
-                          padding: 8,
-                          backgroundColor: '#1f2937',
-                          borderRadius: 8,
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                        }}>
-                      <Text style={{color: '#d1d5db', fontSize: 12, marginBottom: 4}}>{item1?.dataLabel || ''}</Text>
-                      <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 2}}>
-                        <View style={{width: 8, height: 8, borderRadius: 4, backgroundColor: '#16a34a', marginRight: 6}} />
-                        <Text style={{color: '#fff', fontSize: 12, fontWeight: 'bold'}}>${item1?.value?.toFixed(2) || '0.00'}</Text>
-                      </View>
-                      {item2 && (
-                        <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                          <View style={{width: 8, height: 8, borderRadius: 4, backgroundColor: '#dc2626', marginRight: 6}} />
-                          <Text style={{color: '#fff', fontSize: 12, fontWeight: 'bold'}}>${item2?.value?.toFixed(2) || '0.00'}</Text>
-                        </View>
-                      )}
+            <View style={{ height: 330, paddingBottom: 10 }}>
+              <PagerView
+                ref={pagerRef}
+                style={{ flex: 1 }}
+                initialPage={0}
+                onPageSelected={(e) => setCurrentSlide(e.nativeEvent.position)}
+                scrollEnabled={false}
+              >
+                {/* Slide 1: Finanzas */}
+                <View key="1">
+                  <View style={styles.chartContainer}>
+                    <LineChart
+                      areaChart
+                      curved
+                      data={lineDataIngresos}
+                      data2={lineDataEgresos}
+                      height={200}
+                      width={Dimensions.get('window').width - 120}
+                      spacing={lineDataIngresos.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataIngresos.length - 1) : 45}
+                      initialSpacing={15}
+                      endSpacing={15}
+                      pointerConfig={{
+                        pointerStripHeight: 160,
+                        pointerStripColor: 'lightgray',
+                        pointerStripWidth: 2,
+                        pointerColor: 'lightgray',
+                        radius: 6,
+                        pointerLabelWidth: 100,
+                        pointerLabelHeight: 90,
+                        activatePointersOnLongPress: false,
+                        autoAdjustPointerLabelPosition: true,
+                        pointerLabelComponent: (items: any) => {
+                          const item1 = items[0];
+                          const item2 = items.length > 1 ? items[1] : null;
+                          return (
+                            <View style={{ padding: 8, backgroundColor: '#1f2937', borderRadius: 8, justifyContent: 'center', alignItems: 'center' }}>
+                              <Text style={{color: '#d1d5db', fontSize: 12, marginBottom: 4}}>{item1?.dataLabel || ''}</Text>
+                              <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 2}}>
+                                <View style={{width: 8, height: 8, borderRadius: 4, backgroundColor: '#16a34a', marginRight: 6}} />
+                                <Text style={{color: '#fff', fontSize: 12, fontWeight: 'bold'}}>${item1?.value?.toFixed(2) || '0.00'}</Text>
+                              </View>
+                              {item2 && (
+                                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                                  <View style={{width: 8, height: 8, borderRadius: 4, backgroundColor: '#dc2626', marginRight: 6}} />
+                                  <Text style={{color: '#fff', fontSize: 12, fontWeight: 'bold'}}>${item2?.value?.toFixed(2) || '0.00'}</Text>
+                                </View>
+                              )}
+                            </View>
+                          );
+                        },
+                      }}
+                      color1="#16a34a"
+                      startFillColor1="#16a34a"
+                      endFillColor1="#16a34a"
+                      startOpacity1={0.3}
+                      endOpacity1={0.05}
+                      color2="#dc2626"
+                      startFillColor2="#dc2626"
+                      endFillColor2="#dc2626"
+                      startOpacity2={0.3}
+                      endOpacity2={0.05}
+                      yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
+                      xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
+                      yAxisThickness={0}
+                      xAxisThickness={1}
+                      xAxisColor="#e5e7eb"
+                      rulesColor="#f3f4f6"
+                      rulesType="dashed"
+                      showVerticalLines
+                      verticalLinesColor="#f3f4f6"
+                      verticalLinesType="dashed"
+                      noOfSections={4}
+                    />
+                  </View>
+                  <View style={styles.legendRow}>
+                     <View style={styles.legendItem}>
+                       <View style={[styles.legendDot, { backgroundColor: '#16a34a' }]} />
+                       <Text variant="bodySmall">Ingresos</Text>
+                     </View>
+                     <View style={styles.legendItem}>
+                       <View style={[styles.legendDot, { backgroundColor: '#dc2626' }]} />
+                       <Text variant="bodySmall">Egresos</Text>
+                     </View>
+                  </View>
+                </View>
+
+                {/* Slide 2: Rollos */}
+                <View key="2">
+                  <View style={styles.chartContainer}>
+                    <LineChart
+                      areaChart
+                      curved
+                      data={lineDataRollosAdmin}
+                      height={200}
+                      width={Dimensions.get('window').width - 120}
+                      spacing={lineDataRollosAdmin.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataRollosAdmin.length - 1) : 45}
+                      initialSpacing={15}
+                      endSpacing={15}
+                      color={theme.colors.primary}
+                      startFillColor={theme.colors.primary}
+                      endFillColor={theme.colors.primary}
+                      startOpacity={0.3}
+                      endOpacity={0.05}
+                      yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
+                      xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
+                      yAxisThickness={0}
+                      xAxisThickness={1}
+                      xAxisColor="#e5e7eb"
+                      rulesColor="#f3f4f6"
+                      rulesType="dashed"
+                      noOfSections={4}
+                    />
+                  </View>
+                  <View style={styles.legendRow}>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: theme.colors.primary }]} />
+                      <Text variant="bodySmall">Rollos producidos</Text>
                     </View>
-                    );
-                  },
-                }}
-                color1="#16a34a"
-                startFillColor1="#16a34a"
-                endFillColor1="#16a34a"
-                startOpacity1={0.3}
-                endOpacity1={0.05}
-                color2="#dc2626"
-                startFillColor2="#dc2626"
-                endFillColor2="#dc2626"
-                startOpacity2={0.3}
-                endOpacity2={0.05}
-                yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
-                xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
-                yAxisLabelPrefix="$"
-                yAxisThickness={0}
-                xAxisThickness={1}
-                xAxisColor="#e5e7eb"
-                rulesColor="#f3f4f6"
-                rulesType="dashed"
-                showVerticalLines
-                verticalLinesColor="#f3f4f6"
-                verticalLinesType="dashed"
-                noOfSections={4}
-              />
-            </View>
-            <View style={styles.legendRow}>
-               <View style={styles.legendItem}>
-                 <View style={[styles.legendDot, { backgroundColor: '#16a34a' }]} />
-                 <Text variant="bodySmall">Ingresos</Text>
-               </View>
-               <View style={styles.legendItem}>
-                 <View style={[styles.legendDot, { backgroundColor: '#dc2626' }]} />
-                 <Text variant="bodySmall">Egresos</Text>
-               </View>
+                  </View>
+                </View>
+
+                {/* Slide 3: Kg */}
+                <View key="3">
+                  <View style={styles.chartContainer}>
+                    <LineChart
+                      areaChart
+                      curved
+                      data={lineDataKgAdmin}
+                      height={200}
+                      width={Dimensions.get('window').width - 120}
+                      spacing={lineDataKgAdmin.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataKgAdmin.length - 1) : 45}
+                      initialSpacing={15}
+                      endSpacing={15}
+                      color="#f59e0b"
+                      startFillColor="#f59e0b"
+                      endFillColor="#f59e0b"
+                      startOpacity={0.3}
+                      endOpacity={0.05}
+                      yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
+                      xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
+                      yAxisThickness={0}
+                      xAxisThickness={1}
+                      xAxisColor="#e5e7eb"
+                      rulesColor="#f3f4f6"
+                      rulesType="dashed"
+                      noOfSections={4}
+                      yAxisLabelSuffix=" kg"
+                    />
+                  </View>
+                  <View style={styles.legendRow}>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: '#f59e0b' }]} />
+                      <Text variant="bodySmall">Kg consumidos</Text>
+                    </View>
+                  </View>
+                </View>
+              </PagerView>
+
+              {/* Puntos de paginación y flechas */}
+              <View style={[styles.paginationContainer, { justifyContent: 'space-between', paddingHorizontal: 16 }]}>
+                <IconButton 
+                  icon="chevron-left" 
+                  size={24}
+                  iconColor={currentSlide === 0 ? theme.colors.surfaceDisabled : theme.colors.primary}
+                  onPress={() => {
+                    if (currentSlide > 0) pagerRef.current?.setPage(currentSlide - 1);
+                  }} 
+                  disabled={currentSlide === 0}
+                  style={{ margin: 0 }}
+                />
+                
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {[0, 1, 2].map((_, index) => (
+                    <View
+                      key={index}
+                      style={[
+                        styles.dot,
+                        {
+                          backgroundColor: index === currentSlide ? theme.colors.primary : theme.colors.outlineVariant,
+                          width: index === currentSlide ? 20 : 8,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+
+                <IconButton 
+                  icon="chevron-right" 
+                  size={24}
+                  iconColor={currentSlide === 2 ? theme.colors.surfaceDisabled : theme.colors.primary}
+                  onPress={() => {
+                    if (currentSlide < 2) pagerRef.current?.setPage(currentSlide + 1);
+                  }} 
+                  disabled={currentSlide === 2}
+                  style={{ margin: 0 }}
+                />
+              </View>
             </View>
           </CustomCard>
         )}
@@ -666,7 +860,7 @@ export function DashboardScreen() {
         actions={[
           { icon: 'plus-box-outline', label: 'Nuevo Pedido', onPress: () => router.push('/(screens)/nuevo-pedido') },
           { icon: 'paper-roll', label: 'Registrar Producción', onPress: () => router.push('/(screens)/registrar-produccion') },
-          { icon: 'truck', label: 'Registrar Viaje', onPress: () => router.push('/(screens)/registrar-viaje') },
+          ...(perfil?.rol !== 'operador' ? [{ icon: 'truck', label: 'Registrar Viaje', onPress: () => router.push('/(screens)/registrar-viaje') }] : []),
         ]}
         onStateChange={({ open }) => setFabOpen(open)}
         onPress={() => {
@@ -692,4 +886,16 @@ const styles = StyleSheet.create({
   gridItemContent: { padding: 12, alignItems: 'center' },
   gridItemNumber: { fontWeight: 'bold', marginTop: 4, color: '#1f2937' },
   gridItemLabel: { color: '#6b7280', textAlign: 'center', marginTop: 2 },
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 10,
+    gap: 8,
+  },
+  dot: {
+    height: 8,
+    borderRadius: 4,
+  },
 });

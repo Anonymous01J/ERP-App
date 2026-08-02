@@ -42,7 +42,7 @@ export function CargarBobinasViajeScreen() {
   const [menusVisibles, setMenusVisibles] = useState<Record<string, boolean>>({});
 
   // --- Potes ---
-  const { data: inventarioPotes = [] } = useQuery('SELECT id, nombre, capacidad_ml FROM inventario_potes ORDER BY nombre ASC');
+  const { data: inventarioPotes = [] } = useQuery('SELECT id, capacidad FROM inventario_potes ORDER BY capacidad ASC');
   const [filasPotes, setFilasPotes] = useState<FilaPote[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -52,7 +52,7 @@ export function CargarBobinasViajeScreen() {
       setFilasPotes(
         (inventarioPotes as any[]).map((p: any) => ({
           id: p.id,
-          nombre: `${p.nombre} (${p.capacidad_ml}ml)`,
+          nombre: `Pote de ${p.capacidad || 'N/A'}`,
           cantidadRecibida: '',
         }))
       );
@@ -98,8 +98,8 @@ export function CargarBobinasViajeScreen() {
       for (const fila of filasValidas) {
         const pesoKg = parseFloat(fila.pesoKg);
         await powerSync.execute(
-          `INSERT INTO bobinas_grandes (id, id_viaje_compra, peso_inicial_kg, id_tipo_papel, peso_actual_kg, fecha_llegada, estado)
-           VALUES (?, ?, ?, ?, ?, ?, 'disponible')`,
+          `INSERT INTO bobinas_grandes (id, id_viaje_compra, peso_inicial_kg, id_tipo_papel, peso_actual_kg, fecha_llegada, estado, peso_muerto_kg, merma_core_kg, costo_bobina)
+           VALUES (?, ?, ?, ?, ?, ?, 'disponible', 0, 0, 0)`,
           [uuidv4(), idViaje, pesoKg, fila.idTipoPapel, pesoKg, now]
         );
       }
@@ -108,7 +108,7 @@ export function CargarBobinasViajeScreen() {
       for (const pote of potesConCantidad) {
         const cantidad = parseInt(pote.cantidadRecibida);
         await powerSync.execute(
-          `UPDATE inventario_potes SET stock_actual = stock_actual + ? WHERE id = ?`,
+          `UPDATE inventario_potes SET stock_unidades = stock_unidades + ? WHERE id = ?`,
           [cantidad, pote.id]
         );
       }

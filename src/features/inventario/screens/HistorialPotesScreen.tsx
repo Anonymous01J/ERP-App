@@ -5,15 +5,16 @@ import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { Text, Appbar, useTheme, Divider, Chip, SegmentedButtons } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@powersync/react';
-import { CustomCard } from '@ui/CustomCard';
+import { CustomCard } from '@components/ui/CustomCard';
 import { DatePickerInput } from '@components/ui/DatePickerInput';
 import { StatusBar } from 'expo-status-bar';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
-export function HistorialProduccionScreen() {
+export function HistorialPotesScreen() {
   const { refreshing, onRefresh } = usePullToRefresh();
   const router = useRouter();
   const theme = useTheme();
+
   // Filtro de Tiempo
   const [filtroTiempo, setFiltroTiempo] = useState('trimestral');
   const [fechaInicioPersonalizada, setFechaInicioPersonalizada] = useState('');
@@ -39,65 +40,34 @@ export function HistorialProduccionScreen() {
   const queryData = useMemo(() => {
     let queryStr = `
       SELECT 
-        pd.id, 
-        pd.fecha, 
-        pd.cantidad_rollos_total,
-        pd.id_pedido_destino,
-        pp.nombre as presentacion,
-        cb.kg_consumidos,
-        tp.nombre as tipo_papel,
-        bg.id as bobina_id,
-        c.razon_social as cliente
-      FROM produccion_diaria pd
-      JOIN productos_presentacion pp ON pp.id = pd.id_producto
-      LEFT JOIN consumo_bobinas cb ON cb.id_produccion = pd.id
-      LEFT JOIN bobinas_grandes bg ON bg.id = cb.id_bobina
-      LEFT JOIN tipos_papel tp ON tp.id = bg.id_tipo_papel
-      LEFT JOIN pedidos p ON p.id = pd.id_pedido_destino
+        dp.id,
+        p.fecha_creacion as fecha,
+        dp.cantidad_solicitada,
+        dp.cantidad_producida,
+        ip.capacidad,
+        c.razon_social as cliente,
+        p.estado
+      FROM detalles_pedido dp
+      JOIN pedidos p ON p.id = dp.id_pedido
+      JOIN inventario_potes ip ON ip.id = dp.id_pote
       LEFT JOIN clientes c ON c.id = p.id_cliente
-      WHERE pd.fecha >= ?
+      WHERE dp.id_pote IS NOT NULL AND p.fecha_creacion >= ?
     `;
     let params: any[] = [fechaInicio];
 
     if (filtroTiempo === 'personalizado' && fechaFinPersonalizada) {
-      queryStr += ` AND pd.fecha <= ?`;
+      queryStr += ` AND p.fecha_creacion <= ?`;
       const end = new Date(fechaFinPersonalizada);
       end.setHours(23, 59, 59, 999);
       params.push(end.toISOString());
     }
     
-    queryStr += ` ORDER BY pd.fecha DESC`;
+    queryStr += ` ORDER BY p.fecha_creacion DESC`;
     
     return { queryStr, params };
   }, [fechaInicio, filtroTiempo, fechaFinPersonalizada]);
 
-  const { data: produccionData = [] } = useQuery(queryData.queryStr, queryData.params);
-
-  // Agrupar la producción por lote (misma fecha de inserción exacta)
-  const lotes = useMemo(() => {
-    const agrupados: Record<string, any> = {};
-    for (const row of produccionData as any[]) {
-      const key = row.fecha; // timestamp exacto ISO
-      if (!agrupados[key]) {
-        agrupados[key] = {
-          fecha: key,
-          bobina: row.tipo_papel ? `Tipo ${row.tipo_papel} (#${row.bobina_id?.split('-')[0].substring(0, 4).toUpperCase() || '---'})` : 'Desconocida',
-          bobina_id: row.bobina_id,
-          totalKg: 0,
-          resultado: []
-        };
-      }
-      agrupados[key].totalKg += (row.kg_consumidos || 0);
-      agrupados[key].resultado.push({
-        id: row.id,
-        presentacion: row.presentacion,
-        cantidad: row.cantidad_rollos_total,
-        destino: row.id_pedido_destino ? `Pedido: ${row.cliente}` : 'Stock General',
-        esStock: !row.id_pedido_destino
-      });
-    }
-    return Object.values(agrupados).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-  }, [produccionData]);
+  const { data: potesData = [] } = useQuery(queryData.queryStr, queryData.params);
 
   const formatFecha = (f: string) => {
     try {
@@ -116,7 +86,7 @@ export function HistorialProduccionScreen() {
       <StatusBar style="dark" />
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
-        <Appbar.Content title="Historial de Producción" subtitle="Lotes procesados" />
+        <Appbar.Content title="Historial de Potes" subtitle="Salidas por pedidos" />
       </Appbar.Header>
 
       <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
@@ -153,75 +123,62 @@ export function HistorialProduccionScreen() {
             </View>
           </View>
         )}
-        {lotes.length === 0 ? (
+
+        {potesData.length === 0 ? (
           <View style={styles.emptyState}>
             <MaterialCommunityIcons name="clipboard-text-off-outline" size={56} color="#d1d5db" />
             <Text variant="bodyLarge" style={styles.emptyText}>
-              No hay historial de producción.
+              No hay historial de salidas de potes.
             </Text>
           </View>
         ) : (
-          lotes.map((lote: any, index: number) => (
-            <CustomCard key={lote.fecha + index} style={styles.card}>
-              <View style={styles.cardContent}>
-                
-                {/* Cabecera del lote */}
-                <View style={styles.headerRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1, paddingRight: 8 }}>
-                    <MaterialCommunityIcons name="calendar-clock" size={18} color={theme.colors.primary} />
-                    <Text variant="titleMedium" style={{ fontWeight: 'bold', color: '#1f2937', flexShrink: 1 }}>
-                      {formatFecha(lote.fecha)}
-                    </Text>
+          potesData.map((mov: any, index: number) => {
+            const isCancelado = mov.estado === 'cancelado';
+            
+            return (
+              <CustomCard key={mov.id + index} style={styles.card}>
+                <View style={styles.cardContent}>
+                  
+                  {/* Cabecera del movimiento */}
+                  <View style={styles.headerRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <MaterialCommunityIcons name="calendar-clock" size={18} color={theme.colors.primary} />
+                      <Text variant="titleMedium" style={{ fontWeight: 'bold', color: '#1f2937' }}>
+                        {formatFecha(mov.fecha)}
+                      </Text>
+                    </View>
+                    <Chip 
+                      mode="flat" 
+                      textStyle={{ fontSize: 11, fontWeight: 'bold' }}
+                      style={{ backgroundColor: isCancelado ? '#fee2e2' : '#e0e7ff' }}
+                    >
+                      {isCancelado ? 'Cancelado' : 'Pedido'}
+                    </Chip>
                   </View>
-                  <Chip 
-                    mode="flat" 
-                    compact
-                    textStyle={{ fontSize: 11, fontWeight: 'bold' }}
-                    style={{ backgroundColor: lote.bobina?.includes('A') ? '#e0e7ff' : '#fef3c7', flexShrink: 0 }}
-                  >
-                    {lote.bobina}
-                  </Chip>
-                </View>
 
-                {/* Subcabecera: kg consumidos */}
-                <View style={{ marginBottom: 12, flexDirection: 'row', alignItems: 'center' }}>
-                  <Text variant="bodySmall" style={{ color: '#6b7280' }}>
-                    Se descontaron <Text style={{ fontWeight: 'bold', color: theme.colors.error }}>{lote.totalKg.toFixed(2)} kg</Text> de la bobina
-                  </Text>
-                </View>
+                  <Divider style={{ marginVertical: 8 }} />
 
-                <Divider style={{ marginVertical: 8 }} />
-
-                <Text variant="labelMedium" style={{ color: '#9ca3af', letterSpacing: 0.5, marginBottom: 8 }}>
-                  ROLLOS PRODUCIDOS
-                </Text>
-                
-                {/* Resultados */}
-                {lote.resultado.map((prod: any, idx: number) => (
-                  <View key={prod.id || idx} style={styles.prodRow}>
+                  {/* Resultados */}
+                  <View style={styles.prodRow}>
                     <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text variant="bodyMedium" style={{ fontWeight: 'bold', color: '#1f2937' }}>
-                        +{prod.cantidad}
+                      <Text variant="bodyMedium" style={{ fontWeight: 'bold', color: isCancelado ? '#9ca3af' : theme.colors.error }}>
+                        -{mov.cantidad_solicitada}
                       </Text>
                       <Text variant="bodyMedium" style={{ color: '#4b5563' }}>
-                        {prod.presentacion}
+                        Potes {mov.capacidad}
                       </Text>
                     </View>
                     <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                      <Chip 
-                        compact 
-                        style={{ backgroundColor: prod.esStock ? '#dcfce7' : '#f3e8ff' }}
-                        textStyle={{ fontSize: 10, color: prod.esStock ? '#16a34a' : '#9333ea' }}
-                      >
-                        {prod.destino}
-                      </Chip>
+                      <Text variant="bodySmall" style={{ color: '#6b7280' }}>
+                        Cliente: <Text style={{ fontWeight: 'bold', color: '#1f2937' }}>{mov.cliente}</Text>
+                      </Text>
                     </View>
                   </View>
-                ))}
 
-              </View>
-            </CustomCard>
-          ))
+                </View>
+              </CustomCard>
+            );
+          })
         )}
       </ScrollView>
     </View>
@@ -232,10 +189,7 @@ const styles = StyleSheet.create({
   card: { marginBottom: 12, borderRadius: 16 },
   cardContent: { padding: 16 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  prodRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f3f4f6'
-  },
+  prodRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   rangoFechasContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
   emptyState: { alignItems: 'center', marginTop: 60, padding: 24 },
   emptyText: { color: '#9ca3af', marginTop: 16, textAlign: 'center' },
