@@ -2,13 +2,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useMemo, useState, useEffect } from 'react';
 import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
 import { globalStyles } from '@core/theme/globalStyles';
-import { View, StyleSheet, ScrollView, Dimensions, RefreshControl } from 'react-native';
-import { Text, useTheme, Surface, FAB, ActivityIndicator } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, Dimensions, RefreshControl, TouchableOpacity } from 'react-native';
+import { Text, useTheme, Surface, FAB, ActivityIndicator, Menu, Portal, Modal, Divider } from 'react-native-paper';
 import { CustomCard } from '@components/ui/CustomCard';
+import { CalendarCustom } from '@components/ui/CalendarCustom';
 import { useQuery } from '@powersync/react';
 import { useRouter } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { getTasaDolarBCV } from '@core/api/dolar';
+import { generateFinanzasPdf } from '../utils/generateFinanzasPdf';
 
 const { width } = Dimensions.get('window');
 
@@ -19,6 +21,15 @@ export function FinanzasDashboardScreen() {
   const router = useRouter();
 
   const [tasaBCV, setTasaBCV] = useState<number>(0);
+
+  // Estados para orden y filtro
+  const [sortBy, setSortBy] = useState<'recientes' | 'antiguos' | 'monto'>('recientes');
+  const [filterType, setFilterType] = useState<'todos' | 'ingresos' | 'gastos'>('todos');
+  const [dateFilter, setDateFilter] = useState<string | null>(null);
+  
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [calendarVisible, setCalendarVisible] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   useEffect(() => {
     getTasaDolarBCV().then(tasa => {
@@ -138,15 +149,71 @@ export function FinanzasDashboardScreen() {
   const formatUsd = (val: number) => `$${new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val)}`;
   const formatNumber = (val: number) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
 
+  // Procesar flujo de caja con filtros y ordenamiento
+  const processedFlujo = useMemo(() => {
+    let result = [...flujoCaja];
+
+    // Filtrar por tipo
+    if (filterType === 'ingresos') {
+      result = result.filter((mov: any) => mov.tipo === 'ingreso');
+    } else if (filterType === 'gastos') {
+      result = result.filter((mov: any) => mov.tipo !== 'ingreso');
+    }
+
+    // Filtrar por fecha
+    if (dateFilter) {
+      result = result.filter((mov: any) => {
+        if (!mov.fecha) return false;
+        // La fecha de DB suele ser 'YYYY-MM-DD HH:MM:SS' o ISO. Tomamos los primeros 10 caracteres.
+        const movDateStr = mov.fecha.substring(0, 10);
+        return movDateStr === dateFilter;
+      });
+    }
+
+    // Ordenar
+    result.sort((a: any, b: any) => {
+      if (sortBy === 'monto') {
+        const montoA = a.moneda === 'USD' ? a.monto : (a.monto / (a.tasa_cambio || 1));
+        const montoB = b.moneda === 'USD' ? b.monto : (b.monto / (b.tasa_cambio || 1));
+        return montoB - montoA; // Mayor a menor
+      }
+      
+      const dateA = new Date(a.fecha).getTime();
+      const dateB = new Date(b.fecha).getTime();
+      return sortBy === 'recientes' ? dateB - dateA : dateA - dateB;
+    });
+
+    return result;
+  }, [flujoCaja, filterType, sortBy, dateFilter]);
+
   // Agrupar flujo de caja por fecha
   const groupedFlujo = useMemo(() => {
     const groups: { dateLabel: string; items: any[] }[] = [];
+    
+    // Si ordenamos por monto, no agrupamos por fecha visualmente para no romper la lista
+    if (sortBy === 'monto') {
+      if (processedFlujo.length > 0) {
+        groups.push({ 
+          dateLabel: 'Ordenado por Mayor Monto', 
+          items: processedFlujo.slice(0, 50) 
+        });
+      }
+      return groups;
+    }
+
     let currentLabel = '';
     let currentGroup: any[] = [];
 
-    flujoCaja.slice(0, 40).forEach((mov: any) => {
-      const d = new Date(mov.fecha);
-      const dateLabel = d.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    processedFlujo.slice(0, 50).forEach((mov: any) => {
+      // Intentar formatear la fecha correctamente
+      let dateLabel = 'Fecha desconocida';
+      if (mov.fecha) {
+        // Para evitar problemas de zona horaria con strings YYYY-MM-DD, parseamos manualmente o usamos UTC
+        const parts = mov.fecha.substring(0, 10).split('-');
+        if (parts.length === 3) {
+          dateLabel = `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+      }
       
       if (dateLabel !== currentLabel) {
         if (currentGroup.length > 0) {
@@ -162,7 +229,13 @@ export function FinanzasDashboardScreen() {
       groups.push({ dateLabel: currentLabel, items: currentGroup });
     }
     return groups;
-  }, [flujoCaja]);
+  }, [processedFlujo, sortBy]);
+
+  const handlePrintPDF = async () => {
+    setIsGeneratingPdf(true);
+    await generateFinanzasPdf(processedFlujo, dateFilter, filterType);
+    setIsGeneratingPdf(false);
+  };
 
   return (
     <View style={globalStyles.container}>
@@ -271,17 +344,103 @@ export function FinanzasDashboardScreen() {
           <Text variant="titleMedium" style={{ fontWeight: 'bold', color: '#4b5563', fontSize: 13, letterSpacing: 1 }}>
             ORDEN Y FILTRO
           </Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <MaterialCommunityIcons name="swap-vertical" size={20} color="#9ca3af" />
-            <MaterialCommunityIcons name="calendar-blank" size={20} color="#9ca3af" />
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            
+            {/* Filtro de Fecha Activo */}
+            {dateFilter && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#e5e7eb', borderRadius: 16, paddingLeft: 8, paddingRight: 4, paddingVertical: 4, marginRight: 4 }}>
+                <Text variant="labelSmall" style={{ color: '#4b5563', fontWeight: 'bold', marginRight: 4 }}>
+                  {dateFilter.split('-').reverse().join('/')}
+                </Text>
+                <TouchableOpacity onPress={() => setDateFilter(null)}>
+                  <MaterialCommunityIcons name="close-circle" size={16} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <Menu
+              visible={menuVisible}
+              onDismiss={() => setMenuVisible(false)}
+              anchor={
+                <TouchableOpacity onPress={() => setMenuVisible(true)}>
+                  <MaterialCommunityIcons name="swap-vertical" size={20} color={sortBy !== 'recientes' || filterType !== 'todos' ? theme.colors.primary : '#9ca3af'} />
+                </TouchableOpacity>
+              }
+              contentStyle={{ backgroundColor: '#ffffff', borderRadius: 12, elevation: 4 }}
+            >
+              <Text variant="labelSmall" style={{ color: '#6b7280', marginLeft: 16, marginTop: 8, marginBottom: 4 }}>ORDENAR POR</Text>
+              <Menu.Item 
+                onPress={() => { setSortBy('recientes'); setMenuVisible(false); }} 
+                title="Más recientes" 
+                titleStyle={{ color: '#1f2937' }}
+                trailingIcon={sortBy === 'recientes' ? () => <MaterialCommunityIcons name="check-circle" size={20} color={theme.colors.primary} /> : undefined}
+              />
+              <Menu.Item 
+                onPress={() => { setSortBy('antiguos'); setMenuVisible(false); }} 
+                title="Más antiguos" 
+                titleStyle={{ color: '#1f2937' }}
+                trailingIcon={sortBy === 'antiguos' ? () => <MaterialCommunityIcons name="check-circle" size={20} color={theme.colors.primary} /> : undefined}
+              />
+              <Menu.Item 
+                onPress={() => { setSortBy('monto'); setMenuVisible(false); }} 
+                title="Monto mayor" 
+                titleStyle={{ color: '#1f2937' }}
+                trailingIcon={sortBy === 'monto' ? () => <MaterialCommunityIcons name="check-circle" size={20} color={theme.colors.primary} /> : undefined}
+              />
+              
+              <Divider style={{ backgroundColor: '#e5e7eb', marginVertical: 8 }} />
+              
+              <Text variant="labelSmall" style={{ color: '#6b7280', marginLeft: 16, marginBottom: 4 }}>FILTRAR POR</Text>
+              <Menu.Item 
+                onPress={() => { setFilterType('todos'); setMenuVisible(false); }} 
+                title="Todos" 
+                titleStyle={{ color: '#1f2937' }}
+                trailingIcon={filterType === 'todos' ? () => <MaterialCommunityIcons name="check-circle" size={20} color={theme.colors.primary} /> : undefined}
+              />
+              <Menu.Item 
+                onPress={() => { setFilterType('ingresos'); setMenuVisible(false); }} 
+                title="Ingresos" 
+                titleStyle={{ color: '#1f2937' }}
+                trailingIcon={filterType === 'ingresos' ? () => <MaterialCommunityIcons name="check-circle" size={20} color={theme.colors.primary} /> : undefined}
+              />
+              <Menu.Item 
+                onPress={() => { setFilterType('gastos'); setMenuVisible(false); }} 
+                title="Gastos" 
+                titleStyle={{ color: '#1f2937' }}
+                trailingIcon={filterType === 'gastos' ? () => <MaterialCommunityIcons name="check-circle" size={20} color={theme.colors.primary} /> : undefined}
+              />
+            </Menu>
+
+            <TouchableOpacity onPress={() => setCalendarVisible(true)}>
+              <MaterialCommunityIcons name="calendar-blank" size={20} color={dateFilter ? theme.colors.primary : '#9ca3af'} />
+            </TouchableOpacity>
+
+            {isGeneratingPdf ? (
+              <ActivityIndicator size={20} color={theme.colors.primary} style={{ marginLeft: 8 }} />
+            ) : (
+              <TouchableOpacity onPress={handlePrintPDF} style={{ marginLeft: 8 }}>
+                <MaterialCommunityIcons name="printer" size={20} color="#6b7280" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
-        {groupedFlujo.map((group, groupIdx) => (
-          <View key={groupIdx} style={{ marginBottom: 16 }}>
-            <Text variant="labelMedium" style={{ color: '#6b7280', fontWeight: 'bold', marginBottom: 8, marginLeft: 4 }}>
-              {group.dateLabel}
+        {groupedFlujo.length === 0 ? (
+          <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 40, paddingHorizontal: 20, backgroundColor: '#ffffff', borderRadius: 16, borderWidth: 1, borderColor: '#e5e7eb', borderStyle: 'dashed' }}>
+            <MaterialCommunityIcons name="text-box-search-outline" size={48} color="#d1d5db" />
+            <Text variant="titleMedium" style={{ color: '#6b7280', marginTop: 16, textAlign: 'center', fontWeight: 'bold' }}>
+              No hay movimientos
             </Text>
+            <Text variant="bodyMedium" style={{ color: '#9ca3af', textAlign: 'center', marginTop: 4 }}>
+              Intenta cambiar los filtros o la fecha seleccionada.
+            </Text>
+          </View>
+        ) : (
+          groupedFlujo.map((group, groupIdx) => (
+            <View key={groupIdx} style={{ marginBottom: 16 }}>
+              <Text variant="labelMedium" style={{ color: '#6b7280', fontWeight: 'bold', marginBottom: 8, marginLeft: 4 }}>
+                {group.dateLabel}
+              </Text>
             
             {group.items.map((mov: any, index: number) => {
               const isIngreso = mov.tipo === 'ingreso';
@@ -327,8 +486,8 @@ export function FinanzasDashboardScreen() {
                       <Text variant="titleMedium" style={{ fontWeight: 'bold', color: colorBase }}>
                         {isIngreso ? '+' : '-'} {formatNumber(mov.monto)}
                       </Text>
-                      <Text variant="labelSmall" style={{ color: colorBase, fontWeight: 'bold', opacity: 0.9, marginTop: -2 }}>
-                        {mov.moneda}
+                      <Text variant="bodySmall" style={{ color: '#6b7280' }}>
+                        {formatNumber(mov.tasa_cambio || 1)} VES
                       </Text>
                     </View>
                   </View>
@@ -336,7 +495,8 @@ export function FinanzasDashboardScreen() {
               );
             })}
           </View>
-        ))}
+          ))
+        )}
 
         {flujoCaja.length === 0 && (
           <Text variant="bodyMedium" style={{ color: '#9ca3af', textAlign: 'center', marginTop: 20 }}>
@@ -353,6 +513,27 @@ export function FinanzasDashboardScreen() {
         style={[styles.fab, { bottom: Math.max(insets.bottom + 16, 24) }]}
         onPress={() => router.push('/(screens)/registrar-gasto')}
       />
+      <Portal>
+        <Modal 
+          visible={calendarVisible} 
+          onDismiss={() => setCalendarVisible(false)} 
+          contentContainerStyle={{ backgroundColor: 'white', margin: 20, borderRadius: 16, padding: 16 }}
+        >
+          <Text variant="titleLarge" style={{ fontWeight: 'bold', marginBottom: 16, textAlign: 'center' }}>
+            Filtrar por Fecha
+          </Text>
+          <CalendarCustom 
+            current={dateFilter || undefined}
+            onDayPress={(day: any) => {
+              setDateFilter(day.dateString);
+              setCalendarVisible(false);
+            }}
+            markedDates={dateFilter ? {
+              [dateFilter]: { selected: true, selectedColor: theme.colors.primary }
+            } : undefined}
+          />
+        </Modal>
+      </Portal>
     </View>
   );
 }

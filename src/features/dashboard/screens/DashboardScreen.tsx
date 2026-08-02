@@ -415,6 +415,11 @@ export function DashboardScreen() {
     return { lineDataRollosAdmin: outRollos, lineDataKgAdmin: outKg };
   }, [produccionRaw, chartPeriod, isAdmin]);
 
+  const maxFinanzas = Math.max(10, ...lineDataIngresos.map(d => d.value), ...lineDataEgresos.map(d => d.value)) * 1.2;
+  const maxRollosAdmin = Math.max(10, ...lineDataRollosAdmin.map(d => d.value)) * 1.2;
+  const maxKgAdmin = Math.max(10, ...lineDataKgAdmin.map(d => d.value)) * 1.2;
+  const maxProdOp = Math.max(10, ...lineDataProduccion.map(d => d.value)) * 1.2;
+
   return (
     <View style={globalStyles.container}>
       <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
@@ -516,6 +521,7 @@ export function DashboardScreen() {
                 <View key="1">
                   <View style={styles.chartContainer}>
                     <LineChart
+                      maxValue={maxFinanzas}
                       areaChart
                       curved
                       data={lineDataIngresos}
@@ -594,6 +600,7 @@ export function DashboardScreen() {
                 <View key="2">
                   <View style={styles.chartContainer}>
                     <LineChart
+                      maxValue={maxRollosAdmin}
                       areaChart
                       curved
                       data={lineDataRollosAdmin}
@@ -629,6 +636,7 @@ export function DashboardScreen() {
                 <View key="3">
                   <View style={styles.chartContainer}>
                     <LineChart
+                      maxValue={maxKgAdmin}
                       areaChart
                       curved
                       data={lineDataKgAdmin}
@@ -742,6 +750,7 @@ export function DashboardScreen() {
                 </Text>
               ) : (
                 <LineChart
+                  maxValue={maxProdOp}
                   areaChart
                   curved
                   data={lineDataProduccion}

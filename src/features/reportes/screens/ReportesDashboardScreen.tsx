@@ -379,6 +379,9 @@ export function ReportesDashboardScreen() {
     }
   };
 
+  const maxRollos = Math.max(10, ...lineDataRollos.map(d => d.value)) * 1.2;
+  const maxKg = Math.max(10, ...lineDataKg.map(d => d.value)) * 1.2;
+
   return (
     <View style={globalStyles.containerWhite}>
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
@@ -509,6 +512,7 @@ export function ReportesDashboardScreen() {
                     </Text>
                   ) : (
                     <LineChart
+                      maxValue={maxRollos}
                       areaChart
                       curved
                       data={lineDataRollos}
@@ -582,6 +586,7 @@ export function ReportesDashboardScreen() {
                     </Text>
                   ) : (
                     <LineChart
+                      maxValue={maxKg}
                       areaChart
                       curved
                       data={lineDataKg}
