@@ -90,6 +90,9 @@ To maintain a clean, maintainable, and scalable codebase, strictly adhere to the
 - **Global/Drawer Layouts:** Usar `<StatusBar style="light" backgroundColor={theme.colors.primary} />` si la cabecera es oscura/azul, para que los íconos del sistema se fundan con la cabecera en Android.
 - **Pantallas Modales (Fondos Blancos):** Siempre incluir `<StatusBar style="dark" />` dentro del `<View>` principal para asegurar que los íconos de batería y señal sean visibles (negros) sobre el fondo blanco.
 
+### 📈 Gráficas (react-native-gifted-charts)
+- **Corte superior en LineChart:** Cuando uses `<LineChart>`, el punto máximo puede cortarse en el borde superior del contenedor si coincide con el límite automático. **Siempre calcula y asigna un `maxValue` dinámico** sumándole un 20% extra al valor más alto de tu dataset (`maxValue={maxValue * 1.2}`) para darle margen de respiración a la gráfica.
+
 ### 📦 Import Grouping & Ordering
 Imports must be grouped in a clean, consistent order separated by empty lines:
 1. **External Core:** React, React Native, Expo libraries (`react`, `react-native`, `expo-router`, `expo-*`).

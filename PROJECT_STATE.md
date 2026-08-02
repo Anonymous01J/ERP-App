@@ -162,6 +162,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - **KPIs Financieros:** Consolida las cuentas por cobrar como un bloque compacto superior para no perder visibilidad del capital invertido.
   - **Estado de la Deuda:** Barra gráfica que segmenta porcentualmente si la cartera de crédito está "Al Día", "Por Vencer" (a menos de 5 días) o "Atrasada" (créditos con fecha vencida).
   - **Flujo de Caja Histórico (Timeline):** Unifica entradas (`abonos_pagos`) y salidas (`movimientos`). Rediseñado con **Agrupación por Fechas Exactas**, iconos circulares direccionales e indicador multi-moneda (ej. Abono en Bs convertido visualmente a dólares debajo del título).
+  - **Filtros Avanzados y Reportes:** Sistema de filtrado robusto mediante `CalendarCustom` para filtrar por fechas y tipos (Todos/Ingresos/Gastos). Permite ordenar por "Mayor Monto" y **exportar la vista actual a PDF** (`generateFinanzasPdf.ts`) con resumen de totales y conversión monetaria.
   - **Registro de Gastos Generales (`RegistrarGastoGeneralScreen`):** Formulario con `CurrencyInput` para montos y tasas. Clasifica pagos de Nómina, Alquiler, Servicios, Suministros u Otros. Se auto-puebla la Tasa BCV al seleccionar VES.
 
 ---
@@ -228,10 +229,10 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - **Logística:** Desglose del presupuesto gastado en ruta (Gasolina, Peaje, Viáticos) con gráfico tipo Donut interactivo, convertido a USD automáticamente.
 - **Filtros Globales de Tiempo:** Selector unificado (1 Mes, 3 Meses, Rango Personalizado "Desde-Hasta").
 - **Motor de Exportación PDF Avanzado (`generatePdf.ts`):** 
-  - **Gráficos Incrustados:** Captura en tiempo real del gráfico activo (Base64) mediante `react-native-view-shot`.
+  - **Gráficos Incrustados:** Captura en tiempo real del gráfico activo (Base64) mediante `react-native-view-shot`. Se implementó un algoritmo dinámico (`maxValue={max * 1.2}`) para evitar recortes en la parte superior de las gráficas de línea.
   - **Selector de Nivel de Detalle:** Permite emitir un "Resumen" gerencial o un reporte "Detallado" con tablas de registro exacto (ej. lista de facturas emitidas, historia de viáticos).
   - **Análisis Automatizado:** Los PDF generan texto explicativo (KPIs) automático basado en los porcentajes calculados (ej. Eficiencia de Mermas, Deuda vs Facturado).
-  - **Formato Corporativo:** Cabeceras HTML profesionales y uso de CSS (`page-break-before`) para paginación controlada al imprimir.
+  - **Formato Corporativo:** Cabeceras HTML profesionales y uso de CSS (`page-break-before`) para paginación controlada al imprimir. Exportación a archivo físico usando `expo-file-system/legacy` para nombres de archivo limpios antes de compartir.
   - **Animación y UX:** Botón de descarga interactivo con loader para evitar dobles clics durante el renderizado asíncrono.
 
 ---
