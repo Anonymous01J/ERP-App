@@ -4,6 +4,7 @@ import { useTheme } from 'react-native-paper';
 import { useAuth } from '../../src/state/AuthProvider';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
+import { GlobalHeaderRight } from '../../src/components/ui/GlobalHeaderRight';
 
 export default function DrawerLayout() {
   const theme = useTheme();
@@ -19,6 +20,7 @@ export default function DrawerLayout() {
         headerStyle: { backgroundColor: theme.colors.primary },
         headerTintColor: '#fff',
         drawerActiveTintColor: theme.colors.primary,
+        headerRight: () => <GlobalHeaderRight tintColor="#fff" />
       }}>
 
       {/* Dashboard — siempre visible */}

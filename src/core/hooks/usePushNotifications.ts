@@ -4,6 +4,7 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { supabase } from '../supabase/client';
+import { router } from 'expo-router';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -105,6 +106,14 @@ export function usePushNotifications(userId?: string | null) {
     responseListener.current = Notifications.addNotificationResponseReceivedListener(
       (response) => {
         console.log('[usePushNotifications] User interacted with notification:', response);
+        const data = response.notification.request.content.data;
+        if (data && data.ruta) {
+          try {
+            router.push(data.ruta as any);
+          } catch (e) {
+            console.error('[usePushNotifications] Navigation error:', e);
+          }
+        }
       }
     );
 

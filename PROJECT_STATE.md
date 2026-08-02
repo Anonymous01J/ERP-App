@@ -23,7 +23,9 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - **Replicación y Permisos de BD:** `powersync_role` cuenta con permisos `GRANT SELECT` en todas las tablas (`ALTER DEFAULT PRIVILEGES`), tablas registradas en la publicación de replicación y con `REPLICA IDENTITY FULL`.
 - **Autenticación PowerSync:** Validada mediante JWKS con la URI de Supabase (`https://<ref>.supabase.co/auth/v1/.well-known/jwks.json`), soportando algoritmos `ES256` y audience `authenticated`.
 - **Manejo de Sesión:** `AuthProvider.tsx` gestiona globalmente el estado de autenticación de Supabase y sincronización de PowerSync con protección contra dobles conexiones en re-montajes.
-- **Notificaciones Push (Nativas):** Integración mediante Edge Functions (`notify`, `check_cobranzas`) y Triggers en PostgreSQL (`pg_net`). Los tokens de Expo se recolectan vía `usePushNotifications` al hacer login.
+- **Notificaciones Push (Nativas):** Integración mediante Edge Functions (`notify`, `check_cobranzas`) y Triggers en PostgreSQL (`pg_net`). Los tokens de Expo se recolectan vía `usePushNotifications` al hacer login. **FCM V1 configurado y verificado:** Service Account JSON subido al dashboard de EAS (`expo.dev/.../credentials`). La Edge Function `notify` incluye cabecera `Authorization: Bearer` usando el secreto `EXPO_ACCESS_TOKEN` almacenado en Supabase. Notificaciones push funcionando y verificadas en dispositivo físico Android.
+  - **Campana In-App (Offline-First):** Se agregó `NotificacionesScreen` con un ícono de campana global en el header. Utiliza la tabla `notificaciones_historial` sincronizada vía PowerSync para mantener el conteo de no leídas (badge) e historial localmente.
+  - **Deep Linking:** Las notificaciones (tanto OS como In-App) incluyen un payload `ruta` que redirige automáticamente al usuario al módulo correspondiente (`/inventario`, `/pedidos`, etc.) al tocarlas.
 
 ---
 
@@ -257,7 +259,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 | **Carga de Mercancía en Viajes (Bobinas + Potes)** | ✅ Completado | Alta |
 | Exportación a Excel/CSV | No iniciado | Baja |
 | **Refactoring: Queries a Custom Hooks** | Pendiente | Media |
-| **Limpieza de Tokens Push Muertos (`DeviceNotRegistered`) en Edge Functions** | Pendiente | Alta |
+| **Limpieza de Tokens Push Muertos (`DeviceNotRegistered`) en Edge Functions** | Pendiente | Media |
 
 ---
 

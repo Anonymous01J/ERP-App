@@ -7,7 +7,6 @@ import { PowerSyncContext } from '@powersync/react';
 import { db, setupPowerSync } from '../src/core/powersync/system';
 import { AuthProvider, useAuth } from '../src/state/AuthProvider';
 import Toast from 'react-native-toast-message';
-import { SyncStatusNotifier } from '../src/components/ui/SyncStatusNotifier';
 import { LogBox } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { AppLoader } from '../src/components/ui/AppLoader';
@@ -86,6 +85,7 @@ function RootLayoutNav() {
       <Stack.Screen name="(screens)/historial-produccion" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="(screens)/editar-usuario" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="(screens)/matriz-permisos" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="(screens)/notificaciones" options={{ title: 'Notificaciones', headerShown: true, headerStyle: { backgroundColor: '#0D47A1' }, headerTintColor: '#ffffff' }} />
     </Stack>
   );
 }
@@ -119,7 +119,6 @@ function RootLayout() {
       <PowerSyncContext.Provider value={db}>
         <PaperProvider theme={theme}>
           <RootLayoutNav />
-          <SyncStatusNotifier />
           <Toast />
           <StatusBar style="light" backgroundColor="#0D47A1" />
         </PaperProvider>

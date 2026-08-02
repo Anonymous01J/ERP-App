@@ -91,13 +91,21 @@ serve(async (req) => {
       data: data || {},
     }));
 
+    const expoAccessToken = Deno.env.get('EXPO_ACCESS_TOKEN');
+    
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Accept-encoding': 'gzip, deflate',
+      'Content-Type': 'application/json',
+    };
+
+    if (expoAccessToken) {
+      headers['Authorization'] = `Bearer ${expoAccessToken}`;
+    }
+
     const expoRes = await fetch('https://exp.host/--/api/v2/push/send', {
       method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Accept-encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(messages),
     });
 

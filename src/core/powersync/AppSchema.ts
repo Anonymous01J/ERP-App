@@ -154,6 +154,15 @@ const movimientos = new Table({
   tipo: column.text
 });
 
+const notificaciones_historial = new Table({
+  user_id: column.text,
+  titulo: column.text,
+  cuerpo: column.text,
+  data: column.text,
+  leido: column.integer,
+  created_at: column.text,
+});
+
 export const AppSchema = new Schema({
   clientes,
   inventario_potes,
@@ -172,4 +181,5 @@ export const AppSchema = new Schema({
   perfiles,
   rol_permisos,
   configuracion,
+  notificaciones_historial,
 });

@@ -20,6 +20,7 @@
     "@sentry/react-native": "~7.2.0",
     "@supabase/supabase-js": "^2.39.3",
     "base64-arraybuffer": "^1.0.2",
+    "date-fns": "^4.4.0",
     "expo": "~54.0.36",
     "expo-constants": "~18.0.13",
     "expo-dev-client": "~6.0.21",

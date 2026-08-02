@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS public.push_tokens (
 
 ALTER TABLE public.push_tokens ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can manage their own push tokens" ON public.push_tokens;
 CREATE POLICY "Users can manage their own push tokens" 
 ON public.push_tokens 
 FOR ALL 
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS public.notificaciones_historial (
 
 ALTER TABLE public.notificaciones_historial ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own notifications" ON public.notificaciones_historial;
 CREATE POLICY "Users can view their own notifications" 
 ON public.notificaciones_historial 
 FOR SELECT 
@@ -54,42 +56,50 @@ DECLARE
   request_body JSONB;
   project_url TEXT := current_setting('custom.project_url', true);
   anon_key TEXT := current_setting('custom.anon_key', true);
+  v_tipo_papel TEXT;
 BEGIN
   -- Definir qué enviar según la tabla
   
   IF TG_TABLE_NAME = 'bobinas_grandes' AND TG_OP = 'INSERT' THEN
+    SELECT nombre INTO v_tipo_papel FROM public.tipos_papel WHERE id = NEW.id_tipo_papel;
+    
     request_body := json_build_object(
       'title', '🚚 ¡Nuevas Bobinas Llegaron!',
-      'body', 'Se han registrado nuevas bobinas en el inventario (' || NEW.tipo_papel || ').',
-      'target_roles', '["operador"]'::jsonb
+      'body', 'Se han registrado nuevas bobinas en el inventario (' || COALESCE(v_tipo_papel, 'Desconocido') || ').',
+      'target_roles', '["operador"]'::jsonb,
+      'data', json_build_object('ruta', '/(drawer)/(tabs)/inventario')
     );
     
   ELSIF TG_TABLE_NAME = 'pedidos' AND TG_OP = 'INSERT' THEN
     request_body := json_build_object(
       'title', '📝 Nuevo Pedido Registrado',
       'body', 'Se ha creado un nuevo pedido. Revisa los detalles.',
-      'target_roles', '["operador"]'::jsonb
+      'target_roles', '["operador"]'::jsonb,
+      'data', json_build_object('ruta', '/(drawer)/(tabs)/pedidos')
     );
     
   ELSIF TG_TABLE_NAME = 'viajes' AND TG_OP = 'UPDATE' AND NEW.estado != OLD.estado THEN
     request_body := json_build_object(
       'title', '📍 Actualización de Viaje',
       'body', 'El viaje ha cambiado su estado a: ' || NEW.estado,
-      'target_roles', '["admin"]'::jsonb
+      'target_roles', '["admin"]'::jsonb,
+      'data', json_build_object('ruta', '/(drawer)/(tabs)/viajes')
     );
     
   ELSIF TG_TABLE_NAME = 'movimientos' AND TG_OP = 'INSERT' AND NEW.viaje_id IS NOT NULL THEN
     request_body := json_build_object(
       'title', '💸 Nuevo Gasto en Ruta',
       'body', 'Se ha registrado un gasto en el viaje por: ' || NEW.monto_usd || ' USD.',
-      'target_roles', '["admin"]'::jsonb
+      'target_roles', '["admin"]'::jsonb,
+      'data', json_build_object('ruta', '/(drawer)/(tabs)/finanzas')
     );
     
   ELSIF TG_TABLE_NAME = 'produccion_diaria' AND TG_OP = 'INSERT' THEN
     request_body := json_build_object(
       'title', '⚙️ Nueva Producción',
       'body', 'Un operador ha finalizado un lote de producción.',
-      'target_roles', '["admin"]'::jsonb
+      'target_roles', '["admin"]'::jsonb,
+      'data', json_build_object('ruta', '/(drawer)/(tabs)')
     );
   END IF;
 

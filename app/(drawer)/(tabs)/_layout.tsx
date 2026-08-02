@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform } from 'react-native';
 import { DrawerToggleButton } from '@react-navigation/drawer';
 import { useAuth } from '../../../src/state/AuthProvider';
+import { GlobalHeaderRight } from '../../../src/components/ui/GlobalHeaderRight';
 
 export default function TabLayout() {
   const theme = useTheme();
@@ -24,6 +25,7 @@ export default function TabLayout() {
         headerStyle: { backgroundColor: theme.colors.primary },
         headerTintColor: theme.colors.onPrimary,
         headerLeft: () => <DrawerToggleButton tintColor={theme.colors.onPrimary} />,
+        headerRight: () => <GlobalHeaderRight tintColor={theme.colors.onPrimary} />,
         tabBarStyle: {
           backgroundColor: '#ffffff',
           height: tabBarHeight,

@@ -71,17 +71,17 @@ export const SyncStatusNotifier = () => {
 
   return (
     <>
-      <Portal>
-        <View style={styles.floatingContainer} pointerEvents="box-none">
-          <TouchableOpacity 
-            style={[styles.floatingBadge, { borderColor: iconColor }]} 
-            onPress={() => setModalVisible(true)}
-          >
-            <MaterialCommunityIcons name={iconName as any} size={20} color={iconColor} />
-            {hasError && <View style={styles.errorDot} />}
-          </TouchableOpacity>
-        </View>
+      <View pointerEvents="box-none">
+        <TouchableOpacity 
+          style={[styles.floatingBadge, { borderColor: iconColor }]} 
+          onPress={() => setModalVisible(true)}
+        >
+          <MaterialCommunityIcons name={iconName as any} size={18} color={iconColor} />
+          {hasError && <View style={styles.errorDot} />}
+        </TouchableOpacity>
+      </View>
 
+      <Portal>
         <Modal visible={modalVisible} onDismiss={() => setModalVisible(false)} contentContainerStyle={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <MaterialCommunityIcons name={iconName as any} size={32} color={iconColor} />
@@ -141,18 +141,12 @@ export const SyncStatusNotifier = () => {
 };
 
 const styles = StyleSheet.create({
-  floatingContainer: {
-    position: 'absolute',
-    top: 50, // Safe area top
-    right: 16,
-    zIndex: 9999,
-  },
   floatingBadge: {
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
     borderWidth: 2,
     borderRadius: 20,
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -160,6 +154,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 4,
+    marginRight: 12,
   },
   errorDot: {
     position: 'absolute',
