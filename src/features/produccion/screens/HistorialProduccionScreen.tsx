@@ -15,7 +15,7 @@ export function HistorialProduccionScreen() {
   const router = useRouter();
   const theme = useTheme();
   // Filtro de Tiempo
-  const [filtroTiempo, setFiltroTiempo] = useState('trimestral');
+  const [filtroTiempo, setFiltroTiempo] = useState('mensual');
   const [fechaInicioPersonalizada, setFechaInicioPersonalizada] = useState('');
   const [fechaFinPersonalizada, setFechaFinPersonalizada] = useState('');
 
@@ -166,21 +166,23 @@ export function HistorialProduccionScreen() {
               <View style={styles.cardContent}>
                 
                 {/* Cabecera del lote */}
-                <View style={styles.headerRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1, paddingRight: 8 }}>
+                <View style={styles.headerContainer}>
+                  <View style={styles.dateRow}>
                     <MaterialCommunityIcons name="calendar-clock" size={18} color={theme.colors.primary} />
-                    <Text variant="titleMedium" style={{ fontWeight: 'bold', color: '#1f2937', flexShrink: 1 }}>
+                    <Text variant="titleMedium" style={{ fontWeight: 'bold', color: '#1f2937' }}>
                       {formatFecha(lote.fecha)}
                     </Text>
                   </View>
-                  <Chip 
-                    mode="flat" 
-                    compact
-                    textStyle={{ fontSize: 11, fontWeight: 'bold' }}
-                    style={{ backgroundColor: lote.bobina?.includes('A') ? '#e0e7ff' : '#fef3c7', flexShrink: 0 }}
-                  >
-                    {lote.bobina}
-                  </Chip>
+                  <View style={{ flexDirection: 'row' }}>
+                    <Chip 
+                      mode="flat" 
+                      compact
+                      textStyle={{ fontSize: 11, fontWeight: 'bold' }}
+                      style={{ backgroundColor: lote.bobina?.includes('A') ? '#e0e7ff' : '#fef3c7' }}
+                    >
+                      {lote.bobina}
+                    </Chip>
+                  </View>
                 </View>
 
                 {/* Subcabecera: kg consumidos */}
@@ -231,7 +233,8 @@ export function HistorialProduccionScreen() {
 const styles = StyleSheet.create({
   card: { marginBottom: 12, borderRadius: 16 },
   cardContent: { padding: 16 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  headerContainer: { marginBottom: 8, gap: 6 },
+  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   prodRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f3f4f6'

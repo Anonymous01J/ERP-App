@@ -68,6 +68,14 @@ Always use path aliases defined in `tsconfig.json` to prevent relative path hell
     - Remove conflicting manual HS256 secrets.
 - **Connection Management:** Always await `db.init()` before `db.connect()` and use module-level guards to prevent concurrent double-connections during React re-mounts.
 - **Upload Queue Blockages:** If a pending local change lacks required columns (e.g., added after the change was made) or violates constraints, the PowerSync Edge Function will return a 500 error. This stalls the local upload queue and blocks further syncs. To resolve in development, instruct the user to clear app data (wipe SQLite cache) or delete the offending record locally.
+- **Sync Streams & Edition 3 (Sync Rules):**
+  - In Sync Streams (`edition: 3`), the legacy `bucket` parameter references (e.g. `bucket.user_id` or `:user_id`) are not required for standard user filters.
+  - **Always use `auth.user_id()`** directly in the query `WHERE` clauses (e.g., `SELECT * FROM table WHERE user_id = auth.user_id()`). The sync engine automatically detects this and implicitly manages data partitioning.
+- **Database Configurations (GUC Permissions Bypass):**
+  - Managed database platforms like Supabase restrict GUC parameters (e.g., executing `ALTER DATABASE postgres SET custom.project_url = '...'` throws `42501: permission denied`).
+  - **Always store database-level parameters** (like `project_url` or `anon_key` for triggers/functions) in the `public.configuracion` table, and retrieve them within PL/pgSQL functions via `SELECT valor INTO var FROM public.configuracion WHERE clave = '...'`.
+- **JSON vs JSONB in Postgres Triggers:**
+  - When passing constructed JSON payloads to Postgres functions expecting `JSONB` (such as `send_push_notification`), **always use `jsonb_build_object(...)`** instead of `json_build_object(...)` to prevent Postgres function resolution crashes (`function public.send_push_notification(json) does not exist`).
 
 ## 10. API Integrations & Push Notifications
 - **Third-Party APIs (e.g., Cedula/Seniat):** Always prefix environment variables with `EXPO_PUBLIC_` in `.env` to ensure they are bundled correctly in the Expo client. Handle API timeouts and empty responses gracefully (e.g., returning `null` or showing clear `Toast` messages).

@@ -5,6 +5,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { supabase } from '../supabase/client';
 import { router } from 'expo-router';
+import * as Sentry from '@sentry/react-native';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -72,6 +73,7 @@ export function usePushNotifications(userId?: string | null) {
     } catch (e: unknown) {
       // Catch ANY native or JS exception to prevent crash
       console.error('[usePushNotifications] Error getting push token (non-fatal):', e);
+      Sentry.captureException(e, { tags: { section: 'push-registration' } });
       return undefined;
     } finally {
       isRegistering.current = false;
@@ -95,6 +97,7 @@ export function usePushNotifications(userId?: string | null) {
       .catch((err) => {
         // Absolute safety net - should never reach here due to internal try/catch
         console.error('[usePushNotifications] Unexpected error in registration:', err);
+        Sentry.captureException(err, { tags: { section: 'push-unexpected' } });
       });
 
     notificationListener.current = Notifications.addNotificationReceivedListener(
@@ -136,11 +139,13 @@ export function usePushNotifications(userId?: string | null) {
       );
       if (error) {
         console.error('[usePushNotifications] Error saving token to Supabase:', error);
+        Sentry.captureException(error, { tags: { section: 'push-save-supabase' } });
       } else {
         console.log('[usePushNotifications] Token saved to Supabase for user', uid);
       }
     } catch (err) {
       console.error('[usePushNotifications] Exception saving token (non-fatal):', err);
+      Sentry.captureException(err, { tags: { section: 'push-save-supabase-exception' } });
     }
   };
 

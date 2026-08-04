@@ -268,20 +268,20 @@ export function FinanzasDashboardScreen() {
 
             <View style={{ width: '100%', height: 1, backgroundColor: '#e5e7eb', marginBottom: 20 }} />
 
-            <View style={{ flexDirection: 'row', justifyContent: 'space-around', width: '100%' }}>
-              <View style={{ alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-around', width: '100%', gap: 16 }}>
+              <View style={{ flex: 1, alignItems: 'center' }}>
                 <Text variant="labelMedium" style={{ color: '#6b7280', marginBottom: 4 }}>
                   Bolívares
                 </Text>
-                <Text variant="titleLarge" style={{ fontWeight: 'bold', color: '#1f2937' }}>
+                <Text variant="titleLarge" style={{ fontWeight: 'bold', color: '#1f2937', textAlign: 'center' }} adjustsFontSizeToFit numberOfLines={1}>
                   Bs. {formatNumber(kpis.liquidezVES)}
                 </Text>
               </View>
-              <View style={{ alignItems: 'center' }}>
+              <View style={{ flex: 1, alignItems: 'center' }}>
                 <Text variant="labelMedium" style={{ color: '#6b7280', marginBottom: 4 }}>
                   Dólares
                 </Text>
-                <Text variant="titleLarge" style={{ fontWeight: 'bold', color: '#1f2937' }}>
+                <Text variant="titleLarge" style={{ fontWeight: 'bold', color: '#1f2937', textAlign: 'center' }} adjustsFontSizeToFit numberOfLines={1}>
                   $ {formatNumber(kpis.liquidezUSD)}
                 </Text>
               </View>

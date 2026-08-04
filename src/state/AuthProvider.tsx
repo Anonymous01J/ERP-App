@@ -4,6 +4,7 @@ import { supabase } from '../core/supabase/client';
 import { db } from '../core/powersync/system';
 import { SupabaseConnector } from '../core/powersync/Connector';
 import type { Perfil, UserRole, AppModulo } from '../core/auth/types';
+import * as Sentry from '@sentry/react-native';
 
 type AuthContextType = {
   session: Session | null;
@@ -38,8 +39,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [permisosCache, setPermisosCache] = useState<Record<string, boolean>>({});
 
   // Load the profile from PowerSync local DB
-  const loadPerfil = async (userId: string) => {
-    setIsLoadingPerfil(true);
+  const loadPerfil = async (userId: string, silent = false) => {
+    if (!silent) setIsLoadingPerfil(true);
     try {
       // Poll PowerSync until the profile is synced (max 5 seconds)
       let intentos = 0;
@@ -81,6 +82,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     } catch (err) {
       console.error('[AuthProvider] Error loading perfil:', err);
+      Sentry.captureException(err, { tags: { section: 'auth-load-perfil' } });
     } finally {
       setIsLoadingPerfil(false);
     }
@@ -108,11 +110,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         await db.init();
         console.log('[AuthProvider] DB initialized. Connecting to PowerSync...');
         const connector = new SupabaseConnector();
-        await db.connect(connector);
+        // Fire and forget: no bloquear el inicio de la app esperando conexión de red (Offline First)
+        db.connect(connector).catch(err => {
+          console.error('[AuthProvider] Background PowerSync connect error:', err);
+        });
         const status = db.currentStatus;
-        console.log('[AuthProvider] db.connect() resolved. Status:', JSON.stringify(status));
+        console.log('[AuthProvider] db.connect() initiated. Status:', JSON.stringify(status));
       } catch (err) {
         console.error('[AuthProvider] PowerSync connection error:', JSON.stringify(err));
+        Sentry.captureException(err, { tags: { section: 'auth-powersync-connect' } });
       } finally {
         isPowerSyncConnecting = false;
       }
@@ -121,18 +127,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const initAuth = async () => {
       try {
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
-        if (error) console.error('[AuthProvider] getSession error:', error);
+        if (error) {
+          console.error('[AuthProvider] getSession error:', error);
+          if (!error.message?.toLowerCase().includes('network request failed')) {
+            Sentry.captureException(error, { tags: { section: 'auth-get-session' } });
+          }
+        }
 
         if (initialSession) {
           console.log('[AuthProvider] Initial session found, setting session');
           setSession(initialSession);
           await connectPowerSync();
-          await loadPerfil(initialSession.user.id);
+          await loadPerfil(initialSession.user.id, false);
         } else {
           setIsLoadingPerfil(false);
         }
       } catch (err) {
         console.error('[AuthProvider] Error fetching initial session:', err);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        if (!errorMessage.toLowerCase().includes('network request failed')) {
+          Sentry.captureException(err, { tags: { section: 'auth-init' } });
+        }
         setIsLoadingPerfil(false);
       } finally {
         setIsLoading(false);
@@ -148,8 +163,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setIsLoading(false);
 
         if (currentSession) {
-          await connectPowerSync();
-          await loadPerfil(currentSession.user.id);
+          connectPowerSync();
+          // No bloquear la UI si es un simple refresco de token en background
+          const isSilent = event !== 'SIGNED_IN' && event !== 'INITIAL_SESSION';
+          await loadPerfil(currentSession.user.id, isSilent);
         } else {
           isPowerSyncConnecting = false;
           setPerfil(null);

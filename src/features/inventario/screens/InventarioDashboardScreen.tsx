@@ -143,13 +143,9 @@ export function InventarioDashboardScreen() {
 
       <View style={styles.headerRow}>
         <Text variant="titleMedium" style={globalStyles.sectionTitle}>Bobinas en Inventario</Text>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Button mode="text" compact onPress={() => router.push('/(screens)/gestionar-tipos-papel')}>
-            Tipos de Papel
-          </Button>
-          <Button mode="text" compact onPress={() => router.push('/(screens)/historial-bobinas')}>
-            Historial
-          </Button>
+        <View>
+          <Button mode="text" compact onPress={() => router.push('/(screens)/gestionar-tipos-papel')}>Tipos de Papel</Button>
+          <Button mode="text" compact onPress={() => router.push('/(screens)/historial-bobinas')}>Historial</Button>
         </View>
       </View>
 
@@ -174,7 +170,7 @@ export function InventarioDashboardScreen() {
           return (
             <List.Accordion
               key={bobina.id}
-              title={`Tipo ${bobina.tipo_papel_nombre ?? '?'} (#${bobina.id.split('-')[0].substring(0, 4).toUpperCase()}) — ${pesoActual.toFixed(1)} kg`}
+              title={`Tipo ${bobina.tipo_papel_nombre ?? '?'}\n(#${bobina.id.split('-')[0].substring(0, 4).toUpperCase()}) — ${pesoActual.toFixed(1)} kg`}
               description={`Inicial: ${pesoInicial} kg · ${new Date(bobina.fecha_llegada).toLocaleDateString('es-VE')}`}
               left={props => (
                 <List.Icon
@@ -300,7 +296,7 @@ export function InventarioDashboardScreen() {
           <CustomCard key={pote.id}>
             <View style={styles.cardContent}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View>
+                <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>Pote {pote.capacidad}</Text>
                   <Text variant="bodyMedium" style={{ color: pote.stock_unidades < 20 ? theme.colors.error : '#6b7280' }}>
                     {pote.stock_unidades} unidades en stock

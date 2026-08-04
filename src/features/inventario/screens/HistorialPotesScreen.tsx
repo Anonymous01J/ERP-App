@@ -16,7 +16,7 @@ export function HistorialPotesScreen() {
   const theme = useTheme();
 
   // Filtro de Tiempo
-  const [filtroTiempo, setFiltroTiempo] = useState('trimestral');
+  const [filtroTiempo, setFiltroTiempo] = useState('mensual');
   const [fechaInicioPersonalizada, setFechaInicioPersonalizada] = useState('');
   const [fechaFinPersonalizada, setFechaFinPersonalizada] = useState('');
 

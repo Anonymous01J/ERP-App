@@ -1,5 +1,11 @@
 import { AbstractPowerSyncDatabase, PowerSyncBackendConnector } from '@powersync/react-native';
 import { supabase } from '../supabase/client';
+import * as Sentry from '@sentry/react-native';
+
+// Cache para Rate Limiting de Sentry (evita consumo masivo en reintentos de PowerSync)
+let lastUploadErrorKey: string | null = null;
+let lastUploadErrorTime = 0;
+const SENTRY_THROTTLE_MS = 10 * 60 * 1000; // 10 minutos
 
 /**
  * Custom Supabase Connector for PowerSync.
@@ -83,6 +89,28 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
       console.log('[Connector] Upload successful.');
     } catch (error) {
       console.error('[Connector] Error during data upload:', error);
+      
+      // Filter out network errors that are common when offline
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (
+        !errorMessage.toLowerCase().includes('network request failed') &&
+        !errorMessage.toLowerCase().includes('timeout')
+      ) {
+        const currentErrorKey = `${errorMessage}_${JSON.stringify(transaction.crud)}`;
+        const now = Date.now();
+
+        // Solo reportar a Sentry si cambió el error o si pasaron más de 10 minutos desde el último reporte
+        if (lastUploadErrorKey !== currentErrorKey || now - lastUploadErrorTime > SENTRY_THROTTLE_MS) {
+          lastUploadErrorKey = currentErrorKey;
+          lastUploadErrorTime = now;
+
+          Sentry.captureException(error, {
+            tags: { section: 'powersync-upload' },
+            extra: { transaction_crud: transaction.crud }
+          });
+        }
+      }
+
       // Re-throw the error so PowerSync knows to retry the transaction later
       throw error;
     }

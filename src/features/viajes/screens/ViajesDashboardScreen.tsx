@@ -4,13 +4,15 @@ import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
 import { globalStyles } from '@core/theme/globalStyles';
 import {  View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform , RefreshControl } from 'react-native';
 import { List, Text, Button, useTheme, Chip, IconButton, TextInput, Divider } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CustomCard } from '@components/ui/CustomCard';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { usePowerSync, useQuery } from '@powersync/react';
 import Toast from 'react-native-toast-message';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { CurrencyInput } from '@components/ui/CurrencyInput';
+import { parseCurrency } from '@core/utils/currency';
 
 // Categorías disponibles con íconos
 const CATEGORIAS = [
@@ -103,17 +105,20 @@ const GastoViajeForm = ({ idViaje, theme }: { idViaje: string; theme: any }) => 
   const [saving, setSaving] = useState(false);
 
   const handleGuardar = async () => {
-    const montoNum = parseFloat(monto);
+    const montoNum = parseCurrency(monto);
     if (isNaN(montoNum) || montoNum <= 0) {
       Toast.show({ type: 'error', text1: 'Monto inválido', text2: 'Ingresa un monto mayor a 0.' });
       return;
     }
     setSaving(true);
     try {
+      const catLabel = CATEGORIAS.find(c => c.key === categoria)?.label || 'Gasto de viaje';
+      const descripFinal = descripcion.trim() || catLabel;
+
       await powerSync.execute(
         `INSERT INTO movimientos (id, descripcion, monto, moneda, tasa_cambio, categoria, fecha, id_viaje, tipo)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [uuidv4(), descripcion.trim() || null, montoNum, moneda, 1, categoria, new Date().toISOString(), idViaje, tipo]
+        [uuidv4(), descripFinal, montoNum, moneda, 1, categoria, new Date().toISOString(), idViaje, tipo]
       );
       Toast.show({
         type: 'success',
@@ -177,12 +182,11 @@ const GastoViajeForm = ({ idViaje, theme }: { idViaje: string; theme: any }) => 
 
       {/* Monto + Moneda */}
       <View style={styles.montoRow}>
-        <TextInput
+        <CurrencyInput
           mode="outlined"
           label={`Monto en ${moneda}`}
           value={monto}
           onChangeText={setMonto}
-          keyboardType="decimal-pad"
           style={[styles.montoInput, { flex: 1 }]}
           left={
             moneda === 'USD' 
@@ -325,6 +329,7 @@ export function ViajesDashboardScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
+  const { viajeId } = useLocalSearchParams();
   const powerSync = usePowerSync();
   const [filtro, setFiltro] = useState('Todos');
 
@@ -523,6 +528,7 @@ export function ViajesDashboardScreen() {
                 formatFecha={formatFecha}
                 formatearEstadoUi={formatearEstadoUi}
                 renderAccionPrincipal={renderAccionPrincipal}
+                viajeId={viajeId}
               />
             ))}
           </List.Section>
@@ -533,33 +539,16 @@ export function ViajesDashboardScreen() {
           <List.Section>
             <Text variant="titleMedium" style={[styles.sectionHeader, { marginTop: 16 }]}>Historial Completado</Text>
             {viajesPasados.map((viaje: any) => (
-              <List.Accordion
+              <ViajePasadoItem 
                 key={viaje.id}
-                title={getViajeTitle(viaje)}
-                description={`${formatFecha(viaje.fecha_viaje_inicio)} • Completado`}
-                left={props => <List.Icon {...props} icon={getViajeIcon(viaje.tipo_viaje)} color="#888" />}
-                style={styles.accordion}
-                titleStyle={{ fontWeight: 'bold', color: '#555' }}
-              >
-                <View style={styles.accordionContent}>
-                  {viaje.notas ? (
-                    <Text variant="bodyMedium" style={styles.detailText}>
-                      Notas: <Text style={{ fontWeight: 'bold' }}>{viaje.notas}</Text>
-                    </Text>
-                  ) : null}
-                  <Text variant="bodySmall" style={[styles.detailText, { marginBottom: 16 }]}>
-                    Llegada a base: {formatFecha(viaje.fecha_viaje_llegada_base)}
-                  </Text>
-
-                  {/* Paradas de entrega (si hubo) */}
-                  {(viaje.tipo_viaje === 'entrega' || viaje.tipo_viaje === 'mixto') && (
-                    <ParadasViaje idViaje={viaje.id} theme={theme} powerSync={powerSync} />
-                  )}
-
-                  {/* Historial de movimientos (gastos/ingresos) */}
-                  <MovimientosViaje idViaje={viaje.id} theme={theme} />
-                </View>
-              </List.Accordion>
+                viaje={viaje}
+                theme={theme}
+                powerSync={powerSync}
+                getViajeTitle={getViajeTitle}
+                getViajeIcon={getViajeIcon}
+                formatFecha={formatFecha}
+                viajeId={viajeId}
+              />
             ))}
           </List.Section>
         )}
@@ -587,15 +576,19 @@ export function ViajesDashboardScreen() {
 // Sub-componente que tiene acceso al useQuery de sus propias paradas
 function ViajeActivoItem({
   viaje, theme, powerSync, router, getViajeTitle, getViajeIcon, getViajeColor,
-  formatFecha, formatearEstadoUi, renderAccionPrincipal,
+  formatFecha, formatearEstadoUi, renderAccionPrincipal, viajeId
 }: any) {
   const { data: paradasData = [] } = useQuery(
     `SELECT * FROM entregas_viaje WHERE id_viaje = ? ORDER BY orden ASC`,
     [viaje.id]
   );
+  
+  const [expanded, setExpanded] = useState(viajeId === viaje.id);
 
   return (
     <List.Accordion
+      expanded={expanded}
+      onPress={() => setExpanded(!expanded)}
       title={getViajeTitle(viaje)}
       description={`${formatFecha(viaje.fecha_viaje_inicio)} \u2022 ${formatearEstadoUi(viaje.estado)}`}
       left={props => <List.Icon {...props} icon={getViajeIcon(viaje.tipo_viaje)} color={getViajeColor(viaje.tipo_viaje)} />}
@@ -626,6 +619,43 @@ function ViajeActivoItem({
         <View style={styles.actionRow}>
           {renderAccionPrincipal(viaje, paradasData)}
         </View>
+      </View>
+    </List.Accordion>
+  );
+}
+
+function ViajePasadoItem({
+  viaje, theme, powerSync, getViajeTitle, getViajeIcon, formatFecha, viajeId
+}: any) {
+  const [expanded, setExpanded] = useState(viajeId === viaje.id);
+
+  return (
+    <List.Accordion
+      expanded={expanded}
+      onPress={() => setExpanded(!expanded)}
+      title={getViajeTitle(viaje)}
+      description={`${formatFecha(viaje.fecha_viaje_inicio)} • Completado`}
+      left={props => <List.Icon {...props} icon={getViajeIcon(viaje.tipo_viaje)} color="#888" />}
+      style={styles.accordion}
+      titleStyle={{ fontWeight: 'bold', color: '#555' }}
+    >
+      <View style={styles.accordionContent}>
+        {viaje.notas ? (
+          <Text variant="bodyMedium" style={styles.detailText}>
+            Notas: <Text style={{ fontWeight: 'bold' }}>{viaje.notas}</Text>
+          </Text>
+        ) : null}
+        <Text variant="bodySmall" style={[styles.detailText, { marginBottom: 16 }]}>
+          Llegada a base: {formatFecha(viaje.fecha_viaje_llegada_base)}
+        </Text>
+
+        {/* Paradas de entrega (si hubo) */}
+        {(viaje.tipo_viaje === 'entrega' || viaje.tipo_viaje === 'mixto') && (
+          <ParadasViaje idViaje={viaje.id} theme={theme} powerSync={powerSync} />
+        )}
+
+        {/* Historial de movimientos (gastos/ingresos) */}
+        <MovimientosViaje idViaje={viaje.id} theme={theme} />
       </View>
     </List.Accordion>
   );

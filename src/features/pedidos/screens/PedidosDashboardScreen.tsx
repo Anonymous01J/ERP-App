@@ -9,7 +9,7 @@ import {
   Chip, Text, ProgressBar, Button, useTheme, IconButton,
   SegmentedButtons, Divider, Dialog, Portal, TextInput,
 } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { usePowerSync, useQuery } from '@powersync/react';
 import { CustomCard } from '@ui/CustomCard';
 import { CurrencyInput } from '@components/ui/CurrencyInput';
@@ -89,9 +89,10 @@ export function PedidosDashboardScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
+  const { vista: initialVista } = useLocalSearchParams();
   const powerSync = usePowerSync();
 
-  const [vista, setVista] = useState('logistica');
+  const [vista, setVista] = useState(initialVista === 'finanzas' ? 'finanzas' : 'logistica');
   const [filtroLog, setFiltroLog] = useState('Todos');
   const [filtroFin, setFiltroFin] = useState('Todos');
 

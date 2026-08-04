@@ -1,11 +1,11 @@
-﻿import React, { useCallback } from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import React, { useCallback } from 'react';
+import { View, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert } from 'react-native';
 import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
 import { usePowerSync, useQuery } from '@powersync/react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { useRouter } from 'expo-router';
+import { router } from 'expo-router';
 
 type Notificacion = {
   id: string;
@@ -28,11 +28,42 @@ function getIconForTitle(titulo: string) {
 export function NotificacionesScreen() {
   const theme = useTheme();
   const db = usePowerSync();
-  const router = useRouter();
 
   const { data: notificaciones = [], isLoading } = useQuery<Notificacion>(
     'SELECT * FROM notificaciones_historial ORDER BY created_at DESC LIMIT 100'
   );
+
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [redirectingId, setRedirectingId] = React.useState<string | null>(null);
+
+  const toggleSelection = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const deleteSelected = useCallback(() => {
+    if (selectedIds.size === 0) return;
+    Alert.alert('Eliminar Notificaciones', '¿Deseas eliminar las notificaciones seleccionadas?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { 
+        text: 'Eliminar', 
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const ids = Array.from(selectedIds).map(id => `'${id}'`).join(',');
+            await db.execute(`DELETE FROM notificaciones_historial WHERE id IN (${ids})`);
+            setSelectedIds(new Set());
+          } catch (e) {
+            console.error('[Notificaciones] Error eliminando notificaciones:', e);
+          }
+        }
+      }
+    ]);
+  }, [selectedIds, db]);
 
   const marcarLeida = useCallback(async (id: string) => {
     try {
@@ -42,43 +73,86 @@ export function NotificacionesScreen() {
     }
   }, [db]);
 
-  const marcarTodasLeidas = useCallback(async () => {
+  const marcarSeleccionadasOLeidas = useCallback(async () => {
     try {
-      await db.execute('UPDATE notificaciones_historial SET leido = 1 WHERE leido = 0');
+      if (selectedIds.size > 0) {
+        const ids = Array.from(selectedIds).map(id => `'${id}'`).join(',');
+        await db.execute(`UPDATE notificaciones_historial SET leido = 1 WHERE id IN (${ids}) AND leido = 0`);
+        setSelectedIds(new Set());
+      } else {
+        await db.execute('UPDATE notificaciones_historial SET leido = 1 WHERE leido = 0');
+      }
     } catch (e) {
-      console.error('[Notificaciones] Error marcando todas como leidas:', e);
+      console.error('[Notificaciones] Error marcando como leidas:', e);
     }
-  }, [db]);
+  }, [db, selectedIds]);
 
   const handlePress = useCallback((item: Notificacion) => {
-    const isUnread = item.leido === 0;
+    if (selectedIds.size > 0) {
+      toggleSelection(item.id);
+      return;
+    }
+
+    const isUnread = item.leido === 0 || (item.leido as any) === false;
     if (isUnread) marcarLeida(item.id);
 
-    if (item.data) {
-      try {
-        const parsedData = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
-        if (parsedData.ruta) {
-          router.push(parsedData.ruta as any);
+    setRedirectingId(item.id);
+
+    // Permite que React renderice el loader antes de trancar el hilo principal con la navegación
+    setTimeout(() => {
+      console.log('[Notificaciones] handlePress -> item.data RAW:', JSON.stringify(item.data));
+      if (item.data) {
+        try {
+          let parsedData = item.data;
+          if (typeof parsedData === 'string') {
+            parsedData = JSON.parse(parsedData);
+            if (typeof parsedData === 'string') {
+              parsedData = JSON.parse(parsedData);
+            }
+          }
+          console.log('[Notificaciones] parsedData:', JSON.stringify(parsedData));
+          if (parsedData?.ruta) {
+            let ruta: string = parsedData.ruta;
+            if (ruta.endsWith(')')) {
+              ruta = ruta + '/';
+            }
+            console.log('[Notificaciones] Navegando a:', ruta);
+            router.navigate(ruta as any);
+          } else {
+            console.warn('[Notificaciones] No se encontró campo "ruta" en data');
+          }
+        } catch (e) {
+          console.error('[Notificaciones] Error parseando data:', e, 'data raw:', item.data);
         }
-      } catch (e) {
-        console.error('[Notificaciones] Error parseando data:', e);
+      } else {
+        console.warn('[Notificaciones] item.data está vacío o nulo');
       }
-    }
-  }, [marcarLeida, router]);
+      
+      // Limpiar el loader un poco después de que inicie la transición
+      setTimeout(() => setRedirectingId(null), 500);
+    }, 50);
+  }, [marcarLeida, selectedIds.size, toggleSelection]);
 
   const renderItem = useCallback(({ item }: { item: Notificacion }) => {
-    const isUnread = item.leido === 0;
+    const isUnread = item.leido === 0 || (item.leido as any) === false;
+    const isSelected = selectedIds.has(item.id);
+
     return (
       <TouchableOpacity
         activeOpacity={0.75}
         onPress={() => handlePress(item)}
-        style={[styles.item, isUnread && { backgroundColor: '#eff6ff' }]}
+        onLongPress={() => toggleSelection(item.id)}
+        style={[
+          styles.item, 
+          isUnread && { backgroundColor: '#eff6ff' },
+          isSelected && { backgroundColor: '#e0e7ff', borderColor: theme.colors.primary, borderWidth: 1 }
+        ]}
       >
         <View style={[styles.iconContainer, { backgroundColor: isUnread ? theme.colors.primary : '#e5e7eb' }]}>
           <MaterialCommunityIcons 
-            name={getIconForTitle(item.titulo)} 
+            name={isSelected ? "check-circle" : getIconForTitle(item.titulo)} 
             size={24} 
-            color={isUnread ? '#fff' : '#6b7280'} 
+            color={isUnread || isSelected ? '#fff' : '#6b7280'} 
           />
         </View>
         <View style={styles.content}>
@@ -92,18 +166,29 @@ export function NotificacionesScreen() {
             {formatDistanceToNow(new Date(item.created_at), { addSuffix: true, locale: es })}
           </Text>
         </View>
-        {isUnread && <View style={[styles.unreadDot, { backgroundColor: theme.colors.primary }]} />}
+        {isUnread && !isSelected && <View style={[styles.unreadDot, { backgroundColor: theme.colors.primary }]} />}
       </TouchableOpacity>
     );
-  }, [theme.colors.primary, handlePress]);
+  }, [theme.colors.primary, handlePress, selectedIds, toggleSelection]);
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text variant="titleLarge" style={{ fontWeight: 'bold' }}>Notificaciones</Text>
-        <TouchableOpacity onPress={marcarTodasLeidas}>
-          <Text variant="labelLarge" style={{ color: theme.colors.primary }}>Marcar todas leídas</Text>
-        </TouchableOpacity>
+        <Text variant="titleLarge" style={{ fontWeight: 'bold' }}>
+          {selectedIds.size > 0 ? `${selectedIds.size} seleccionadas` : 'Notificaciones'}
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {selectedIds.size > 0 ? (
+            <TouchableOpacity onPress={deleteSelected} style={{ marginRight: 16 }}>
+              <MaterialCommunityIcons name="trash-can-outline" size={24} color="#ef4444" />
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity onPress={marcarSeleccionadasOLeidas}>
+            <Text variant="labelLarge" style={{ color: theme.colors.primary }}>
+              {selectedIds.size > 0 ? 'Marcar seleccionadas leídas' : 'Marcar todas leídas'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
       
       {isLoading ? (
@@ -124,6 +209,18 @@ export function NotificacionesScreen() {
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
         />
+      )}
+
+      {/* Overlay de carga que bloquea toda la pantalla durante la redirección */}
+      {redirectingId && (
+        <View style={[StyleSheet.absoluteFill, styles.overlayLoader]}>
+          <View style={styles.loaderBox}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text variant="labelLarge" style={{ marginTop: 12, color: theme.colors.primary, fontWeight: 'bold' }}>
+              Redirigiendo...
+            </Text>
+          </View>
+        </View>
       )}
     </View>
   );
@@ -177,4 +274,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  overlayLoader: {
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+    elevation: 10,
+  },
+  loaderBox: {
+    backgroundColor: '#fff',
+    padding: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  }
 });

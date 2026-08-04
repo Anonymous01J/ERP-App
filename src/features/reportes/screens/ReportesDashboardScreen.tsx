@@ -29,7 +29,7 @@ export function ReportesDashboardScreen() {
   const [vista, setVista] = useState('produccion');
   
   // Filtro de Tiempo
-  const [filtroTiempo, setFiltroTiempo] = useState('trimestral');
+  const [filtroTiempo, setFiltroTiempo] = useState('mensual');
   const [fechaInicioPersonalizada, setFechaInicioPersonalizada] = useState('');
   const [fechaFinPersonalizada, setFechaFinPersonalizada] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);

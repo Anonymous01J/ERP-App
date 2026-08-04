@@ -1,5 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import * as Sentry from "npm:@sentry/deno";
+
+Sentry.init({
+  dsn: Deno.env.get('SENTRY_DSN') || Deno.env.get('EXPO_PUBLIC_SENTRY_DSN') || '',
+  tracesSampleRate: 1.0,
+});
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -112,12 +118,15 @@ serve(async (req) => {
     const expoData = await expoRes.json();
 
     // 5. Guardar en historial (opcional, pero útil)
-    // Para simplificar, guardamos un registro por cada usuario notificado
-    const historyInserts = tokensData.map(t => ({
-      user_id: t.user_id,
+    // Extraer IDs de usuarios únicos para no duplicar notificaciones si tienen varios dispositivos
+    const uniqueUserIds = [...new Set(tokensData.map(t => t.user_id))];
+    
+    const historyInserts = uniqueUserIds.map(uid => ({
+      user_id: uid,
       titulo: title,
       cuerpo: body,
-      data: data || {}
+      data: JSON.stringify(data || {}),
+      leido: false
     }));
 
     await supabaseClient.from('notificaciones_historial').insert(historyInserts);
@@ -128,6 +137,7 @@ serve(async (req) => {
     });
   } catch (error: any) {
     console.error('Error sending notification:', error);
+    Sentry.captureException(error);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,

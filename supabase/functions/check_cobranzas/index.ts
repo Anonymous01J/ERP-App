@@ -1,5 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import * as Sentry from "npm:@sentry/deno";
+
+Sentry.init({
+  dsn: Deno.env.get('SENTRY_DSN') || Deno.env.get('EXPO_PUBLIC_SENTRY_DSN') || '',
+  tracesSampleRate: 1.0,
+});
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -56,7 +62,7 @@ serve(async (req) => {
         title: "Reporte de Cobranzas 💰",
         body: `Tienes ${vencidos} deudas vencidas y ${porVencer} por vencer en los próximos 5 días.`,
         target_roles: ['admin'],
-        data: { screen: 'pedidos' }
+        data: { ruta: '/(drawer)/(tabs)/pedidos?vista=finanzas' }
       };
 
       // Como estamos dentro del entorno de Supabase, podemos llamar a la otra edge function
@@ -83,6 +89,7 @@ serve(async (req) => {
     });
   } catch (error: any) {
     console.error('Error checking cobranzas:', error);
+    Sentry.captureException(error);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
