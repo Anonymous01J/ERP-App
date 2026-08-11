@@ -11,14 +11,16 @@ import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import { StatusBar } from 'expo-status-bar';
 
-export default function RegistrarPoteScreen() {
+export default function RegistrarProductoScreen() {
   const router = useRouter();
   const theme = useTheme();
   const powerSync = usePowerSync();
   const { id } = useLocalSearchParams();
 
-  const [capacidad, setCapacidad] = useState('');
+  const [nombreProducto, setNombreProducto] = useState('');
+  const [descripcion, setDescripcion] = useState('');
   const [stock, setStock] = useState('0');
+  const [stockAnterior, setStockAnterior] = useState(0);
   const [precioCompra, setPrecioCompra] = useState('');
   const [precioVenta, setPrecioVenta] = useState('');
 
@@ -33,28 +35,31 @@ export default function RegistrarPoteScreen() {
   const cargarDatos = async () => {
     try {
       const result = await powerSync.getAll(
-        `SELECT * FROM inventario_potes WHERE id = ?`,
+        `SELECT * FROM productos_reventa WHERE id = ?`,
         [id]
       );
       if (result.length > 0) {
-        const pote = result[0];
-        setCapacidad(pote.capacidad || '');
-        setStock(pote.stock_unidades ? pote.stock_unidades.toString() : '0');
-        setPrecioCompra(pote.precio_compra_usd ? pote.precio_compra_usd.toString() : '');
-        setPrecioVenta(pote.precio_venta_usd ? pote.precio_venta_usd.toString() : '');
+        const prod = result[0];
+        setNombreProducto(prod.nombre_producto || '');
+        setDescripcion(prod.descripcion || '');
+        const stockInt = prod.stock_unidades ? parseInt(prod.stock_unidades.toString(), 10) : 0;
+        setStock(stockInt.toString());
+        setStockAnterior(stockInt);
+        setPrecioCompra(prod.precio_compra_usd ? prod.precio_compra_usd.toString() : '');
+        setPrecioVenta(prod.precio_venta_usd ? prod.precio_venta_usd.toString() : '');
       }
     } catch (error) {
-      console.error('Error cargando pote:', error);
+      console.error('Error cargando producto:', error);
       Toast.show({
         type: 'error',
         text1: 'Error',
-        text2: 'No se pudieron cargar los datos del pote.',
+        text2: 'No se pudieron cargar los datos del producto.',
       });
     }
   };
 
   const handleGuardar = async () => {
-    if (!capacidad.trim() || !precioCompra || !precioVenta) {
+    if (!nombreProducto.trim() || !precioCompra || !precioVenta) {
       Toast.show({
         type: 'error',
         text1: 'Campos incompletos',
@@ -64,29 +69,53 @@ export default function RegistrarPoteScreen() {
     }
 
     try {
+      const nuevoStock = parseInt(stock) || 0;
+      const now = new Date().toISOString();
+
       if (isEditing) {
         await powerSync.execute(
-          `UPDATE inventario_potes 
-           SET capacidad = ?, stock_unidades = ?, precio_compra_usd = ?, precio_venta_usd = ? 
+          `UPDATE productos_reventa 
+           SET nombre_producto = ?, descripcion = ?, stock_unidades = ?, precio_compra_usd = ?, precio_venta_usd = ? 
            WHERE id = ?`,
-          [capacidad.trim(), parseInt(stock) || 0, parseCurrency(precioCompra), parseCurrency(precioVenta), id]
+          [nombreProducto.trim(), descripcion.trim() || null, nuevoStock, parseCurrency(precioCompra), parseCurrency(precioVenta), id]
         );
+        
+        // Registrar ajuste manual si hubo cambio de stock
+        const diff = nuevoStock - stockAnterior;
+        if (diff !== 0) {
+          const tipo = diff > 0 ? 'entrada' : 'salida';
+          await powerSync.execute(
+            `INSERT INTO historial_productos (id, id_producto, cantidad, tipo, origen, referencia_id, entidad_relacionada, fecha)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [uuidv4(), id, Math.abs(diff), tipo, 'ajuste_manual', id, 'Administrador', now]
+          );
+        }
+
         Toast.show({
           type: 'success',
           text1: 'Guardado',
-          text2: 'El pote ha sido actualizado exitosamente.',
+          text2: 'El producto ha sido actualizado exitosamente.',
         });
       } else {
         const newId = uuidv4();
         await powerSync.execute(
-          `INSERT INTO inventario_potes (id, capacidad, stock_unidades, precio_compra_usd, precio_venta_usd, estado) 
-           VALUES (?, ?, ?, ?, ?, 'activo')`,
-          [newId, capacidad.trim(), parseInt(stock) || 0, parseCurrency(precioCompra), parseCurrency(precioVenta)]
+          `INSERT INTO productos_reventa (id, nombre_producto, descripcion, stock_unidades, precio_compra_usd, precio_venta_usd, estado) 
+           VALUES (?, ?, ?, ?, ?, ?, 'activo')`,
+          [newId, nombreProducto.trim(), descripcion.trim() || null, nuevoStock, parseCurrency(precioCompra), parseCurrency(precioVenta)]
         );
+
+        if (nuevoStock > 0) {
+          await powerSync.execute(
+            `INSERT INTO historial_productos (id, id_producto, cantidad, tipo, origen, referencia_id, entidad_relacionada, fecha)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [uuidv4(), newId, nuevoStock, 'entrada', 'ajuste_manual', newId, 'Administrador', now]
+          );
+        }
+
         Toast.show({
           type: 'success',
           text1: 'Guardado',
-          text2: 'El pote ha sido creado exitosamente.',
+          text2: 'El producto ha sido creado exitosamente.',
         });
       }
       
@@ -96,11 +125,11 @@ export default function RegistrarPoteScreen() {
       }, 500);
 
     } catch (error) {
-      console.error('Error guardando pote:', error);
+      console.error('Error guardando producto:', error);
       Toast.show({
         type: 'error',
         text1: 'Error',
-        text2: 'Hubo un problema al guardar el pote.',
+        text2: 'Hubo un problema al guardar el producto.',
       });
     }
   };
@@ -110,7 +139,7 @@ export default function RegistrarPoteScreen() {
       <StatusBar style="dark" />
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
-        <Appbar.Content title={isEditing ? 'Editar Pote' : 'Nuevo Pote'} />
+        <Appbar.Content title={isEditing ? 'Editar Producto' : 'Nuevo Producto'} />
       </Appbar.Header>
 
       <KeyboardAvoidingView 
@@ -120,15 +149,24 @@ export default function RegistrarPoteScreen() {
         <ScrollView contentContainerStyle={globalStyles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.formContainer}>
             <Text variant="titleMedium" style={styles.title}>
-              Datos del Pote
+              Datos del Producto
             </Text>
             
             <TextInput
               mode="outlined"
-              label="Capacidad (Ej. 250g, 1L)"
-              value={capacidad}
-              onChangeText={setCapacidad}
+              label="Nombre del Producto"
+              value={nombreProducto}
+              onChangeText={setNombreProducto}
               style={styles.input}
+            />
+
+            <TextInput
+              mode="outlined"
+              label="Descripción (opcional)"
+              value={descripcion}
+              onChangeText={setDescripcion}
+              style={styles.input}
+              multiline
             />
             
             <TextInput
@@ -143,7 +181,7 @@ export default function RegistrarPoteScreen() {
             <View style={styles.row}>
               <CurrencyInput
                 mode="outlined"
-                label="Precio Compra ($)"
+                label="Costo Unitario ($)"
                 value={precioCompra}
                 onChangeText={setPrecioCompra}
                 keyboardType="numeric"
@@ -165,7 +203,7 @@ export default function RegistrarPoteScreen() {
               style={styles.button}
               contentStyle={styles.buttonContent}
             >
-              {isEditing ? 'Guardar Cambios' : 'Registrar Pote'}
+              {isEditing ? 'Guardar Cambios' : 'Registrar Producto'}
             </Button>
           </View>
         </ScrollView>
@@ -175,9 +213,6 @@ export default function RegistrarPoteScreen() {
 }
 
 const styles = StyleSheet.create({
-  
-  
-  
   title: {
     fontWeight: 'bold',
     marginBottom: 16,
@@ -205,10 +240,10 @@ const styles = StyleSheet.create({
     width: '48%',
   },
   button: {
-    marginTop: 16,
+    marginTop: 8,
     borderRadius: 8,
   },
   buttonContent: {
-    paddingVertical: 8,
+    paddingVertical: 6,
   }
 });

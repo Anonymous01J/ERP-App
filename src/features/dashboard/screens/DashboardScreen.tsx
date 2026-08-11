@@ -13,6 +13,164 @@ import Toast from 'react-native-toast-message';
 import PagerView from 'react-native-pager-view';
 import { useAuth } from '@state/AuthProvider';
 
+const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+
+// Genera un string 'YYYY-MM-DD' de la fecha LOCAL del dispositivo
+const localDateStr = (d: Date) => {
+  const y = d.getFullYear();
+  const m = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+// Normaliza cualquier string de fecha a 'YYYY-MM-DD' local
+// Soporta tanto 'YYYY-MM-DD' como ISO UTC '2026-08-11T03:45:00.000Z'
+const toLocalDate = (fechaStr: string): string => {
+  if (!fechaStr) return '';
+  if (fechaStr.length === 10) return fechaStr; // Ya es YYYY-MM-DD, no tocar
+  const d = new Date(fechaStr); // ISO UTC → JS lo parsea como UTC y .getDate() da la hora local
+  if (isNaN(d.getTime())) return fechaStr.substring(0, 10);
+  return localDateStr(d);
+};
+
+const processMultiLineChart = (
+  rawData: any[], 
+  period: string, 
+  valueKey: string, 
+  nameKey: string, 
+  hoy: Date
+) => {
+  const dataMap: Record<string, Record<string, number>> = {};
+  const labelsEnOrden: string[] = [];
+  const uniqueNames = new Set<string>();
+
+  // NOTA: La fecha en rawData ya viene normalizada a YYYY-MM-DD local desde SQL
+  // (usando CASE WHEN en el query para manejar ambos formatos)
+
+  if (period === 'Día') {
+    const hoyStr = localDateStr(hoy);
+    const hourBlocks = [0, 4, 8, 12, 16, 20];
+    hourBlocks.forEach(h => {
+      const key = `${h.toString().padStart(2, '0')}:00`;
+      labelsEnOrden.push(key);
+      dataMap[key] = {};
+    });
+
+    for (const row of rawData) {
+      if (!row.fecha) continue;
+      const fDate = row.fecha.substring(0, 10);
+      if (fDate === hoyStr) {
+        // Produccion no guarda hora, ponemos todo en el bloque matutino
+        const key = '08:00';
+        const val = Number(row[valueKey]) || 0;
+        const name = String(row[nameKey] || 'Sin nombre');
+        if (val > 0) {
+          dataMap[key][name] = (dataMap[key][name] ?? 0) + val;
+          uniqueNames.add(name);
+        }
+      }
+    }
+  } else if (period === 'Semana') {
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(hoy);
+      d.setDate(d.getDate() - i);
+      const key = localDateStr(d);
+      labelsEnOrden.push(key);
+      dataMap[key] = {};
+    }
+    for (const row of rawData) {
+      if (!row.fecha) continue;
+      const f = row.fecha.substring(0, 10);
+      if (dataMap[f] !== undefined) {
+        const val = Number(row[valueKey]) || 0;
+        const name = String(row[nameKey] || 'Sin nombre');
+        if (val > 0) {
+          dataMap[f][name] = (dataMap[f][name] ?? 0) + val;
+          uniqueNames.add(name);
+        }
+      }
+    }
+  } else {
+    // Mes: 4 semanas
+    for (let i = 3; i >= 0; i--) {
+      const start = new Date(hoy);
+      start.setDate(start.getDate() - (i * 7 + 6));
+      const startStr = `${(start.getMonth() + 1).toString().padStart(2, '0')}-${start.getDate().toString().padStart(2, '0')}`;
+      const key = `Sem ${4 - i} (${startStr})`;
+      labelsEnOrden.push(key);
+      dataMap[key] = {};
+    }
+    for (const row of rawData) {
+      if (!row.fecha) continue;
+      const fStr = row.fecha.substring(0, 10);
+      // Parsear como local para evitar shift de timezone
+      const [y, mo, dy] = fStr.split('-').map(Number);
+      const hoyNorm = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+      const dNorm = new Date(y, mo - 1, dy);
+      const diffDays = Math.round((hoyNorm.getTime() - dNorm.getTime()) / 86400000);
+      if (diffDays >= 0 && diffDays < 28) {
+        const semIndex = 3 - Math.floor(diffDays / 7);
+        if (labelsEnOrden[semIndex]) {
+          const key = labelsEnOrden[semIndex];
+          const val = Number(row[valueKey]) || 0;
+          const name = String(row[nameKey] || 'Sin nombre');
+          if (val > 0) {
+            dataMap[key][name] = (dataMap[key][name] ?? 0) + val;
+            uniqueNames.add(name);
+          }
+        }
+      }
+    }
+  }
+
+  const formatLabel = (lbl: string) => {
+    if (period === 'Día') return lbl.substring(0, 5);
+    if (period === 'Semana') {
+      const parts = lbl.split('-');
+      if (parts.length >= 3) return `${parts[2]}/${parts[1]}`;
+      return lbl;
+    }
+    return lbl.split(' ')[0];
+  };
+
+  const namesArray = Array.from(uniqueNames);
+  
+  if (namesArray.length === 0) {
+    return { 
+      dataSet: [{ data: labelsEnOrden.map(lbl => ({ value: 0, label: formatLabel(lbl), dataLabel: formatLabel(lbl) })), color: '#9ca3af' }], 
+      legends: [], 
+      maxVal: 10 
+    };
+  }
+
+  const dataSet = namesArray.map((name, index) => {
+    const color = CHART_COLORS[index % CHART_COLORS.length];
+    return {
+      data: labelsEnOrden.map(lbl => ({
+        value: dataMap[lbl]?.[name] ?? 0,
+        label: formatLabel(lbl),
+        dataLabel: formatLabel(lbl)
+      })),
+      color,
+      startFillColor: color,
+      endFillColor: color,
+      startOpacity: 0.3,
+      endOpacity: 0.05,
+      thickness: 2,
+    };
+  });
+
+  const legends = namesArray.map((name, index) => ({
+    name,
+    color: CHART_COLORS[index % CHART_COLORS.length]
+  }));
+
+  let maxVal = 0;
+  dataSet.forEach(set => set.data.forEach(d => { if (d.value > maxVal) maxVal = d.value; }));
+
+  return { dataSet, legends, maxVal: maxVal * 1.2 || 10 };
+};
+
 export function DashboardScreen() {
   const { refreshing, onRefresh } = usePullToRefresh();
   const theme = useTheme();
@@ -52,35 +210,68 @@ export function DashboardScreen() {
     WHERE estado IN ('disponible', 'en_uso')
   `);
 
-  // 4. Stock Potes
-  const { data: potesData = [] } = useQuery(`
-    SELECT COALESCE(SUM(stock_actual), 0) as total_potes 
-    FROM inventario_potes
+  // 4. Stock Otros Productos
+  const { data: productosReventaData = [] } = useQuery(`
+    SELECT 
+      COALESCE(SUM(stock_unidades * precio_compra_usd), 0) as capital_invertido,
+      SUM(CASE WHEN stock_unidades <= 0 THEN 1 ELSE 0 END) as productos_agotados
+    FROM productos_reventa
+    WHERE estado = 'activo'
   `);
 
   // 5. Flujo de Caja (Para Gráficos — solo Admin)
+  // CASE WHEN maneja ambos formatos de fecha
   const { data: flujoCaja = [] } = useQuery(
     isAdmin ? `
-    SELECT fecha, tipo, 
+    SELECT 
+      CASE WHEN length(fecha) > 10 THEN DATE(fecha, 'localtime') ELSE fecha END as fecha,
+      tipo, 
       CASE WHEN moneda = 'USD' THEN monto ELSE monto / COALESCE(tasa_cambio, 1) END as monto_usd
     FROM movimientos
+    WHERE CASE WHEN length(fecha) > 10 THEN DATE(fecha, 'localtime') ELSE fecha END >= DATE('now', 'localtime', '-27 days')
     UNION ALL
-    SELECT fecha_pago as fecha, 'ingreso' as tipo, monto_equivalente_usd as monto_usd
+    SELECT 
+      CASE WHEN length(fecha_pago) > 10 THEN DATE(fecha_pago, 'localtime') ELSE fecha_pago END as fecha,
+      'ingreso' as tipo, monto_equivalente_usd as monto_usd
     FROM abonos_pagos
+    WHERE CASE WHEN length(fecha_pago) > 10 THEN DATE(fecha_pago, 'localtime') ELSE fecha_pago END >= DATE('now', 'localtime', '-27 days')
   ` : 'SELECT NULL as fecha, NULL as tipo, NULL as monto_usd WHERE 1=0'
   );
 
-  // 6. Producción — todos los períodos (para operadores)
-  const { data: produccionRaw = [] } = useQuery(`
+  // 6. Producción de Rollos por Presentación
+  // CASE WHEN maneja ambos formatos: 'YYYY-MM-DD' (nuevos) e ISO UTC (registros viejos)
+  // Esto evita el bug de DATE('YYYY-MM-DD', 'localtime') que desplaza un día hacia atrás
+  const { data: produccionRollosRaw = [] } = useQuery(`
     SELECT 
-      pd.fecha,
-      SUM(pd.cantidad_rollos_total) as total_rollos,
-      COALESCE(SUM(cb.kg_consumidos), 0) as total_kg
+      CASE 
+        WHEN length(pd.fecha) > 10 THEN DATE(pd.fecha, 'localtime')
+        ELSE pd.fecha
+      END as fecha,
+      pp.nombre as nombre_presentacion,
+      SUM(pd.cantidad_rollos_total) as total_rollos
     FROM produccion_diaria pd
-    LEFT JOIN consumo_bobinas cb ON cb.id_produccion = pd.id
-    WHERE pd.fecha >= DATE('now', '-27 days')
-    GROUP BY pd.fecha
-    ORDER BY pd.fecha ASC
+    LEFT JOIN productos_presentacion pp ON pp.id = pd.id_producto
+    WHERE CASE WHEN length(pd.fecha) > 10 THEN DATE(pd.fecha, 'localtime') ELSE pd.fecha END >= DATE('now', 'localtime', '-27 days')
+    GROUP BY CASE WHEN length(pd.fecha) > 10 THEN DATE(pd.fecha, 'localtime') ELSE pd.fecha END, pp.nombre
+    ORDER BY 1 ASC
+  `);
+
+  // 7. Producción de Kg por Tipo de Papel
+  const { data: produccionKgRaw = [] } = useQuery(`
+    SELECT 
+      CASE 
+        WHEN length(pd.fecha) > 10 THEN DATE(pd.fecha, 'localtime')
+        ELSE pd.fecha
+      END as fecha,
+      tp.nombre as tipo_papel_nombre,
+      SUM(cb.kg_consumidos) as total_kg
+    FROM consumo_bobinas cb
+    JOIN produccion_diaria pd ON pd.id = cb.id_produccion
+    JOIN bobinas_grandes bg ON bg.id = cb.id_bobina
+    LEFT JOIN tipos_papel tp ON tp.id = bg.id_tipo_papel
+    WHERE CASE WHEN length(pd.fecha) > 10 THEN DATE(pd.fecha, 'localtime') ELSE pd.fecha END >= DATE('now', 'localtime', '-27 days')
+    GROUP BY CASE WHEN length(pd.fecha) > 10 THEN DATE(pd.fecha, 'localtime') ELSE pd.fecha END, tp.nombre
+    ORDER BY 1 ASC
   `);
 
   // --- HELPER WHATSAPP ---
@@ -166,6 +357,19 @@ export function DashboardScreen() {
       }
     }
 
+    const currentMonth = hoy.getMonth();
+    const currentYear = hoy.getFullYear();
+
+    const flujoCajaMes = (flujoCaja as any[]).filter(r => {
+      if (!r.fecha) return false;
+      const d = new Date(r.fecha);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    });
+
+    const totalIngresos = flujoCajaMes.filter(r => r.tipo === 'ingreso').reduce((sum, r) => sum + (r.monto_usd || 0), 0);
+    const totalEgresos = flujoCajaMes.filter(r => r.tipo === 'egreso').reduce((sum, r) => sum + (r.monto_usd || 0), 0);
+    const roi = totalEgresos > 0 ? ((totalIngresos - totalEgresos) / totalEgresos) * 100 : 0;
+
     return {
       pedidosPorProducir,
       pedidosListos,
@@ -173,9 +377,11 @@ export function DashboardScreen() {
       pagosVencidos,
       alertasLista,
       bobinasKg: bobinasData.length > 0 ? bobinasData[0].total_kg : 0,
-      potesTotal: potesData.length > 0 ? potesData[0].total_potes : 0,
+      productosCapitalInvertido: productosReventaData.length > 0 ? productosReventaData[0].capital_invertido : 0,
+      productosAgotados: productosReventaData.length > 0 ? productosReventaData[0].productos_agotados : 0,
+      roi,
     };
-  }, [pedidosStats, creditosPendientes, bobinasData, potesData]);
+  }, [pedidosStats, creditosPendientes, bobinasData, productosReventaData, flujoCaja]);
 
   const handleCardAlertasPress = () => {
     if (metrics.alertasLista.length === 1) {
@@ -194,6 +400,7 @@ export function DashboardScreen() {
 
     const hoy = new Date();
     hoy.setHours(23, 59, 59, 999);
+    const pad = (n: number) => n.toString().padStart(2, '0');
 
     if (chartPeriod === 'Día') {
       const hourBlocks = [0, 4, 8, 12, 16, 20];
@@ -204,28 +411,27 @@ export function DashboardScreen() {
         dataEgresosMap[key] = 0;
       });
 
-      const hoyStr = hoy.toISOString().split('T')[0];
+      const hoyStr = localDateStr(hoy);
       for (const row of flujoCaja as any[]) {
         if (!row.fecha) continue;
-        const [fDate, fTime] = row.fecha.split('T');
-        if (fDate === hoyStr && fTime) {
-          const hour = parseInt(fTime.substring(0, 2), 10);
-          const block = hourBlocks.slice().reverse().find(b => hour >= b) || 0;
-          const key = `${block.toString().padStart(2, '0')}:00`;
-          if (row.tipo === 'ingreso') dataIngresosMap[key] += row.monto_usd;
-          else dataEgresosMap[key] += row.monto_usd;
+        // La fecha ya viene como YYYY-MM-DD desde SQL (DATE(..., 'localtime'))
+        if (row.fecha === hoyStr) {
+          if (row.tipo === 'ingreso') dataIngresosMap['08:00'] += row.monto_usd;
+          else dataEgresosMap['08:00'] += row.monto_usd;
         }
       }
     } else if (chartPeriod === 'Semana') {
       for (let i = 6; i >= 0; i--) {
-        const d = new Date(hoy.getTime() - i * 24 * 60 * 60 * 1000);
-        const key = d.toISOString().split('T')[0];
+        const d = new Date(hoy);
+        d.setDate(d.getDate() - i);
+        const key = localDateStr(d);
         labelsEnOrden.push(key);
         dataIngresosMap[key] = 0;
         dataEgresosMap[key] = 0;
       }
       for (const row of flujoCaja as any[]) {
-        const f = row.fecha?.split('T')[0];
+        if (!row.fecha) continue;
+        const f = row.fecha.substring(0, 10);
         if (dataIngresosMap[f] !== undefined) {
           if (row.tipo === 'ingreso') dataIngresosMap[f] += row.monto_usd;
           else dataEgresosMap[f] += row.monto_usd;
@@ -233,8 +439,9 @@ export function DashboardScreen() {
       }
     } else {
       for (let i = 3; i >= 0; i--) {
-        const start = new Date(hoy.getTime() - (i * 7 + 6) * 24 * 60 * 60 * 1000);
-        const startStr = start.toISOString().split('T')[0].slice(5);
+        const start = new Date(hoy);
+        start.setDate(start.getDate() - (i * 7 + 6));
+        const startStr = `${(start.getMonth() + 1).toString().padStart(2, '0')}-${start.getDate().toString().padStart(2, '0')}`;
         const key = `Sem ${4 - i} (${startStr})`;
         labelsEnOrden.push(key);
         dataIngresosMap[key] = 0;
@@ -243,8 +450,11 @@ export function DashboardScreen() {
 
       for (const row of flujoCaja as any[]) {
         if (!row.fecha) continue;
-        const d = new Date(row.fecha);
-        const diffDays = Math.floor((hoy.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+        // Comparar como local: fecha viene como YYYY-MM-DD local desde SQL
+        const fStr = row.fecha.substring(0, 10);
+        const d = new Date(fStr + 'T00:00:00');
+        const hoyNorm = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+        const diffDays = Math.round((hoyNorm.getTime() - d.getTime()) / 86400000);
         if (diffDays >= 0 && diffDays < 28) {
           const semIndex = 3 - Math.floor(diffDays / 7);
           const key = labelsEnOrden[semIndex];
@@ -269,156 +479,25 @@ export function DashboardScreen() {
     return { lineDataIngresos: outIngresos, lineDataEgresos: outEgresos };
   }, [flujoCaja, chartPeriod]);
 
-  // --- PROCESAMIENTO GRÁFICO PRODUCCIÓN ---
-  const lineDataProduccion = useMemo(() => {
-    const dataMap: Record<string, number> = {};
-    const labelsEnOrden: string[] = [];
+
+  // --- PROCESAMIENTO GRÁFICO PRODUCCIÓN (Ambos) ---
+  const { 
+    dataSetRollos, legendsRollos, maxRollos,
+    dataSetKg, legendsKg, maxKg
+  } = useMemo(() => {
     const hoy = new Date();
     hoy.setHours(23, 59, 59, 999);
+    const rollosRes = processMultiLineChart(produccionRollosRaw, isAdmin ? chartPeriod : prodPeriod, 'total_rollos', 'nombre_presentacion', hoy);
+    const kgRes = processMultiLineChart(produccionKgRaw, isAdmin ? chartPeriod : prodPeriod, 'total_kg', 'tipo_papel_nombre', hoy);
 
-    if (prodPeriod === 'Día') {
-      // Solo el día de hoy, agrupado cada 4 horas (producción no tiene hora, muestra valor del día)
-      const hoyStr = hoy.toISOString().split('T')[0];
-      const hourBlocks = [0, 4, 8, 12, 16, 20];
-      hourBlocks.forEach(h => {
-        const key = `${h.toString().padStart(2, '0')}:00`;
-        labelsEnOrden.push(key);
-        dataMap[key] = 0;
-      });
-      // La producción diaria no tiene hora, repartimos el total del día en el bloque de mediodía
-      const rowHoy = (produccionRaw as any[]).find((r: any) => r.fecha === hoyStr);
-      if (rowHoy) {
-        const val = metricaProduccion === 'rollos' ? (rowHoy.total_rollos ?? 0) : (rowHoy.total_kg ?? 0);
-        dataMap['08:00'] = val;
-      }
-    } else if (prodPeriod === 'Semana') {
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date(hoy.getTime() - i * 86400000);
-        const key = d.toISOString().split('T')[0];
-        labelsEnOrden.push(key);
-        dataMap[key] = 0;
-      }
-      for (const row of produccionRaw as any[]) {
-        const f = row.fecha?.split('T')[0] ?? row.fecha;
-        if (dataMap[f] !== undefined) {
-          dataMap[f] = metricaProduccion === 'rollos' ? (row.total_rollos ?? 0) : (row.total_kg ?? 0);
-        }
-      }
-    } else {
-      // Mes: 4 semanas
-      for (let i = 3; i >= 0; i--) {
-        const start = new Date(hoy.getTime() - (i * 7 + 6) * 86400000);
-        const startStr = start.toISOString().split('T')[0].slice(5);
-        const key = `Sem ${4 - i} (${startStr})`;
-        labelsEnOrden.push(key);
-        dataMap[key] = 0;
-      }
-      for (const row of produccionRaw as any[]) {
-        const f = row.fecha?.split('T')[0] ?? row.fecha;
-        if (!f) continue;
-        const d = new Date(f);
-        const diffDays = Math.floor((hoy.getTime() - d.getTime()) / 86400000);
-        if (diffDays >= 0 && diffDays < 28) {
-          const semIndex = 3 - Math.floor(diffDays / 7);
-          const key = labelsEnOrden[semIndex];
-          const val = metricaProduccion === 'rollos' ? (row.total_rollos ?? 0) : (row.total_kg ?? 0);
-          dataMap[key] = (dataMap[key] ?? 0) + val;
-        }
-      }
-    }
-
-    const formatLabel = (lbl: string) => {
-      if (prodPeriod === 'Día') return lbl.substring(0, 5);
-      if (prodPeriod === 'Semana') {
-        const parts = lbl.split('-');
-        return `${parts[2]}/${parts[1]}`;
-      }
-      return lbl.split(' ')[0];
+    return { 
+      dataSetRollos: rollosRes.dataSet, legendsRollos: rollosRes.legends, maxRollos: rollosRes.maxVal,
+      dataSetKg: kgRes.dataSet, legendsKg: kgRes.legends, maxKg: kgRes.maxVal
     };
-
-    return labelsEnOrden.map(lbl => ({ value: dataMap[lbl], label: formatLabel(lbl), dataLabel: formatLabel(lbl) }));
-  }, [produccionRaw, prodPeriod, metricaProduccion]);
-
-  // --- PROCESAMIENTO GRÁFICO PRODUCCIÓN (ADMIN SWIPER) ---
-  const { lineDataRollosAdmin, lineDataKgAdmin } = useMemo(() => {
-    if (!isAdmin) return { lineDataRollosAdmin: [], lineDataKgAdmin: [] };
-    
-    const dataRollosMap: Record<string, number> = {};
-    const dataKgMap: Record<string, number> = {};
-    const labelsEnOrden: string[] = [];
-    const hoy = new Date();
-    hoy.setHours(23, 59, 59, 999);
-
-    if (chartPeriod === 'Día') {
-      const hoyStr = hoy.toISOString().split('T')[0];
-      const hourBlocks = [0, 4, 8, 12, 16, 20];
-      hourBlocks.forEach(h => {
-        const key = `${h.toString().padStart(2, '0')}:00`;
-        labelsEnOrden.push(key);
-        dataRollosMap[key] = 0;
-        dataKgMap[key] = 0;
-      });
-      const rowHoy = (produccionRaw as any[]).find((r: any) => r.fecha === hoyStr);
-      if (rowHoy) {
-        dataRollosMap['08:00'] = rowHoy.total_rollos ?? 0;
-        dataKgMap['08:00'] = rowHoy.total_kg ?? 0;
-      }
-    } else if (chartPeriod === 'Semana') {
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date(hoy.getTime() - i * 86400000);
-        const key = d.toISOString().split('T')[0];
-        labelsEnOrden.push(key);
-        dataRollosMap[key] = 0;
-        dataKgMap[key] = 0;
-      }
-      for (const row of produccionRaw as any[]) {
-        const f = row.fecha?.split('T')[0] ?? row.fecha;
-        if (dataRollosMap[f] !== undefined) {
-          dataRollosMap[f] = row.total_rollos ?? 0;
-          dataKgMap[f] = row.total_kg ?? 0;
-        }
-      }
-    } else {
-      for (let i = 3; i >= 0; i--) {
-        const start = new Date(hoy.getTime() - (i * 7 + 6) * 86400000);
-        const startStr = start.toISOString().split('T')[0].slice(5);
-        const key = `Sem ${4 - i} (${startStr})`;
-        labelsEnOrden.push(key);
-        dataRollosMap[key] = 0;
-        dataKgMap[key] = 0;
-      }
-      for (const row of produccionRaw as any[]) {
-        const f = row.fecha?.split('T')[0] ?? row.fecha;
-        if (!f) continue;
-        const d = new Date(f);
-        const diffDays = Math.floor((hoy.getTime() - d.getTime()) / 86400000);
-        if (diffDays >= 0 && diffDays < 28) {
-          const semIndex = 3 - Math.floor(diffDays / 7);
-          const key = labelsEnOrden[semIndex];
-          dataRollosMap[key] = (dataRollosMap[key] ?? 0) + (row.total_rollos ?? 0);
-          dataKgMap[key] = (dataKgMap[key] ?? 0) + (row.total_kg ?? 0);
-        }
-      }
-    }
-
-    const formatLabel = (lbl: string) => {
-      if (chartPeriod === 'Día') return lbl.substring(0, 5);
-      if (chartPeriod === 'Semana') {
-        const parts = lbl.split('-');
-        return `${parts[2]}/${parts[1]}`;
-      }
-      return lbl.split(' ')[0];
-    };
-
-    const outRollos = labelsEnOrden.map(lbl => ({ value: dataRollosMap[lbl], label: formatLabel(lbl), dataLabel: formatLabel(lbl) }));
-    const outKg = labelsEnOrden.map(lbl => ({ value: dataKgMap[lbl], label: formatLabel(lbl), dataLabel: formatLabel(lbl) }));
-    return { lineDataRollosAdmin: outRollos, lineDataKgAdmin: outKg };
-  }, [produccionRaw, chartPeriod, isAdmin]);
+  }, [produccionRollosRaw, produccionKgRaw, chartPeriod, prodPeriod, isAdmin]);
 
   const maxFinanzas = Math.max(10, ...lineDataIngresos.map(d => d.value), ...lineDataEgresos.map(d => d.value)) * 1.2;
-  const maxRollosAdmin = Math.max(10, ...lineDataRollosAdmin.map(d => d.value)) * 1.2;
-  const maxKgAdmin = Math.max(10, ...lineDataKgAdmin.map(d => d.value)) * 1.2;
-  const maxProdOp = Math.max(10, ...lineDataProduccion.map(d => d.value)) * 1.2;
+  const maxProdOp = metricaProduccion === 'rollos' ? maxRollos : maxKg;
 
   return (
     <View style={globalStyles.container}>
@@ -430,17 +509,18 @@ export function DashboardScreen() {
         <View style={styles.grid}>
           <CustomCard style={styles.gridItem}>
             <View style={styles.gridItemContent}>
-              <MaterialCommunityIcons name="clock-outline" size={24} color={theme.colors.primary} />
-              <Text variant="titleLarge" style={styles.gridItemNumber}>{metrics.pedidosPorProducir}</Text>
-              <Text variant="labelSmall" style={styles.gridItemLabel}>Pedidos Pendientes</Text>
-            </View>
-          </CustomCard>
-
-          <CustomCard style={styles.gridItem}>
-            <View style={styles.gridItemContent}>
-              <MaterialCommunityIcons name="check-all" size={24} color="#16a34a" />
-              <Text variant="titleLarge" style={styles.gridItemNumber}>{metrics.pedidosListos}</Text>
-              <Text variant="labelSmall" style={styles.gridItemLabel}>Pedidos Listos</Text>
+              <MaterialCommunityIcons name="clipboard-text-outline" size={24} color={theme.colors.primary} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 }}>
+                <View style={{ alignItems: 'center' }}>
+                  <Text variant="titleMedium" style={[styles.gridItemNumber, { fontSize: 20, color: theme.colors.primary }]}>{metrics.pedidosPorProducir}</Text>
+                  <Text variant="labelSmall" style={styles.gridItemLabel}>Pendientes</Text>
+                </View>
+                <View style={{ height: 24, width: 1, backgroundColor: '#e5e7eb' }} />
+                <View style={{ alignItems: 'center' }}>
+                  <Text variant="titleMedium" style={[styles.gridItemNumber, { fontSize: 20, color: '#16a34a' }]}>{metrics.pedidosListos}</Text>
+                  <Text variant="labelSmall" style={styles.gridItemLabel}>Listos</Text>
+                </View>
+              </View>
             </View>
           </CustomCard>
 
@@ -454,11 +534,34 @@ export function DashboardScreen() {
 
           <CustomCard style={styles.gridItem}>
             <View style={styles.gridItemContent}>
-              <MaterialCommunityIcons name="bottle-tonic" size={24} color="#0284c7" />
-              <Text variant="titleLarge" style={styles.gridItemNumber}>{metrics.potesTotal}</Text>
-              <Text variant="labelSmall" style={styles.gridItemLabel}>Potes en Stock</Text>
+              <MaterialCommunityIcons name="currency-usd" size={24} color="#0284c7" />
+              <Text variant="titleLarge" style={[styles.gridItemNumber, { fontSize: 20 }]}>
+                ${metrics.productosCapitalInvertido.toFixed(2)}
+              </Text>
+              <Text variant="labelSmall" style={styles.gridItemLabel}>Inv. Otros Prod.</Text>
+              {metrics.productosAgotados > 0 && (
+                <Text variant="bodySmall" style={{ color: theme.colors.error, marginTop: 4, fontWeight: 'bold' }}>
+                  {metrics.productosAgotados} {metrics.productosAgotados === 1 ? 'agotado' : 'agotados'}
+                </Text>
+              )}
             </View>
           </CustomCard>
+
+          {isAdmin && (
+            <CustomCard style={styles.gridItem}>
+              <View style={styles.gridItemContent}>
+                <MaterialCommunityIcons 
+                  name={metrics.roi >= 0 ? "trending-up" : "trending-down"} 
+                  size={24} 
+                  color={metrics.roi >= 0 ? "#16a34a" : "#dc2626"} 
+                />
+                <Text variant="titleLarge" style={[styles.gridItemNumber, { fontSize: 20, color: metrics.roi >= 0 ? '#16a34a' : '#dc2626' }]}>
+                  {metrics.roi > 0 ? '+' : ''}{metrics.roi.toFixed(1)}%
+                </Text>
+                <Text variant="labelSmall" style={styles.gridItemLabel}>ROI del Mes</Text>
+              </View>
+            </CustomCard>
+          )}
         </View>
 
         {/* Alertas Financieras Clickables — solo Admin */}
@@ -509,7 +612,7 @@ export function DashboardScreen() {
               />
             </View>
             
-            <View style={{ height: 330, paddingBottom: 10 }}>
+            <View style={{ height: 315 }}>
               <PagerView
                 ref={pagerRef}
                 style={{ flex: 1 }}
@@ -584,36 +687,45 @@ export function DashboardScreen() {
                       noOfSections={4}
                     />
                   </View>
-                  <View style={styles.legendRow}>
-                     <View style={styles.legendItem}>
-                       <View style={[styles.legendDot, { backgroundColor: '#16a34a' }]} />
-                       <Text variant="bodySmall">Ingresos</Text>
-                     </View>
-                     <View style={styles.legendItem}>
-                       <View style={[styles.legendDot, { backgroundColor: '#dc2626' }]} />
-                       <Text variant="bodySmall">Egresos</Text>
-                     </View>
-                  </View>
                 </View>
 
-                {/* Slide 2: Rollos */}
+                {/* Slide 2: Rollos — SIN leyenda (se pone fuera del PagerView) */}
                 <View key="2">
                   <View style={styles.chartContainer}>
                     <LineChart
-                      maxValue={maxRollosAdmin}
+                      maxValue={maxRollos}
                       areaChart
                       curved
-                      data={lineDataRollosAdmin}
+                      dataSet={dataSetRollos}
                       height={200}
                       width={Dimensions.get('window').width - 120}
-                      spacing={lineDataRollosAdmin.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataRollosAdmin.length - 1) : 45}
+                      spacing={dataSetRollos[0]?.data?.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (dataSetRollos[0].data.length - 1) : 45}
                       initialSpacing={15}
                       endSpacing={15}
-                      color={theme.colors.primary}
-                      startFillColor={theme.colors.primary}
-                      endFillColor={theme.colors.primary}
-                      startOpacity={0.3}
-                      endOpacity={0.05}
+                      pointerConfig={{
+                        pointerStripHeight: 160,
+                        pointerStripColor: 'lightgray',
+                        pointerStripWidth: 2,
+                        pointerColor: 'lightgray',
+                        radius: 6,
+                        pointerLabelWidth: 130,
+                        pointerLabelHeight: 90,
+                        activatePointersOnLongPress: false,
+                        autoAdjustPointerLabelPosition: true,
+                        pointerLabelComponent: (items: any) => {
+                          return (
+                            <View style={{ padding: 8, backgroundColor: '#1f2937', borderRadius: 8, alignItems: 'flex-start' }}>
+                              <Text style={{ color: '#d1d5db', fontSize: 12, marginBottom: 4 }}>{items[0]?.dataLabel || ''}</Text>
+                              {items.map((item: any, i: number) => (
+                                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: CHART_COLORS[i % CHART_COLORS.length], marginRight: 6 }} />
+                                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>{item?.value ?? 0} rollos</Text>
+                                </View>
+                              ))}
+                            </View>
+                          );
+                        },
+                      }}
                       yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
                       xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
                       yAxisThickness={0}
@@ -624,32 +736,45 @@ export function DashboardScreen() {
                       noOfSections={4}
                     />
                   </View>
-                  <View style={styles.legendRow}>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: theme.colors.primary }]} />
-                      <Text variant="bodySmall">Rollos producidos</Text>
-                    </View>
-                  </View>
                 </View>
 
-                {/* Slide 3: Kg */}
+                {/* Slide 3: Kg — SIN leyenda (se pone fuera del PagerView) */}
                 <View key="3">
                   <View style={styles.chartContainer}>
                     <LineChart
-                      maxValue={maxKgAdmin}
+                      maxValue={maxKg}
                       areaChart
                       curved
-                      data={lineDataKgAdmin}
+                      dataSet={dataSetKg}
                       height={200}
                       width={Dimensions.get('window').width - 120}
-                      spacing={lineDataKgAdmin.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataKgAdmin.length - 1) : 45}
+                      spacing={dataSetKg[0]?.data?.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (dataSetKg[0].data.length - 1) : 45}
                       initialSpacing={15}
                       endSpacing={15}
-                      color="#f59e0b"
-                      startFillColor="#f59e0b"
-                      endFillColor="#f59e0b"
-                      startOpacity={0.3}
-                      endOpacity={0.05}
+                      pointerConfig={{
+                        pointerStripHeight: 160,
+                        pointerStripColor: 'lightgray',
+                        pointerStripWidth: 2,
+                        pointerColor: 'lightgray',
+                        radius: 6,
+                        pointerLabelWidth: 130,
+                        pointerLabelHeight: 90,
+                        activatePointersOnLongPress: false,
+                        autoAdjustPointerLabelPosition: true,
+                        pointerLabelComponent: (items: any) => {
+                          return (
+                            <View style={{ padding: 8, backgroundColor: '#1f2937', borderRadius: 8, alignItems: 'flex-start' }}>
+                              <Text style={{ color: '#d1d5db', fontSize: 12, marginBottom: 4 }}>{items[0]?.dataLabel || ''}</Text>
+                              {items.map((item: any, i: number) => (
+                                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: CHART_COLORS[i % CHART_COLORS.length], marginRight: 6 }} />
+                                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>{(item?.value ?? 0).toFixed(1)} kg</Text>
+                                </View>
+                              ))}
+                            </View>
+                          );
+                        },
+                      }}
                       yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
                       xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
                       yAxisThickness={0}
@@ -660,12 +785,6 @@ export function DashboardScreen() {
                       noOfSections={4}
                       yAxisLabelSuffix=" kg"
                     />
-                  </View>
-                  <View style={styles.legendRow}>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: '#f59e0b' }]} />
-                      <Text variant="bodySmall">Kg consumidos</Text>
-                    </View>
                   </View>
                 </View>
               </PagerView>
@@ -710,6 +829,48 @@ export function DashboardScreen() {
                 />
               </View>
             </View>
+
+            {/* Leyenda FUERA del PagerView para que siempre sea visible */}
+            <View style={styles.chartLegendContainer}>
+              {currentSlide === 0 && (
+                <>
+                  <View style={styles.chartLegendItem}>
+                    <View style={[styles.chartLegendColor, { backgroundColor: '#16a34a' }]} />
+                    <Text variant="bodyMedium">Ingresos</Text>
+                  </View>
+                  <View style={styles.chartLegendItem}>
+                    <View style={[styles.chartLegendColor, { backgroundColor: '#dc2626' }]} />
+                    <Text variant="bodyMedium">Egresos</Text>
+                  </View>
+                </>
+              )}
+              {currentSlide === 1 && (
+                legendsRollos.length > 0
+                  ? legendsRollos.map((leg: any, idx: number) => (
+                      <View key={idx} style={styles.chartLegendItem}>
+                        <View style={[styles.chartLegendColor, { backgroundColor: leg.color }]} />
+                        <Text variant="bodyMedium">{leg.name}</Text>
+                      </View>
+                    ))
+                  : <View style={styles.chartLegendItem}>
+                      <View style={[styles.chartLegendColor, { backgroundColor: theme.colors.primary }]} />
+                      <Text variant="bodyMedium">Rollos producidos</Text>
+                    </View>
+              )}
+              {currentSlide === 2 && (
+                legendsKg.length > 0
+                  ? legendsKg.map((leg: any, idx: number) => (
+                      <View key={idx} style={styles.chartLegendItem}>
+                        <View style={[styles.chartLegendColor, { backgroundColor: leg.color }]} />
+                        <Text variant="bodyMedium">{leg.name}</Text>
+                      </View>
+                    ))
+                  : <View style={styles.chartLegendItem}>
+                      <View style={[styles.chartLegendColor, { backgroundColor: '#f59e0b' }]} />
+                      <Text variant="bodyMedium">Kg consumidos</Text>
+                    </View>
+              )}
+            </View>
           </CustomCard>
         )}
 
@@ -725,8 +886,8 @@ export function DashboardScreen() {
                 value={metricaProduccion}
                 onValueChange={(v) => setMetricaProduccion(v as 'rollos' | 'kg')}
                 buttons={[
-                  { value: 'rollos', label: '🧻 Rollos', icon: 'counter' },
-                  { value: 'kg', label: '⚖️ Kg', icon: 'weight-kilogram' },
+                  { value: 'rollos', label: 'Rollos', icon: 'counter' },
+                  { value: 'kg', label: 'Kg', icon: 'weight-kilogram' },
                 ]}
                 density="small"
                 style={{ marginBottom: 12 }}
@@ -744,7 +905,7 @@ export function DashboardScreen() {
               />
             </View>
             <View style={styles.chartContainer}>
-              {lineDataProduccion.every(d => d.value === 0) ? (
+              {((metricaProduccion === 'rollos' && dataSetRollos[0]?.data.every((d: any) => d.value === 0)) || (metricaProduccion === 'kg' && dataSetKg[0]?.data.every((d: any) => d.value === 0))) ? (
                 <Text variant="bodyMedium" style={{ color: '#9ca3af', textAlign: 'center', paddingVertical: 40 }}>
                   Sin producción registrada en este período.
                 </Text>
@@ -753,42 +914,43 @@ export function DashboardScreen() {
                   maxValue={maxProdOp}
                   areaChart
                   curved
-                  data={lineDataProduccion}
+                  dataSet={metricaProduccion === 'rollos' ? dataSetRollos : dataSetKg}
                   height={220}
                   width={Dimensions.get('window').width - 120}
-                  spacing={lineDataProduccion.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataProduccion.length - 1) : 45}
+                  spacing={
+                    (metricaProduccion === 'rollos' ? dataSetRollos : dataSetKg)[0]?.data?.length > 1 
+                      ? (Dimensions.get('window').width - 120 - 30) / ((metricaProduccion === 'rollos' ? dataSetRollos : dataSetKg)[0].data.length - 1) 
+                      : 45
+                  }
                   initialSpacing={15}
                   endSpacing={15}
                   pointerConfig={{
-                    pointerStripHeight: 160,
+                    pointerStripHeight: 180,
                     pointerStripColor: 'lightgray',
                     pointerStripWidth: 2,
                     pointerColor: 'lightgray',
                     radius: 6,
-                    pointerLabelWidth: 100,
-                    pointerLabelHeight: 72,
+                    pointerLabelWidth: 130,
+                    pointerLabelHeight: 90,
                     activatePointersOnLongPress: false,
                     autoAdjustPointerLabelPosition: true,
                     pointerLabelComponent: (items: any) => {
-                      const item = items[0];
+                      const suffix = metricaProduccion === 'rollos' ? ' rollos' : ' kg';
                       return (
-                        <View style={{ padding: 8, backgroundColor: '#1f2937', borderRadius: 8, alignItems: 'center' }}>
-                          <Text style={{ color: '#d1d5db', fontSize: 12, marginBottom: 4 }}>{item?.dataLabel || ''}</Text>
-                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.primary, marginRight: 6 }} />
-                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>
-                              {metricaProduccion === 'rollos' ? `${item?.value ?? 0} rollos` : `${(item?.value ?? 0).toFixed(1)} kg`}
-                            </Text>
-                          </View>
+                        <View style={{ padding: 8, backgroundColor: '#1f2937', borderRadius: 8, alignItems: 'flex-start' }}>
+                          <Text style={{ color: '#d1d5db', fontSize: 12, marginBottom: 4 }}>{items[0]?.dataLabel || ''}</Text>
+                          {items.map((item: any, i: number) => (
+                            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: CHART_COLORS[i % CHART_COLORS.length], marginRight: 6 }} />
+                              <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>
+                                {metricaProduccion === 'kg' ? (item?.value ?? 0).toFixed(1) : (item?.value ?? 0)}{suffix}
+                              </Text>
+                            </View>
+                          ))}
                         </View>
                       );
                     },
                   }}
-                  color={theme.colors.primary}
-                  startFillColor={theme.colors.primary}
-                  endFillColor={theme.colors.primary}
-                  startOpacity={0.3}
-                  endOpacity={0.05}
                   yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
                   xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
                   yAxisLabelSuffix={metricaProduccion === 'rollos' ? '' : ' kg'}
@@ -804,11 +966,21 @@ export function DashboardScreen() {
                 />
               )}
             </View>
-            <View style={styles.legendRow}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: theme.colors.primary }]} />
-                <Text variant="bodySmall">{metricaProduccion === 'rollos' ? 'Rollos producidos' : 'Kg procesados'}</Text>
-              </View>
+            <View style={styles.chartLegendContainer}>
+              {(metricaProduccion === 'rollos' ? legendsRollos : legendsKg).length > 0
+                ? (metricaProduccion === 'rollos' ? legendsRollos : legendsKg).map((leg: any, idx: number) => (
+                    <View key={idx} style={styles.chartLegendItem}>
+                      <View style={[styles.chartLegendColor, { backgroundColor: leg.color }]} />
+                      <Text variant="bodyMedium">{leg.name}</Text>
+                    </View>
+                  ))
+                : (
+                    <View style={styles.chartLegendItem}>
+                      <View style={[styles.chartLegendColor, { backgroundColor: theme.colors.primary }]} />
+                      <Text variant="bodyMedium">{metricaProduccion === 'rollos' ? 'Rollos producidos' : 'Kg procesados'}</Text>
+                    </View>
+                  )
+              }
             </View>
           </CustomCard>
         )}
@@ -864,6 +1036,7 @@ export function DashboardScreen() {
       <FAB.Group
         open={fabOpen}
         visible
+        style={{ marginBottom: -40 }}
         safeAreaInsets={{ bottom: insets.bottom }}
         icon={fabOpen ? 'close' : 'plus'}
         actions={[
@@ -886,10 +1059,28 @@ const styles = StyleSheet.create({
   alertContent: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 16 },
   textContainer: { flex: 1 },
   chartHeader: { padding: 16, paddingBottom: 0 },
-  chartContainer: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16, alignItems: 'center', overflow: 'hidden' },
+  chartContainer: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, alignItems: 'center', overflow: 'hidden' },
   legendRow: { flexDirection: 'row', justifyContent: 'center', gap: 16, paddingBottom: 16 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
+  // Leyendas estilo Reportes: lista vertical con círculo grande y texto
+  chartLegendContainer: {
+    marginTop: 8,
+    marginBottom: 16,
+    paddingHorizontal: 20,
+    width: '100%',
+  },
+  chartLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  chartLegendColor: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: 10,
+  },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 16 },
   gridItem: { width: '40%', marginBottom: 12 },
   gridItemContent: { padding: 12, alignItems: 'center' },

@@ -8,7 +8,8 @@ export const generateProductionPDF = async (
   chartBase64Kg: string = '',
   isDetailed: boolean = false,
   bobinas: any[] = [],
-  produccionRaw: any[] = []
+  produccionRaw: any[] = [],
+  rendimientoProveedores: any[] = []
 ) => {
   try {
     let PrintModule: typeof import('expo-print');
@@ -145,6 +146,33 @@ export const generateProductionPDF = async (
             </div>
           </div>
 
+          ${rendimientoProveedores.length > 0 ? `
+          <div style="margin-top: 30px;"></div>
+          <h2 style="color: #1e3a8a; font-size: 18px;">Rendimiento por Proveedor (Materia Prima)</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Proveedor</th>
+                <th>Materia Prima Bruta</th>
+                <th>Desperdicio Total</th>
+                <th>Papel Útil</th>
+                <th>Eficiencia</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rendimientoProveedores.map(rp => `
+              <tr>
+                <td><strong>${rp.proveedor}</strong></td>
+                <td>${rp.bruto.toFixed(2)} kg</td>
+                <td style="color: #dc2626;">${rp.desperdicio.toFixed(2)} kg</td>
+                <td style="color: #16a34a;">${rp.util.toFixed(2)} kg</td>
+                <td style="font-weight: bold; color: ${rp.eficiencia >= 95 ? '#16a34a' : rp.eficiencia >= 90 ? '#f59e0b' : '#dc2626'};">${rp.eficiencia.toFixed(1)}%</td>
+              </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          ` : ''}
+
           ${isDetailed && bobinas.length > 0 ? `
             <div class="page-break"></div>
             <h2 style="color: #1e3a8a; font-size: 18px;">Desglose Detallado de Bobinas</h2>
@@ -168,9 +196,9 @@ export const generateProductionPDF = async (
                   const util = bruto - muerto - core;
                   return `
                   <tr>
-                    <td>#${b.id ? b.id.split('-')[0].substring(0, 4).toUpperCase() : '---'}</td>
+                    <td>#${b.id ? b.id.split('-')[0].substring(0, 4).toUpperCase() : '---'}<br/><small style="color: #6b7280;">Papel: ${b.tipo_papel || 'S/N'}</small></td>
                     <td>${b.fecha_llegada ? new Date(b.fecha_llegada).toLocaleDateString('es-VE') : 'N/A'}</td>
-                    <td>${b.fecha_gasto ? new Date(b.fecha_gasto).toLocaleDateString('es-VE') : '---'}</td>
+                    <td>${b.fecha_gasto ? new Date(b.fecha_gasto).toLocaleDateString('es-VE') : '---'}<br/><small style="color: #6b7280;">Prov: ${b.proveedor || 'S/N'}</small></td>
                     <td>${bruto.toFixed(2)}</td>
                     <td style="color: #dc2626;">${muerto.toFixed(2)}</td>
                     <td style="color: #dc2626;">${core.toFixed(2)}</td>
@@ -199,7 +227,7 @@ export const generateProductionPDF = async (
                   return `
                   <tr>
                     <td>${p.fecha ? new Date(p.fecha).toLocaleDateString('es-VE') : 'N/A'}</td>
-                    <td>#${p.id_bobina ? p.id_bobina.split('-')[0].substring(0, 4).toUpperCase() : '---'}</td>
+                    <td>#${p.id_bobina ? p.id_bobina.split('-')[0].substring(0, 4).toUpperCase() : '---'}<br/><small style="color: #6b7280;">Prov: ${p.proveedor || 'S/N'}</small></td>
                     <td>${p.presentacion || 'Desconocida'}</td>
                     <td>${p.total_rollos || 0}</td>
                     <td>${(p.total_kg || 0).toFixed(2)}</td>
@@ -242,11 +270,12 @@ export const generateProductionPDF = async (
 
 export const generateFinancePDF = async (
   filtroTiempoLabel: string, 
-  metricasFinanzas: { ventas: number, cobranzas: number, cuentasPorCobrar: number },
+  metricasFinanzas: { ventas: number, cobranzas: number, cuentasPorCobrar: number, inversion: number, roi: number },
   chartBase64: string = '',
   isDetailed: boolean = false,
   pedidosFin: any[] = [],
-  abonosFin: any[] = []
+  abonosFin: any[] = [],
+  movimientosFin: any[] = []
 ) => {
   try {
     let PrintModule: typeof import('expo-print');
@@ -329,9 +358,14 @@ export const generateFinancePDF = async (
                 <span class="stat-val" style="color: #16a34a;">$${metricasFinanzas.cobranzas.toFixed(2)} USD</span>
               </div>
               
+              <div class="stat-row">
+                <span class="stat-label">Inversión (Egresos Totales):</span>
+                <span class="stat-val" style="color: #6366f1;">$${metricasFinanzas.inversion.toFixed(2)} USD</span>
+              </div>
+
               <div class="stat-row" style="margin-top: 10px; border-top: 2px solid #e5e7eb;">
-                <span class="stat-label">Cuentas por Cobrar (Deuda):</span>
-                <span class="stat-val highlight" style="color: #dc2626;">$${Math.max(0, metricasFinanzas.cuentasPorCobrar).toFixed(2)} USD</span>
+                <span class="stat-label">Retorno de Inversión (ROI):</span>
+                <span class="stat-val highlight" style="color: ${metricasFinanzas.roi >= 0 ? '#16a34a' : '#dc2626'};">${metricasFinanzas.roi.toFixed(1)}%</span>
               </div>
             </div>
 
@@ -347,6 +381,9 @@ export const generateFinancePDF = async (
               <strong>💡 Resumen:</strong><br/>
               La deuda por cobrar representa un <strong>${metricasFinanzas.ventas > 0 ? ((Math.max(0, metricasFinanzas.cuentasPorCobrar) / metricasFinanzas.ventas) * 100).toFixed(1) : '0.0'}%</strong> de la facturación total del período. 
               ${Math.max(0, metricasFinanzas.cuentasPorCobrar) > metricasFinanzas.cobranzas ? 'Existe un alto volumen de deuda pendiente; se recomienda priorizar la gestión de cobranza.' : 'El flujo de caja se mantiene saludable respecto a la facturación emitida.'}
+              <br/><br/>
+              La rentabilidad del negocio para este intervalo de tiempo (ROI) es del <strong>${metricasFinanzas.roi.toFixed(1)}%</strong>, tras haberse registrado una inversión / gastos por un total de <strong>$${metricasFinanzas.inversion.toFixed(2)} USD</strong>. 
+              ${metricasFinanzas.roi >= 0 ? 'Esto indica un retorno neto positivo sobre los costos operativos y de materia prima.' : 'Esto indica que el volumen de egresos superó a los ingresos en este período particular.'}
             </div>
           </div>
 
@@ -370,6 +407,34 @@ export const generateFinancePDF = async (
                     <td>${p.razon_social ? p.razon_social : 'Consumidor Final'}</td>
                     <td>$${(p.monto_total || 0).toFixed(2)}</td>
                     <td style="color: ${p.estado_pago === 'pagado' ? '#16a34a' : '#dc2626'}">${p.estado_pago ? p.estado_pago.toUpperCase() : 'PENDIENTE'}</td>
+                  </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          ` : ''}
+
+          ${isDetailed && movimientosFin.filter(m => m.tipo !== 'ingreso').length > 0 ? `
+            <div style="margin-top: 30px;"></div>
+            <h2 style="color: #1e3a8a; font-size: 18px;">Desglose de Egresos e Inversión (Costos del Período)</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Categoría</th>
+                  <th>Descripción</th>
+                  <th>Monto Invertido (USD)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${movimientosFin.filter(m => m.tipo !== 'ingreso').map(m => {
+                  const montoUsd = m.moneda === 'USD' ? m.monto : (m.monto / (m.tasa_cambio || 1));
+                  return `
+                  <tr>
+                    <td>${m.fecha ? new Date(m.fecha).toLocaleDateString('es-VE') : 'N/A'}</td>
+                    <td style="text-transform: capitalize;">${m.categoria || 'Otros'}</td>
+                    <td>${m.descripcion || 'Sin detalle'}</td>
+                    <td style="color: #dc2626; font-weight: bold;">$${montoUsd.toFixed(2)}</td>
                   </tr>
                   `;
                 }).join('')}

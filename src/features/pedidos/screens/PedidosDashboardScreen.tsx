@@ -36,6 +36,8 @@ interface AbonoTotalRow {
 
 interface DetallePedidoConNombresRow {
   id_pedido: string;
+  id_producto: string | null;
+  id_producto_reventa: string | null;
   nombre_item: string;
   nombre_tipo_papel: string | null;
   rollos_por_paquete: number | null;
@@ -140,7 +142,9 @@ export function PedidosDashboardScreen() {
   // Detalles de pedidos logística
   const { data: detallesTodos = [] } = useQuery<DetallePedidoConNombresRow>(`
     SELECT dp.id_pedido,
-      COALESCE(pp.nombre, 'Pote ' || ip.capacidad) as nombre_item,
+      dp.id_producto,
+      dp.id_producto_reventa,
+      COALESCE(pp.nombre, pr.nombre_producto) as nombre_item,
       tp.nombre as nombre_tipo_papel,
       pp.rollos_por_paquete,
       pp.tiempo_x_paquete_min,
@@ -149,7 +153,7 @@ export function PedidosDashboardScreen() {
       dp.precio_unitario
     FROM detalles_pedido dp
     LEFT JOIN productos_presentacion pp ON pp.id = dp.id_producto
-    LEFT JOIN inventario_potes ip ON ip.id = dp.id_pote
+    LEFT JOIN productos_reventa pr ON pr.id = dp.id_producto_reventa
     LEFT JOIN tipos_papel tp ON tp.id = dp.id_tipo_papel
   `);
 
@@ -193,6 +197,73 @@ export function PedidosDashboardScreen() {
       Toast.show({ type: 'success', text1: 'Estado actualizado', text2: estadoFisicoLabel(siguiente) });
     } catch {
       Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo actualizar el pedido.' });
+    }
+  };
+
+  // --- Extraer de Inventario ---
+  const handleExtraerInventario = async (pedido: PedidoLogisticaRow, detalles: DetallePedidoConNombresRow[]) => {
+    try {
+      const faltantes = detalles.filter(d => (d.cantidad_producida || 0) < d.cantidad_solicitada);
+      if (faltantes.length === 0) {
+        Toast.show({ type: 'info', text1: 'Surtido completo', text2: 'Este pedido ya está completamente surtido.' });
+        return;
+      }
+
+      let extraidos = 0;
+      const now = new Date().toISOString();
+
+      await powerSync.writeTransaction(async (tx) => {
+        for (const detalle of faltantes) {
+          const cantidadFaltante = detalle.cantidad_solicitada - (detalle.cantidad_producida || 0);
+          if (cantidadFaltante <= 0) continue;
+
+          if (detalle.id_producto) {
+            // Es papel
+            const { rows } = await tx.execute('SELECT stock_unidades_sueltas FROM productos_presentacion WHERE id = ?', [detalle.id_producto]);
+            if (!rows || rows.length === 0) continue;
+            const stockActual = rows.item(0).stock_unidades_sueltas || 0;
+            const cantidadExtraer = Math.min(stockActual, cantidadFaltante);
+
+            if (cantidadExtraer > 0) {
+              await tx.execute('UPDATE productos_presentacion SET stock_unidades_sueltas = stock_unidades_sueltas - ? WHERE id = ?', [cantidadExtraer, detalle.id_producto]);
+              await tx.execute('UPDATE detalles_pedido SET cantidad_producida = COALESCE(cantidad_producida, 0) + ? WHERE id_pedido = ? AND id_producto = ?', [cantidadExtraer, pedido.id, detalle.id_producto]);
+              extraidos += cantidadExtraer;
+            }
+          } else if (detalle.id_producto_reventa) {
+            // Es pote / reventa
+            const { rows } = await tx.execute('SELECT stock_unidades FROM productos_reventa WHERE id = ?', [detalle.id_producto_reventa]);
+            if (!rows || rows.length === 0) continue;
+            const stockActual = rows.item(0).stock_unidades || 0;
+            const cantidadExtraer = Math.min(stockActual, cantidadFaltante);
+
+            if (cantidadExtraer > 0) {
+              await tx.execute('UPDATE productos_reventa SET stock_unidades = stock_unidades - ? WHERE id = ?', [cantidadExtraer, detalle.id_producto_reventa]);
+              await tx.execute('UPDATE detalles_pedido SET cantidad_producida = COALESCE(cantidad_producida, 0) + ? WHERE id_pedido = ? AND id_producto_reventa = ?', [cantidadExtraer, pedido.id, detalle.id_producto_reventa]);
+              
+              await tx.execute(
+                `INSERT INTO historial_productos (id, id_producto, cantidad, tipo, origen, referencia_id, entidad_relacionada, fecha)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [uuidv4(), detalle.id_producto_reventa, cantidadExtraer, 'salida', 'venta_pedido', pedido.id, pedido.razon_social, now]
+              );
+              extraidos += cantidadExtraer;
+            }
+          }
+        }
+
+        const { rows: rowsFaltantes } = await tx.execute(`SELECT COUNT(*) as cuenta FROM detalles_pedido WHERE id_pedido = ? AND COALESCE(cantidad_producida, 0) < cantidad_solicitada`, [pedido.id]);
+        if (rowsFaltantes && rowsFaltantes.length > 0 && rowsFaltantes.item(0).cuenta === 0) {
+          await tx.execute(`UPDATE pedidos SET estado = 'listo' WHERE id = ?`, [pedido.id]);
+          Toast.show({ type: 'success', text1: 'Pedido Surtido', text2: 'Se surtió completamente y pasó a Listo.' });
+        } else if (extraidos > 0) {
+          await tx.execute(`UPDATE pedidos SET estado = 'en_produccion' WHERE id = ? AND estado = 'pendiente'`, [pedido.id]);
+          Toast.show({ type: 'success', text1: 'Asignación parcial', text2: `Se asignaron ${extraidos} unidades faltantes desde el inventario.` });
+        } else {
+          Toast.show({ type: 'info', text1: 'Sin stock', text2: 'No hay stock en inventario para surtir lo faltante.' });
+        }
+      });
+    } catch (error) {
+      console.error('Error extrayendo inventario:', error);
+      Toast.show({ type: 'error', text1: 'Error', text2: 'Hubo un problema al extraer del inventario.' });
     }
   };
 
@@ -446,6 +517,15 @@ export function PedidosDashboardScreen() {
                           ${pedido.monto_total?.toFixed(2)} USD
                         </Text>
                         <View style={{ flexDirection: 'row', gap: 8 }}>
+                          {(pedido.estado === 'pendiente' || pedido.estado === 'en_produccion') && (
+                            <IconButton
+                              icon="package-down"
+                              mode="contained-tonal"
+                              size={20}
+                              style={{ margin: 0 }}
+                              onPress={() => handleExtraerInventario(pedido, detalles)}
+                            />
+                          )}
                           {pedido.estado === 'pendiente' && (
                             <Button
                               mode="contained-tonal"

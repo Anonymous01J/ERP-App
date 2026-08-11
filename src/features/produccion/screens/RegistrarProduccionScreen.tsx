@@ -174,7 +174,9 @@ export function RegistrarProduccionScreen() {
     if (!bobinaSeleccionada || totalRollos === 0) return;
     setSaving(true);
     try {
-      const now = new Date().toISOString();
+      const d = new Date();
+      const localDate = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+      const now = localDate; // Guardar fecha local YYYY-MM-DD (no ISO UTC)
       let totalKgConsumidos = 0;
 
       await powerSync.writeTransaction(async (tx) => {
@@ -291,9 +293,10 @@ export function RegistrarProduccionScreen() {
                     style={styles.menuAnchor}
                     icon="chevron-down"
                     contentStyle={{ flexDirection: 'row-reverse' }}
+                    labelStyle={{ fontSize: 13, flexShrink: 1, textAlign: 'center' }}
                   >
                     {bobinaSeleccionada
-                      ? `Tipo ${bobinaSeleccionada.tipo_papel_nombre ?? '?'} (#${bobinaSeleccionada.id.split('-')[0].substring(0, 4).toUpperCase()}) - ${(bobinaSeleccionada.peso_actual_kg ?? bobinaSeleccionada.peso_inicial_kg).toFixed(1)}kg`
+                      ? `${bobinaSeleccionada.tipo_papel_nombre ?? '?'} • ${(bobinaSeleccionada.peso_actual_kg ?? bobinaSeleccionada.peso_inicial_kg).toFixed(1)}kg (#${bobinaSeleccionada.id.split('-')[0].substring(0, 4).toUpperCase()})`
                       : 'Seleccionar Bobina'}
                   </Button>
                 }
@@ -302,7 +305,8 @@ export function RegistrarProduccionScreen() {
                   <Menu.Item
                     key={bob.id}
                     onPress={() => { setBobinaSeleccionada(bob); setMenuVisible(false); }}
-                    title={`Tipo ${bob.tipo_papel_nombre ?? '?'} (#${bob.id.split('-')[0].substring(0, 4).toUpperCase()}) - ${(bob.peso_actual_kg ?? bob.peso_inicial_kg).toFixed(1)}kg libres`}
+                    title={`${bob.tipo_papel_nombre ?? '?'} • ${(bob.peso_actual_kg ?? bob.peso_inicial_kg).toFixed(1)}kg libres (#${bob.id.split('-')[0].substring(0, 4).toUpperCase()})`}
+                    titleStyle={{ fontSize: 13 }}
                   />
                 ))}
                 {bobinas.length === 0 && <Menu.Item title="No hay bobinas activas" disabled />}

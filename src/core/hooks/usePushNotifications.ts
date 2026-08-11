@@ -6,6 +6,7 @@ import Constants from 'expo-constants';
 import { supabase } from '../supabase/client';
 import { router } from 'expo-router';
 import * as Sentry from '@sentry/react-native';
+import { usePowerSync } from '@powersync/react';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -16,6 +17,7 @@ Notifications.setNotificationHandler({
 });
 
 export function usePushNotifications(userId?: string | null) {
+  const powerSync = usePowerSync();
   const [expoPushToken, setExpoPushToken] = useState('');
   const [notification, setNotification] = useState<Notifications.Notification | undefined>(
     undefined
@@ -107,9 +109,22 @@ export function usePushNotifications(userId?: string | null) {
     );
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener(
-      (response) => {
+      async (response) => {
         console.log('[usePushNotifications] User interacted with notification:', response);
-        const data = response.notification.request.content.data;
+        const content = response.notification.request.content;
+        const data = content.data;
+        const title = content.title;
+        
+        try {
+          if (title) {
+            await powerSync.execute('UPDATE notificaciones_historial SET leido = 1 WHERE titulo = ? AND leido = 0', [title]);
+          } else {
+            await powerSync.execute('UPDATE notificaciones_historial SET leido = 1 WHERE leido = 0');
+          }
+        } catch (e) {
+          console.error('[usePushNotifications] Error marking as read:', e);
+        }
+
         if (data && data.ruta) {
           try {
             router.push(data.ruta as any);

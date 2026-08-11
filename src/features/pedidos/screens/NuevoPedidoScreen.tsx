@@ -1,5 +1,5 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { globalStyles } from '@core/theme/globalStyles';
 import {
   View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform,
@@ -42,11 +42,11 @@ export function NuevoPedidoScreen() {
   const [isSaving, setIsSaving] = useState(false);
 
   // --- Estado del constructor de items ---
-  const [tipoItem, setTipoItem] = useState<'papel' | 'pote'>('papel');
+  const [tipoItem, setTipoItem] = useState<'papel' | 'producto_reventa'>('papel');
   const [idProductoSel, setIdProductoSel] = useState<string | null>(null);
   const [menuProductoVisible, setMenuProductoVisible] = useState(false);
-  const [idPoteSel, setIdPoteSel] = useState<string | null>(null);
-  const [menuPoteVisible, setMenuPoteVisible] = useState(false);
+  const [idProductoReventaSel, setIdProductoReventaSel] = useState<string | null>(null);
+  const [menuProductoReventaVisible, setMenuProductoReventaVisible] = useState(false);
   const [idTipoPapelSel, setIdTipoPapelSel] = useState<string | null>(null);
   const [menuTipoPapelVisible, setMenuTipoPapelVisible] = useState(false);
   const [cantidadItem, setCantidadItem] = useState(0);
@@ -60,12 +60,26 @@ export function NuevoPedidoScreen() {
     'SELECT id, razon_social FROM clientes WHERE estado = ? ORDER BY razon_social ASC',
     ['activo']
   );
+
+  const prevClientesIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    // Autoseleccionar cliente recién creado (si detectamos un ID nuevo en la lista)
+    if (clientes.length > 0 && prevClientesIdsRef.current.size > 0) {
+      const newClients = clientes.filter(c => !prevClientesIdsRef.current.has(c.id));
+      if (newClients.length === 1) {
+        setIdCliente(newClients[0].id);
+        Toast.show({ type: 'success', text1: 'Cliente seleccionado', text2: `${newClients[0].razon_social} ha sido seleccionado.` });
+      }
+    }
+    prevClientesIdsRef.current = new Set(clientes.map(c => c.id));
+  }, [clientes]);
   const { data: productos = [] } = useQuery(
     'SELECT id, nombre, peso_nominal_g, rollos_por_paquete, precio_USD FROM productos_presentacion WHERE estado = ? ORDER BY peso_nominal_g ASC',
     ['activo']
   );
-  const { data: potes = [] } = useQuery(
-    'SELECT id, capacidad, precio_venta_usd FROM inventario_potes WHERE estado = ? ORDER BY capacidad ASC',
+  const { data: productosReventa = [] } = useQuery(
+    'SELECT id, nombre_producto, precio_venta_usd FROM productos_reventa WHERE estado = ? ORDER BY nombre_producto ASC',
     ['activo']
   );
   const { data: tiposPapel = [] } = useQuery(
@@ -104,7 +118,7 @@ export function NuevoPedidoScreen() {
   // --- Helpers ---
   const clienteSeleccionado = (clientes as any[]).find(c => c.id === idCliente);
   const productoSel = (productos as any[]).find(p => p.id === idProductoSel);
-  const poteSel = (potes as any[]).find(p => p.id === idPoteSel);
+  const productoReventaSel = (productosReventa as any[]).find(p => p.id === idProductoReventaSel);
   const tipoPapelSel = (tiposPapel as any[]).find(t => t.id === idTipoPapelSel);
 
   const handleAgregarItem = () => {
@@ -125,19 +139,19 @@ export function NuevoPedidoScreen() {
       Toast.show({ type: 'error', text1: 'Tipo de papel requerido', text2: 'Selecciona el tipo de papel (A, B, etc.).' });
       return;
     }
-    if (tipoItem === 'pote' && !idPoteSel) {
-      Toast.show({ type: 'error', text1: 'Pote requerido', text2: 'Selecciona un tipo de pote.' });
+    if (tipoItem === 'producto_reventa' && !idProductoReventaSel) {
+      Toast.show({ type: 'error', text1: 'Producto requerido', text2: 'Selecciona un producto de reventa.' });
       return;
     }
 
     const nombre = tipoItem === 'papel'
       ? `${productoSel?.nombre || 'Presentación'} (${tipoPapelSel?.nombre ?? 'Tipo ?'})`
-      : `Pote ${poteSel?.capacidad || ''}`;
+      : `${productoReventaSel?.nombre_producto || ''}`;
 
     setItems(prev => [...prev, {
       key: uuidv4(),
       tipo: tipoItem,
-      id_referencia: tipoItem === 'papel' ? idProductoSel! : idPoteSel!,
+      id_referencia: tipoItem === 'papel' ? idProductoSel! : idProductoReventaSel!,
       id_tipo_papel: tipoItem === 'papel' ? idTipoPapelSel : null,
       nombre_display: nombre,
       cantidad: cantidadItem,
@@ -190,16 +204,33 @@ export function NuevoPedidoScreen() {
 
       for (const item of items) {
         await powerSync.execute(
-          `INSERT INTO detalles_pedido (id, id_pedido, id_producto, id_pote, id_tipo_papel, cantidad_solicitada, precio_unitario)
+          `INSERT INTO detalles_pedido (id, id_pedido, id_producto, id_producto_reventa, id_tipo_papel, cantidad_solicitada, precio_unitario)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
             uuidv4(), newId,
             item.tipo === 'papel' ? item.id_referencia : null,
-            item.tipo === 'pote' ? item.id_referencia : null,
+            item.tipo === 'producto_reventa' ? item.id_referencia : null,
             item.id_tipo_papel,
             item.cantidad, item.precio_unitario,
           ]
         );
+
+        if (item.tipo === 'producto_reventa') {
+          await powerSync.execute(
+            `INSERT INTO historial_productos (id, id_producto, cantidad, tipo, origen, referencia_id, entidad_relacionada, fecha)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              uuidv4(), 
+              item.id_referencia, 
+              item.cantidad, 
+              'salida', 
+              'venta_pedido', 
+              newId, 
+              clienteSeleccionado?.razon_social || 'Cliente', 
+              now
+            ]
+          );
+        }
       }
 
       Toast.show({ type: 'success', text1: 'Pedido Registrado', text2: `Monto total: $${montoTotal.toFixed(2)} USD` });
@@ -313,14 +344,16 @@ export function NuevoPedidoScreen() {
               <SegmentedButtons
                 value={tipoItem}
                 onValueChange={v => {
-                  setTipoItem(v as 'papel' | 'pote');
+                  setTipoItem(v as 'papel' | 'producto_reventa');
                   setIdProductoSel(null);
-                  setIdPoteSel(null);
+                  setIdProductoReventaSel(null);
                   setIdTipoPapelSel(null);
+                  setCantidadItem(0);
+                  setPrecioItem('');
                 }}
                 buttons={[
                   { value: 'papel', label: 'Rollos de Papel', icon: 'package-variant' },
-                  { value: 'pote', label: 'Potes', icon: 'cup' },
+                  { value: 'producto_reventa', label: 'Otros', icon: 'shape-outline' },
                 ]}
                 style={{ marginBottom: 16 }}
               />
@@ -389,35 +422,35 @@ export function NuevoPedidoScreen() {
                   </Menu>
                 </>
               ) : (
-                /* Selector de Pote */
+                /* Selector de Producto de Reventa */
                 <Menu
-                  visible={menuPoteVisible}
-                  onDismiss={() => setMenuPoteVisible(false)}
+                  visible={menuProductoReventaVisible}
+                  onDismiss={() => setMenuProductoReventaVisible(false)}
                   anchor={
                     <Button
                       mode="outlined"
-                      onPress={() => setMenuPoteVisible(true)}
-                      icon="cup"
+                      onPress={() => setMenuProductoReventaVisible(true)}
+                      icon="shape-outline"
                       contentStyle={{ justifyContent: 'flex-start' }}
                       style={styles.menuBtn}
-                      textColor={poteSel ? theme.colors.primary : '#555'}
+                      textColor={productoReventaSel ? theme.colors.primary : '#555'}
                     >
-                      {poteSel?.capacidad ? `Pote ${poteSel.capacidad}` : 'Seleccionar Pote...'}
+                      {productoReventaSel?.nombre_producto ? `${productoReventaSel.nombre_producto}` : 'Seleccionar Producto...'}
                     </Button>
                   }
                 >
-                  {(potes as any[]).map(p => (
+                  {(productosReventa as any[]).map(p => (
                     <Menu.Item
                       key={p.id}
                       onPress={() => {
-                        setIdPoteSel(p.id);
+                        setIdProductoReventaSel(p.id);
                         setPrecioItem(p.precio_venta_usd ? formatCurrencyATM(Number(p.precio_venta_usd).toFixed(2)) : '');
-                        setMenuPoteVisible(false);
+                        setMenuProductoReventaVisible(false);
                       }}
-                      title={`Pote ${p.capacidad}`}
+                      title={`${p.nombre_producto}`}
                     />
                   ))}
-                  {potes.length === 0 && <Menu.Item title="No hay potes activos" disabled />}
+                  {productosReventa.length === 0 && <Menu.Item title="No hay productos activos" disabled />}
                 </Menu>
               )}
 
@@ -496,7 +529,7 @@ export function NuevoPedidoScreen() {
                     />
                   </View>
                 ))}
-                <Divider style={{ marginVertical: 12 }} />
+                <Divider style={{ marginBottom: 12 }} />
                 <View style={styles.rowBetween}>
                   <Text variant="bodyLarge" style={{ fontWeight: 'bold' }}>Total del Pedido</Text>
                   <Text variant="titleLarge" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
@@ -516,6 +549,68 @@ export function NuevoPedidoScreen() {
                 </View>
               </View>
             </CustomCard>
+          )}
+
+          {/* RESUMEN GLOBAL DE PEDIDO (TIPO CARGA DE MERCANCÍA) */}
+          {items.length > 0 && (
+            <View style={{ padding: 16, backgroundColor: '#f0fdf4', borderTopWidth: 1, borderColor: '#dcfce3', marginTop: 16 }}>
+              <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 8, color: '#166534' }}>
+                Resumen Global de Pedido
+              </Text>
+
+              {/* Desglose por Tipo de Papel (Solo para ítems de papel) */}
+              {(() => {
+                const itemsPapel = items.filter(i => i.tipo === 'papel');
+                if (itemsPapel.length === 0) return null;
+                
+                const desglose = itemsPapel.reduce((acc, item) => {
+                  const tipoPapelNombre = (tiposPapel as any[]).find(t => t.id === item.id_tipo_papel)?.nombre || 'Desconocido';
+                  const presentacion = (productos as any[]).find(p => p.id === item.id_referencia);
+                  const kilosPorPaquete = presentacion ? ((presentacion.peso_nominal_g * presentacion.rollos_por_paquete) / 1000) : 0;
+                  const kilosTotales = item.cantidad * kilosPorPaquete;
+                  
+                  if (!acc[tipoPapelNombre]) acc[tipoPapelNombre] = { paquetes: 0, kilos: 0 };
+                  acc[tipoPapelNombre].paquetes += item.cantidad;
+                  acc[tipoPapelNombre].kilos += kilosTotales;
+                  return acc;
+                }, {} as Record<string, { paquetes: number, kilos: number }>);
+
+                return (
+                  <View style={{ marginBottom: 12 }}>
+                    <Text style={{ color: '#15803d', fontWeight: '600', marginBottom: 4 }}>Producción Estimada:</Text>
+                    {Object.entries(desglose).map(([nombre, datos]) => (
+                      <Text key={nombre} style={{ color: '#166534', fontSize: 13, fontStyle: 'italic', marginBottom: 2 }}>
+                        • {datos.kilos.toFixed(1)} kg ({datos.paquetes} paquetes) - Papel {nombre}
+                      </Text>
+                    ))}
+                  </View>
+                );
+              })()}
+
+              {/* Desglose de Otros Productos */}
+              {(() => {
+                const itemsOtros = items.filter(i => i.tipo === 'producto_reventa');
+                if (itemsOtros.length === 0) return null;
+                
+                const desglose = itemsOtros.reduce((acc, item) => {
+                  const nombreLimpio = item.nombre_display;
+                  if (!acc[nombreLimpio]) acc[nombreLimpio] = 0;
+                  acc[nombreLimpio] += item.cantidad;
+                  return acc;
+                }, {} as Record<string, number>);
+
+                return (
+                  <View style={{ marginBottom: 12 }}>
+                    <Text style={{ color: '#15803d', fontWeight: '600', marginBottom: 4 }}>Otros Productos:</Text>
+                    {Object.entries(desglose).map(([nombre, cantidad]) => (
+                      <Text key={nombre} style={{ color: '#166534', fontSize: 13, fontStyle: 'italic', marginBottom: 2 }}>
+                        • {cantidad} un. - {nombre}
+                      </Text>
+                    ))}
+                  </View>
+                );
+              })()}
+            </View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>

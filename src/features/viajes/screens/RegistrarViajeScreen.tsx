@@ -18,13 +18,13 @@ export function RegistrarViajeScreen() {
   const powerSync = usePowerSync();
 
   const [tipoViaje, setTipoViaje] = useState('entrega');
-  const [idProveedor, setIdProveedor] = useState<string | null>(null);
-  const [menuProveedorVisible, setMenuProveedorVisible] = useState(false);
   const [notas, setNotas] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   // Pedidos seleccionados con orden: [{ id, razon_social, orden }]
   const [paradasSeleccionadas, setParadasSeleccionadas] = useState<{ id: string; label: string; orden: number }[]>([]);
+  // Compras seleccionadas con orden
+  const [comprasSeleccionadas, setComprasSeleccionadas] = useState<{ id: string; label: string; orden: number }[]>([]);
 
   // Queries de PowerSync
   const { data: proveedores = [] } = useQuery(
@@ -59,17 +59,33 @@ export function RegistrarViajeScreen() {
     }
   };
 
+  const handleToggleProveedor = (id: string, label: string) => {
+    const yaSeleccionado = comprasSeleccionadas.find(p => p.id === id);
+    if (yaSeleccionado) {
+      // Deseleccionar y reordenar
+      const nuevas = comprasSeleccionadas
+        .filter(p => p.id !== id)
+        .map((p, idx) => ({ ...p, orden: idx + 1 }));
+      setComprasSeleccionadas(nuevas);
+    } else {
+      setComprasSeleccionadas([
+        ...comprasSeleccionadas,
+        { id, label, orden: comprasSeleccionadas.length + 1 },
+      ]);
+    }
+  };
+
   const handleGuardar = async () => {
-    if (tipoViaje === 'compra' && !idProveedor) {
-      Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Debes seleccionar un proveedor de origen.' });
+    if (tipoViaje === 'compra' && comprasSeleccionadas.length === 0) {
+      Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Debes seleccionar al menos un proveedor de origen.' });
       return;
     }
-    if ((tipoViaje === 'entrega' || tipoViaje === 'mixto') && paradasSeleccionadas.length === 0) {
+    if (tipoViaje === 'entrega' && paradasSeleccionadas.length === 0) {
       Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Debes seleccionar al menos una parada/pedido.' });
       return;
     }
-    if (tipoViaje === 'mixto' && !idProveedor) {
-      Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Los viajes mixtos requieren un proveedor origen.' });
+    if (tipoViaje === 'mixto' && (comprasSeleccionadas.length === 0 || paradasSeleccionadas.length === 0)) {
+      Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Los viajes mixtos requieren al menos una compra y una entrega.' });
       return;
     }
 
@@ -79,10 +95,19 @@ export function RegistrarViajeScreen() {
       const now = new Date().toISOString();
 
       await powerSync.execute(
-        `INSERT INTO viajes (id, tipo_viaje, id_proveedor, notas, fecha_viaje_inicio, estado)
-         VALUES (?, ?, ?, ?, ?, 'en_progreso')`,
-        [newId, tipoViaje, tipoViaje !== 'entrega' ? idProveedor : null, notas.trim() || null, now]
+        `INSERT INTO viajes (id, tipo_viaje, notas, fecha_viaje_inicio, estado)
+         VALUES (?, ?, ?, ?, 'en_progreso')`,
+        [newId, tipoViaje, notas.trim() || null, now]
       );
+
+      // Insertar paradas de compra
+      for (const compra of comprasSeleccionadas) {
+        await powerSync.execute(
+          `INSERT INTO compras_viaje (id, id_viaje, id_proveedor, orden, estado)
+           VALUES (?, ?, ?, ?, 'pendiente')`,
+          [uuidv4(), newId, compra.id, compra.orden]
+        );
+      }
 
       // Insertar paradas de entrega
       for (const parada of paradasSeleccionadas) {
@@ -105,11 +130,9 @@ export function RegistrarViajeScreen() {
 
   const isBotonDeshabilitado =
     isSaving ||
-    (tipoViaje === 'compra' && !idProveedor) ||
-    ((tipoViaje === 'entrega' || tipoViaje === 'mixto') && paradasSeleccionadas.length === 0) ||
-    (tipoViaje === 'mixto' && !idProveedor);
-
-  const proveedorSeleccionado = proveedores.find((p: any) => p.id === idProveedor);
+    (tipoViaje === 'compra' && comprasSeleccionadas.length === 0) ||
+    (tipoViaje === 'entrega' && paradasSeleccionadas.length === 0) ||
+    (tipoViaje === 'mixto' && (comprasSeleccionadas.length === 0 || paradasSeleccionadas.length === 0));
 
   return (
     <View style={globalStyles.containerWhite}>
@@ -129,7 +152,7 @@ export function RegistrarViajeScreen() {
             onValueChange={(val) => {
               setTipoViaje(val);
               setParadasSeleccionadas([]);
-              setIdProveedor(null);
+              setComprasSeleccionadas([]);
             }}
             buttons={[
               { value: 'entrega', label: 'Entregas', icon: 'truck-delivery' },
@@ -191,34 +214,48 @@ export function RegistrarViajeScreen() {
           {/* Proveedor de Compra */}
           {(tipoViaje === 'compra' || tipoViaje === 'mixto') && (
             <View style={styles.section}>
-              <Text variant="titleMedium" style={styles.label}>Proveedor (Origen de Carga)</Text>
-              <Menu
-                visible={menuProveedorVisible}
-                onDismiss={() => setMenuProveedorVisible(false)}
-                anchor={
-                  <Button
-                    mode="outlined"
-                    onPress={() => setMenuProveedorVisible(true)}
-                    icon="domain"
-                    contentStyle={{ justifyContent: 'flex-start', paddingVertical: 8 }}
-                    style={{ backgroundColor: '#fff' }}
-                    textColor={proveedorSeleccionado ? theme.colors.primary : '#555'}
-                  >
-                    {proveedorSeleccionado ? (proveedorSeleccionado as any).nombre_empresa : 'Seleccionar Proveedor...'}
-                  </Button>
-                }
-              >
-                {proveedores.map((prov: any) => (
-                  <Menu.Item
-                    key={prov.id}
-                    onPress={() => { setIdProveedor(prov.id); setMenuProveedorVisible(false); }}
-                    title={prov.nombre_empresa}
-                  />
-                ))}
-                {proveedores.length === 0 && (
-                  <Menu.Item title="No hay proveedores activos" disabled />
-                )}
-              </Menu>
+              <Text variant="titleMedium" style={styles.label}>
+                Paradas de Compra ({comprasSeleccionadas.length} seleccionadas)
+              </Text>
+
+              {/* Proveedores seleccionados con orden */}
+              {comprasSeleccionadas.length > 0 && (
+                <View style={styles.paradasOrden}>
+                  {comprasSeleccionadas.map((p) => (
+                    <View key={p.id} style={styles.paradaRow}>
+                      <View style={[styles.ordenBadge, { backgroundColor: theme.colors.primary }]}>
+                        <Text style={styles.ordenText}>{p.orden}</Text>
+                      </View>
+                      <Text variant="bodyMedium" style={{ flex: 1, marginLeft: 8 }}>{p.label}</Text>
+                      <TouchableOpacity onPress={() => handleToggleProveedor(p.id, p.label)}>
+                        <MaterialCommunityIcons name="close-circle" size={20} color={theme.colors.error} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  <Divider style={{ marginVertical: 12 }} />
+                </View>
+              )}
+
+              {/* Lista de proveedores disponibles */}
+              {proveedores.length === 0 ? (
+                <Text variant="bodySmall" style={styles.emptyText}>No hay proveedores activos.</Text>
+              ) : (
+                proveedores.map((prov: any) => {
+                  const seleccionado = comprasSeleccionadas.find(p => p.id === prov.id);
+                  return (
+                    <Chip
+                      key={prov.id}
+                      selected={!!seleccionado}
+                      onPress={() => handleToggleProveedor(prov.id, prov.nombre_empresa)}
+                      icon={seleccionado ? 'check-circle' : 'domain'}
+                      style={[styles.chip, seleccionado && { backgroundColor: theme.colors.primaryContainer }]}
+                      showSelectedCheck={false}
+                    >
+                      {prov.nombre_empresa}
+                    </Chip>
+                  );
+                })
+              )}
             </View>
           )}
 

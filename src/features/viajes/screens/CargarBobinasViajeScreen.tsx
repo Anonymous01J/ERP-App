@@ -11,17 +11,24 @@ import { v4 as uuidv4 } from 'uuid';
 import { StatusBar } from 'expo-status-bar';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Menu } from 'react-native-paper';
+import { CurrencyInput } from '@components/ui/CurrencyInput';
+import { parseCurrency } from '@core/utils/currency';
+import { getTasaDolarBCV } from '@core/api/dolar';
 
 interface FilaBobina {
   key: string;
   idTipoPapel: string | null;
   pesoKg: string;
+  costo: string;
+  moneda: 'USD' | 'VES';
 }
 
-interface FilaPote {
-  id: string;
-  nombre: string;
+interface FilaProducto {
+  key: string;
+  idProducto: string | null;
   cantidadRecibida: string;
+  costo: string;
+  moneda: 'USD' | 'VES';
 }
 
 export function CargarBobinasViajeScreen() {
@@ -31,62 +38,88 @@ export function CargarBobinasViajeScreen() {
   const powerSync = usePowerSync();
   const params = useLocalSearchParams();
   const idViaje = params.id as string;
+  const proveedorId = params.proveedorId as string;
+  const paradaCompraId = params.paradaCompraId as string;
 
   const [seccionActiva, setSeccionActiva] = useState('bobinas');
 
   // --- Bobinas ---
   const { data: tiposPapel = [] } = useQuery('SELECT id, nombre FROM tipos_papel WHERE estado = ? ORDER BY nombre ASC', ['activo']);
   const [filas, setFilas] = useState<FilaBobina[]>([
-    { key: uuidv4(), idTipoPapel: null, pesoKg: '' },
+    { key: uuidv4(), idTipoPapel: null, pesoKg: '', costo: '', moneda: 'USD' },
   ]);
   const [menusVisibles, setMenusVisibles] = useState<Record<string, boolean>>({});
+  const [tasaActual, setTasaActual] = useState(1);
 
-  // --- Potes ---
-  const { data: inventarioPotes = [] } = useQuery('SELECT id, capacidad FROM inventario_potes ORDER BY capacidad ASC');
-  const [filasPotes, setFilasPotes] = useState<FilaPote[]>([]);
+  React.useEffect(() => {
+    getTasaDolarBCV().then(tasa => setTasaActual(tasa)).catch(console.error);
+  }, []);
+
+  // --- Productos ---
+  const { data: productosReventa = [] } = useQuery("SELECT id, nombre_producto, descripcion FROM productos_reventa WHERE estado = 'activo' ORDER BY nombre_producto ASC");
+  const [filasPotes, setFilasPotes] = useState<FilaProducto[]>([
+    { key: uuidv4(), idProducto: null, cantidadRecibida: '', costo: '', moneda: 'USD' },
+  ]);
+  const [menusProductos, setMenusProductos] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
 
-  // Inicializar filas de potes al cargar (una fila por cada tipo)
-  React.useEffect(() => {
-    if ((inventarioPotes as any[]).length > 0 && filasPotes.length === 0) {
-      setFilasPotes(
-        (inventarioPotes as any[]).map((p: any) => ({
-          id: p.id,
-          nombre: `Pote de ${p.capacidad || 'N/A'}`,
-          cantidadRecibida: '',
-        }))
-      );
-    }
-  }, [inventarioPotes]);
-
   // --- Handlers Bobinas ---
-  const handleAgregarFila = () => setFilas(prev => [...prev, { key: uuidv4(), idTipoPapel: null, pesoKg: '' }]);
+  const handleAgregarFila = () => setFilas(prev => [...prev, { key: uuidv4(), idTipoPapel: null, pesoKg: '', costo: '', moneda: 'USD' }]);
   const handleEliminarFila = (key: string) => {
     if (filas.length === 1) return;
     setFilas(prev => prev.filter(f => f.key !== key));
   };
-  const handleCambiarTipo = (key: string, idTipo: string) => {
-    setFilas(prev => prev.map(f => f.key === key ? { ...f, idTipoPapel: idTipo } : f));
+  const handleCambiarTipo = (key: string, idTipoPapel: string) => {
+    setFilas(prev => prev.map(f => f.key === key ? { ...f, idTipoPapel } : f));
   };
   const handleCambiarPeso = (key: string, valor: string) => {
     setFilas(prev => prev.map(f => f.key === key ? { ...f, pesoKg: valor } : f));
   };
+  const handleCambiarCosto = (key: string, valor: string) => {
+    setFilas(prev => prev.map(f => f.key === key ? { ...f, costo: valor } : f));
+  };
+  const handleCambiarMoneda = (key: string, valor: 'USD'|'VES') => {
+    setFilas(prev => prev.map(f => f.key === key ? { ...f, moneda: valor } : f));
+  };
 
-  // --- Handler Potes ---
-  const handleCambiarCantidadPote = (id: string, valor: string) => {
-    setFilasPotes(prev => prev.map(p => p.id === id ? { ...p, cantidadRecibida: valor } : p));
+  // --- Handlers Potes ---
+  const handleAgregarFilaPote = () => setFilasPotes(prev => [...prev, { key: uuidv4(), idProducto: null, cantidadRecibida: '', costo: '', moneda: 'USD' }]);
+  const handleEliminarFilaPote = (key: string) => {
+    if (filasPotes.length === 1) return;
+    setFilasPotes(prev => prev.filter(p => p.key !== key));
+  };
+  const handleCambiarProducto = (key: string, idProducto: string) => {
+    setFilasPotes(prev => prev.map(p => p.key === key ? { ...p, idProducto } : p));
+  };
+  const handleCambiarCantidadPote = (key: string, valor: string) => {
+    setFilasPotes(prev => prev.map(p => p.key === key ? { ...p, cantidadRecibida: valor } : p));
+  };
+  const handleCambiarCostoPote = (key: string, valor: string) => {
+    setFilasPotes(prev => prev.map(p => p.key === key ? { ...p, costo: valor } : p));
+  };
+  const handleCambiarMonedaPote = (key: string, valor: 'USD'|'VES') => {
+    setFilasPotes(prev => prev.map(p => p.key === key ? { ...p, moneda: valor } : p));
   };
 
   const handleConfirmarCarga = async () => {
-    const filasValidas = filas.filter(f => f.pesoKg.trim() !== '' && parseFloat(f.pesoKg) > 0);
-    const potesConCantidad = filasPotes.filter(p => p.cantidadRecibida.trim() !== '' && parseInt(p.cantidadRecibida) > 0);
+    // Filtrar filas que el usuario intentó llenar (tienen algún dato)
+    const filasIntentadas = filas.filter(f => f.idTipoPapel || f.pesoKg.trim() !== '' || f.costo.trim() !== '');
+    const potesIntentados = filasPotes.filter(p => p.idProducto || p.cantidadRecibida.trim() !== '' || p.costo.trim() !== '');
+
+    const filasValidas = filasIntentadas.filter(f => f.idTipoPapel && f.pesoKg.trim() !== '' && parseFloat(f.pesoKg) > 0);
+    const potesConCantidad = potesIntentados.filter(p => p.idProducto && p.cantidadRecibida.trim() !== '' && parseInt(p.cantidadRecibida) > 0);
 
     if (filasValidas.length === 0 && potesConCantidad.length === 0) {
-      Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Ingresa al menos una bobina o pote recibido.' });
+      Toast.show({ type: 'error', text1: 'Datos incompletos', text2: 'Ingresa al menos una bobina o producto válido.' });
       return;
     }
-    if (filasValidas.some(f => !f.idTipoPapel)) {
-      Toast.show({ type: 'error', text1: 'Tipos incompletos', text2: 'Selecciona el tipo de papel para cada bobina.' });
+
+    if (filasIntentadas.length !== filasValidas.length) {
+      Toast.show({ type: 'error', text1: 'Bobinas Incompletas', text2: 'Selecciona el tipo de papel y un peso mayor a 0 para cada bobina.' });
+      return;
+    }
+    if (potesIntentados.length !== potesConCantidad.length) {
+      Toast.show({ type: 'error', text1: 'Productos Incompletos', text2: 'Selecciona el producto y una cantidad mayor a 0 para cada fila.' });
       return;
     }
 
@@ -94,33 +127,103 @@ export function CargarBobinasViajeScreen() {
     try {
       const now = new Date().toISOString();
 
-      // Guardar bobinas
+      // Guardar bobinas y generar movimientos
       for (const fila of filasValidas) {
         const pesoKg = parseFloat(fila.pesoKg);
+        const costoMonto = fila.costo ? parseCurrency(fila.costo) : 0;
+        
+        let costoUSD = 0;
+        if (costoMonto > 0) {
+           costoUSD = fila.moneda === 'USD' ? costoMonto : costoMonto / tasaActual;
+        }
+
+        const idBobina = uuidv4();
         await powerSync.execute(
-          `INSERT INTO bobinas_grandes (id, id_viaje_compra, peso_inicial_kg, id_tipo_papel, peso_actual_kg, fecha_llegada, estado, peso_muerto_kg, merma_core_kg, costo_bobina)
-           VALUES (?, ?, ?, ?, ?, ?, 'disponible', 0, 0, 0)`,
-          [uuidv4(), idViaje, pesoKg, fila.idTipoPapel, pesoKg, now]
+          `INSERT INTO bobinas_grandes (id, id_viaje_compra, id_proveedor, peso_inicial_kg, id_tipo_papel, peso_actual_kg, fecha_llegada, estado, peso_muerto_kg, merma_core_kg, costo_bobina)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'disponible', 0, 0, ?)`,
+          [idBobina, idViaje, proveedorId, pesoKg, fila.idTipoPapel, pesoKg, now, costoUSD]
         );
+
+        if (costoMonto > 0) {
+           const tipoPapel = (tiposPapel as any[]).find(t => t.id === fila.idTipoPapel)?.nombre || 'Papel';
+           await powerSync.execute(
+             `INSERT INTO movimientos (id, descripcion, monto, moneda, tasa_cambio, categoria, fecha, id_viaje, tipo)
+              VALUES (?, ?, ?, ?, ?, 'suministros', ?, ?, 'egreso')`,
+             [uuidv4(), `Compra de Bobina (${pesoKg}kg) - ${tipoPapel}`, costoMonto, fila.moneda, tasaActual, now, idViaje]
+           );
+        }
       }
 
-      // Actualizar stock de potes
+      // Obtener nombre del proveedor para el historial
+      let nombreProveedor = 'Proveedor';
+      if (proveedorId) {
+        const provResult = await powerSync.getAll('SELECT nombre_empresa FROM proveedores WHERE id = ?', [proveedorId]);
+        if (provResult.length > 0) nombreProveedor = provResult[0].nombre_empresa;
+      }
+
       for (const pote of potesConCantidad) {
         const cantidad = parseInt(pote.cantidadRecibida);
+        const costoMonto = pote.costo ? parseCurrency(pote.costo) : 0;
+        
+        let unitPriceUsd = 0;
+        if (costoMonto > 0 && cantidad > 0) {
+          const costoTotalUsd = pote.moneda === 'USD' ? costoMonto : (costoMonto / tasaActual);
+          unitPriceUsd = costoTotalUsd / cantidad;
+        }
+
+        if (unitPriceUsd > 0) {
+          await powerSync.execute(
+            `UPDATE productos_reventa SET stock_unidades = stock_unidades + ?, precio_compra_usd = ? WHERE id = ?`,
+            [cantidad, unitPriceUsd, pote.idProducto]
+          );
+        } else {
+          await powerSync.execute(
+            `UPDATE productos_reventa SET stock_unidades = stock_unidades + ? WHERE id = ?`,
+            [cantidad, pote.idProducto]
+          );
+        }
+
         await powerSync.execute(
-          `UPDATE inventario_potes SET stock_unidades = stock_unidades + ? WHERE id = ?`,
-          [cantidad, pote.id]
+          `INSERT INTO historial_productos (id, id_producto, cantidad, tipo, origen, referencia_id, entidad_relacionada, fecha)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            uuidv4(),
+            pote.idProducto,
+            cantidad,
+            'entrada',
+            'viaje_compra',
+            idViaje,
+            nombreProveedor,
+            now
+          ]
+        );
+
+        if (costoMonto > 0) {
+          const nom = (productosReventa as any[]).find(pr => pr.id === pote.idProducto)?.nombre_producto || 'Producto';
+          await powerSync.execute(
+            `INSERT INTO movimientos (id, descripcion, monto, moneda, tasa_cambio, categoria, fecha, id_viaje, tipo)
+             VALUES (?, ?, ?, ?, ?, 'suministros', ?, ?, 'egreso')`,
+            [uuidv4(), `Compra: ${pote.cantidadRecibida}x ${nom}`, costoMonto, pote.moneda, tasaActual, now, idViaje]
+          );
+        }
+      }
+
+      if (paradaCompraId) {
+        // Viaje con múltiples paradas (estado de parada)
+        await powerSync.execute(
+          `UPDATE compras_viaje SET estado = 'completado', hora_llegada = ? WHERE id = ?`,
+          [now, paradaCompraId]
+        );
+      } else {
+        // Viaje legacy (estado global)
+        await powerSync.execute(
+          `UPDATE viajes SET estado = 'retornando', fecha_viaje_retorno = ? WHERE id = ?`,
+          [now, idViaje]
         );
       }
 
-      // Avanzar el estado del viaje a 'retornando'
-      await powerSync.execute(
-        `UPDATE viajes SET estado = 'retornando', fecha_viaje_retorno = ? WHERE id = ?`,
-        [now, idViaje]
-      );
-
       const resumenBobinas = filasValidas.length > 0 ? `${filasValidas.length} bobina(s)` : '';
-      const resumenPotes = potesConCantidad.length > 0 ? `${potesConCantidad.length} tipo(s) de potes` : '';
+      const resumenPotes = potesConCantidad.length > 0 ? `${potesConCantidad.length} producto(s)` : '';
       const resumen = [resumenBobinas, resumenPotes].filter(Boolean).join(' y ');
 
       Toast.show({
@@ -139,8 +242,8 @@ export function CargarBobinasViajeScreen() {
 
   const handleRetornarSinCarga = () => {
     Alert.alert(
-      'Retornar Sin Carga',
-      '¿Confirmas que no hubo mercancía disponible? El viaje pasará a "Retornando" sin registrar nada.',
+      'Parada sin Carga',
+      '¿Confirmas que no hubo mercancía disponible? La parada se marcará como completada sin registrar nada.',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -150,11 +253,18 @@ export function CargarBobinasViajeScreen() {
             setIsSaving(true);
             try {
               const now = new Date().toISOString();
-              await powerSync.execute(
-                `UPDATE viajes SET estado = 'retornando', fecha_viaje_retorno = ? WHERE id = ?`,
-                [now, idViaje]
-              );
-              Toast.show({ type: 'info', text1: 'Retornando Sin Carga', text2: 'El viaje avanzó a Retornando.' });
+              if (paradaCompraId) {
+                await powerSync.execute(
+                  `UPDATE compras_viaje SET estado = 'completado', hora_llegada = ? WHERE id = ?`,
+                  [now, paradaCompraId]
+                );
+              } else {
+                await powerSync.execute(
+                  `UPDATE viajes SET estado = 'retornando', fecha_viaje_retorno = ? WHERE id = ?`,
+                  [now, idViaje]
+                );
+              }
+              Toast.show({ type: 'info', text1: 'Parada Completada', text2: 'Se registró la parada sin carga.' });
               setTimeout(() => router.back(), 500);
             } catch {
               Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo actualizar el viaje.' });
@@ -168,7 +278,20 @@ export function CargarBobinasViajeScreen() {
   };
 
   const totalKg = filas.reduce((acc, f) => acc + (parseFloat(f.pesoKg) || 0), 0);
+  const costoTotalBobinasUSD = filas.reduce((acc, f) => {
+    const val = f.costo ? parseCurrency(f.costo) : 0;
+    return acc + (f.moneda === 'USD' ? val : val / tasaActual);
+  }, 0);
+
   const totalPotes = filasPotes.reduce((acc, p) => acc + (parseInt(p.cantidadRecibida) || 0), 0);
+  const costoTotalPotesUSD = filasPotes.reduce((acc, p) => {
+    const val = p.costo ? parseCurrency(p.costo) : 0;
+    return acc + (p.moneda === 'USD' ? val : val / tasaActual);
+  }, 0);
+
+  const totalCostoUSD = costoTotalBobinasUSD + costoTotalPotesUSD;
+  const totalCostoVES = totalCostoUSD * tasaActual;
+  const totalCostoSuma = totalCostoUSD;
 
   return (
     <View style={globalStyles.containerWhite}>
@@ -184,8 +307,8 @@ export function CargarBobinasViajeScreen() {
           value={seccionActiva}
           onValueChange={setSeccionActiva}
           buttons={[
-            { value: 'bobinas', label: '🧻 Bobinas', icon: 'paper-roll' },
-            { value: 'potes', label: '🫙 Potes', icon: 'bottle-tonic' },
+            { value: 'bobinas', label: 'Bobinas', icon: 'paper-roll' },
+            { value: 'potes', label: 'Productos', icon: 'package-variant-closed' },
           ]}
         />
       </View>
@@ -202,7 +325,10 @@ export function CargarBobinasViajeScreen() {
 
               <View style={styles.headerRow}>
                 <Text variant="labelSmall" style={[styles.colHeader, { flex: 1.2 }]}>TIPO PAPEL</Text>
-                <Text variant="labelSmall" style={[styles.colHeader, { flex: 1.5 }]}>PESO (kg)</Text>
+                <Text variant="labelSmall" style={[styles.colHeader, { flex: 0.8 }]}>PESO (kg)</Text>
+                <View style={{ flex: 1.2, flexDirection: 'row', justifyContent: 'center' }}>
+                  <Text variant="labelSmall" style={styles.colHeader}>COSTO</Text>
+                </View>
                 <View style={{ width: 36 }} />
               </View>
 
@@ -234,16 +360,18 @@ export function CargarBobinasViajeScreen() {
                             </Button>
                           }
                         >
-                          {(tiposPapel as any[]).map(tp => (
-                            <Menu.Item
-                              key={tp.id}
-                              onPress={() => {
-                                handleCambiarTipo(fila.key, tp.id);
-                                setMenusVisibles(prev => ({ ...prev, [fila.key]: false }));
-                              }}
-                              title={tp.nombre}
-                            />
-                          ))}
+                          <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled>
+                            {(tiposPapel as any[]).map(tp => (
+                              <Menu.Item
+                                key={tp.id}
+                                onPress={() => {
+                                  handleCambiarTipo(fila.key, tp.id);
+                                  setMenusVisibles(prev => ({ ...prev, [fila.key]: false }));
+                                }}
+                                title={tp.nombre}
+                              />
+                            ))}
+                          </ScrollView>
                         </Menu>
                       </View>
 
@@ -252,9 +380,28 @@ export function CargarBobinasViajeScreen() {
                         label="Kg"
                         value={fila.pesoKg}
                         onChangeText={(val) => handleCambiarPeso(fila.key, val)}
-                        style={styles.pesoInput}
+                        style={[styles.pesoInput, { flex: 0.8 }]}
                         keyboardType="decimal-pad"
                       />
+
+                      <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <CurrencyInput
+                          mode="outlined"
+                          label="Costo"
+                          value={fila.costo}
+                          onChangeText={(val) => handleCambiarCosto(fila.key, val)}
+                          style={{ flex: 1, height: 46 }}
+                          left={fila.moneda === 'USD' ? <TextInput.Icon icon="currency-usd" /> : <TextInput.Icon icon={() => <Text style={{ fontWeight: 'bold', fontSize: 16, color: '#555' }}>Bs.</Text>} />}
+                        />
+                        <TouchableOpacity
+                          style={[styles.monedaToggle, { backgroundColor: fila.moneda === 'USD' ? '#1d4ed8' : theme.colors.primaryContainer }]}
+                          onPress={() => handleCambiarMoneda(fila.key, fila.moneda === 'USD' ? 'VES' : 'USD')}
+                        >
+                          <Text style={[styles.monedaText, { color: fila.moneda === 'USD' ? '#fff' : theme.colors.primary }]}>
+                            {fila.moneda}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
 
                     <TouchableOpacity
@@ -276,20 +423,6 @@ export function CargarBobinasViajeScreen() {
               <Button mode="outlined" icon="plus" onPress={handleAgregarFila} style={styles.addBtn}>
                 Añadir Bobina
               </Button>
-
-              {totalKg > 0 && (
-                <View style={[styles.totalCard, { backgroundColor: theme.colors.primaryContainer }]}>
-                  <Text variant="bodyMedium" style={{ color: theme.colors.onPrimaryContainer }}>
-                    Total a ingresar al inventario
-                  </Text>
-                  <Text variant="headlineSmall" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
-                    {totalKg.toLocaleString('es-VE')} kg
-                  </Text>
-                  <Text variant="bodySmall" style={{ color: theme.colors.onPrimaryContainer, opacity: 0.7 }}>
-                    {filas.filter(f => parseFloat(f.pesoKg) > 0).length} bobina(s)
-                  </Text>
-                </View>
-              )}
             </>
           )}
 
@@ -297,47 +430,173 @@ export function CargarBobinasViajeScreen() {
           {seccionActiva === 'potes' && (
             <>
               <Text variant="bodyMedium" style={styles.instruccion}>
-                Ingresa las cantidades de potes recibidas por tipo. Solo completa los que llegaron.
+                Agrega una fila por cada producto de reventa que estás cargando al camión.
               </Text>
 
-              {filasPotes.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <MaterialCommunityIcons name="bottle-tonic-outline" size={48} color="#d1d5db" />
-                  <Text variant="bodyMedium" style={{ color: '#9ca3af', marginTop: 8 }}>
-                    No hay tipos de potes registrados en el inventario.
-                  </Text>
+              <View style={styles.headerRow}>
+                <Text variant="labelSmall" style={[styles.colHeader, { flex: 1.2 }]}>PRODUCTO</Text>
+                <Text variant="labelSmall" style={[styles.colHeader, { flex: 0.8 }]}>CANT.</Text>
+                <View style={{ flex: 1.2, flexDirection: 'row', justifyContent: 'center' }}>
+                  <Text variant="labelSmall" style={styles.colHeader}>COSTO</Text>
                 </View>
-              ) : (
-                filasPotes.map((pote, index) => (
-                  <View key={pote.id}>
-                    <View style={styles.poteRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text variant="bodyMedium" style={{ fontWeight: 'bold', color: '#374151' }}>{pote.nombre}</Text>
+                <View style={{ width: 36 }} />
+              </View>
+
+              {filasPotes.map((fila, index) => (
+                <View key={fila.key}>
+                  <View style={styles.filaContainer}>
+                    <View style={[styles.numBadge, { backgroundColor: '#e0f2fe' }]}>
+                      <Text style={[styles.numText, { color: '#0284c7' }]}>
+                        #{index + 1}
+                      </Text>
+                    </View>
+
+                    <View style={styles.filaInputs}>
+                      <View style={styles.tipoRow}>
+                        <Menu
+                          visible={menusProductos[fila.key] || false}
+                          onDismiss={() => setMenusProductos(prev => ({ ...prev, [fila.key]: false }))}
+                          anchor={
+                            <Button
+                              mode="outlined"
+                              onPress={() => setMenusProductos(prev => ({ ...prev, [fila.key]: true }))}
+                              icon="package-variant"
+                              style={{ flex: 1, justifyContent: 'flex-start' }}
+                              textColor={fila.idProducto ? theme.colors.primary : '#555'}
+                            >
+                              {fila.idProducto
+                                ? (productosReventa as any[]).find(p => p.id === fila.idProducto)?.nombre_producto || 'Seleccionado'
+                                : 'Elegir Producto'}
+                            </Button>
+                          }
+                        >
+                          <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled>
+                            {(productosReventa as any[]).map(pr => (
+                              <Menu.Item
+                                key={pr.id}
+                                onPress={() => {
+                                  handleCambiarProducto(fila.key, pr.id);
+                                  setMenusProductos(prev => ({ ...prev, [fila.key]: false }));
+                                }}
+                                title={pr.nombre_producto}
+                              />
+                            ))}
+                          </ScrollView>
+                        </Menu>
                       </View>
+
                       <TextInput
                         mode="outlined"
                         label="Cant."
-                        value={pote.cantidadRecibida}
-                        onChangeText={(val) => handleCambiarCantidadPote(pote.id, val)}
-                        style={styles.cantidadInput}
+                        value={fila.cantidadRecibida}
+                        onChangeText={(val) => handleCambiarCantidadPote(fila.key, val)}
+                        style={[styles.pesoInput, { flex: 0.8 }]}
                         keyboardType="number-pad"
-                        placeholder="0"
                       />
-                    </View>
-                    {index < filasPotes.length - 1 && <Divider style={styles.divider} />}
-                  </View>
-                ))
-              )}
 
-              {totalPotes > 0 && (
-                <View style={[styles.totalCard, { backgroundColor: '#e0f2fe' }]}>
-                  <Text variant="bodyMedium" style={{ color: '#0369a1' }}>Total potes a ingresar</Text>
-                  <Text variant="headlineSmall" style={{ color: '#0284c7', fontWeight: 'bold' }}>
-                    {totalPotes} unidades
-                  </Text>
+                      <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <CurrencyInput
+                          mode="outlined"
+                          label="Costo"
+                          value={fila.costo}
+                          onChangeText={(val) => handleCambiarCostoPote(fila.key, val)}
+                          style={{ flex: 1, height: 46 }}
+                          left={fila.moneda === 'USD' ? <TextInput.Icon icon="currency-usd" /> : <TextInput.Icon icon={() => <Text style={{ fontWeight: 'bold', fontSize: 16, color: '#555' }}>Bs.</Text>} />}
+                        />
+                        <TouchableOpacity
+                          style={[styles.monedaToggle, { backgroundColor: fila.moneda === 'USD' ? '#1d4ed8' : theme.colors.primaryContainer }]}
+                          onPress={() => handleCambiarMonedaPote(fila.key, fila.moneda === 'USD' ? 'VES' : 'USD')}
+                        >
+                          <Text style={[styles.monedaText, { color: fila.moneda === 'USD' ? '#fff' : theme.colors.primary }]}>
+                            {fila.moneda}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => handleEliminarFilaPote(fila.key)}
+                      style={styles.deleteBtn}
+                      disabled={filasPotes.length === 1}
+                    >
+                      <MaterialCommunityIcons
+                        name="trash-can-outline"
+                        size={22}
+                        color={filasPotes.length === 1 ? '#ccc' : theme.colors.error}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  {index < filasPotes.length - 1 && <Divider style={styles.divider} />}
+                </View>
+              ))}
+
+              <Button mode="outlined" icon="plus" onPress={handleAgregarFilaPote} style={[styles.addBtn, { borderColor: '#0284c7' }]} textColor="#0284c7">
+                Añadir Producto
+              </Button>
+            </>
+          )}
+
+          {/* TOTAL GLOBAL DE LA CARGA */}
+          {(totalKg > 0 || totalPotes > 0) && (
+            <View style={{ marginTop: 24, padding: 16, backgroundColor: '#f9fafb', borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb' }}>
+              <Text variant="titleMedium" style={{ textAlign: 'center', marginBottom: 12, color: '#374151', fontWeight: 'bold' }}>Resumen Global de Carga</Text>
+              
+              {totalKg > 0 && (
+                <View style={{ marginBottom: totalPotes > 0 || totalCostoSuma > 0 ? 12 : 4 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={{ color: '#4b5563' }}>Bobinas:</Text>
+                    <Text style={{ fontWeight: 'bold', color: theme.colors.primary }}>{totalKg.toLocaleString('es-VE')} kg <Text style={{fontWeight:'normal', fontSize:12, color:'#9ca3af'}}>({filas.filter(f => parseFloat(f.pesoKg) > 0).length})</Text></Text>
+                  </View>
+                  <View style={{ marginTop: 2 }}>
+                    {filas
+                      .filter(f => parseFloat(f.pesoKg) > 0)
+                      .map((f, idx) => {
+                        const nom = (tiposPapel as any[]).find(t => t.id === f.idTipoPapel)?.nombre || 'Sin asignar';
+                        return (
+                          <Text key={f.key || idx} style={{ fontSize: 13, color: '#6b7280', fontStyle: 'italic', marginBottom: 2 }}>
+                            • {f.pesoKg} kg - {nom}
+                          </Text>
+                        );
+                      })}
+                  </View>
                 </View>
               )}
-            </>
+              
+              {totalPotes > 0 && (
+                <View style={{ marginBottom: totalCostoSuma > 0 ? 12 : 4 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={{ color: '#4b5563' }}>Productos de Reventa:</Text>
+                    <Text style={{ fontWeight: 'bold', color: '#0284c7' }}>{totalPotes.toLocaleString('es-VE')} unds <Text style={{fontWeight:'normal', fontSize:12, color:'#9ca3af'}}>({filasPotes.filter(f => parseInt(f.cantidadRecibida) > 0).length})</Text></Text>
+                  </View>
+                  <View style={{ marginTop: 2 }}>
+                    {filasPotes
+                      .filter(f => parseInt(f.cantidadRecibida) > 0)
+                      .map((p, idx) => {
+                        const nom = (productosReventa as any[]).find(pr => pr.id === p.idProducto)?.nombre_producto || 'Sin asignar';
+                        return (
+                          <Text key={p.key || idx} style={{ fontSize: 13, color: '#6b7280', fontStyle: 'italic', marginBottom: 2 }}>
+                            • {p.cantidadRecibida}x {nom}
+                          </Text>
+                        );
+                      })}
+                  </View>
+                </View>
+              )}
+
+              {totalCostoSuma > 0 && (
+                <>
+                  <Divider style={{ marginVertical: 8 }} />
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text style={{ color: '#6b7280' }}>Costo Total USD:</Text>
+                    <Text style={{ fontWeight: 'bold', fontSize: 16 }}>${totalCostoUSD.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={{ color: '#6b7280' }}>Costo Total VES:</Text>
+                    <Text style={{ fontWeight: 'bold', fontSize: 16 }}>Bs. {totalCostoVES.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+                  </View>
+                </>
+              )}
+            </View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -387,4 +646,10 @@ const styles = StyleSheet.create({
   poteRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 },
   cantidadInput: { width: 90 },
   emptyState: { alignItems: 'center', paddingVertical: 40 },
+  monedaToggle: {
+    width: 44, height: 44, borderRadius: 8,
+    justifyContent: 'center', alignItems: 'center',
+    marginTop: 4,
+  },
+  monedaText: { fontWeight: 'bold', fontSize: 12 },
 });

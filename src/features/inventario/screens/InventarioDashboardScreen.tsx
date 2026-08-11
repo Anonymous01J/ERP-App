@@ -4,31 +4,64 @@ import { globalStyles } from '@core/theme/globalStyles';
 import {  View, StyleSheet, ScrollView, Alert , RefreshControl } from 'react-native';
 import {
   SegmentedButtons, List, Text, Button, Divider,
-  useTheme, Dialog, Portal, TextInput, ProgressBar,
+  useTheme, Dialog, Portal, TextInput, ProgressBar, Menu, IconButton, Modal
 } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { CustomCard } from '@ui/CustomCard';
 import { usePowerSync, useQuery } from '@powersync/react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
-import { TipoPapel, ProductoPresentacion, InventarioPote, BobinaGrande } from '../../core/powersync/types';
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
+import { TipoPapel, ProductoPresentacion, BobinaGrande } from '../../core/powersync/types';
 
 interface BobinaActivaRow extends BobinaGrande {
   tipo_papel_nombre: string | null;
 }
 
+interface ProductoReventaRow {
+  id: string;
+  nombre_producto: string;
+  descripcion: string | null;
+  stock_unidades: number;
+  precio_venta_usd: number;
+  estado: string;
+}
+
 export function InventarioDashboardScreen() {
   const { refreshing, onRefresh } = usePullToRefresh();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const theme = useTheme();
   const powerSync = usePowerSync();
   const [tab, setTab] = useState('bobinas');
+  const [filtroOtros, setFiltroOtros] = useState('activo');
+  
+  const [expandedIds, setExpandedIds] = useState<string[]>([]);
 
   // --- Dialog de merma ---
   const [dialogVisible, setDialogVisible] = useState(false);
   const [bobinaSeleccionada, setBobinaSeleccionada] = useState<BobinaActivaRow | null>(null);
   const [mermaKg, setMermaKg] = useState('');
   const [savingMerma, setSavingMerma] = useState(false);
+
+  // --- Modal de Ajuste ---
+  const [modalAjusteVisible, setModalAjusteVisible] = useState(false);
+  const [productoAjuste, setProductoAjuste] = useState<any>(null);
+  const [ajusteTipo, setAjusteTipo] = useState<'salida' | 'ingreso'>('salida');
+  const [ajusteCantidad, setAjusteCantidad] = useState('');
+  const [ajusteMotivo, setAjusteMotivo] = useState('');
+  const [savingAjuste, setSavingAjuste] = useState(false);
+
+  // --- Modal Asignar Pedido ---
+  const [modalAsignarVisible, setModalAsignarVisible] = useState(false);
+  const [productoAsignar, setProductoAsignar] = useState<any>(null);
+  const [tipoProductoAsignar, setTipoProductoAsignar] = useState<'papel' | 'reventa'>('papel');
+  const [pedidosCandidatos, setPedidosCandidatos] = useState<any[]>([]);
+  const [pedidoSeleccionadoId, setPedidoSeleccionadoId] = useState<string>('');
+  const [cantidadAsignar, setCantidadAsignar] = useState('');
+  const [savingAsignar, setSavingAsignar] = useState(false);
 
   // --- Queries ---
   const { data: bobinasActivas = [] } = useQuery<BobinaActivaRow>(`
@@ -53,12 +86,13 @@ export function InventarioDashboardScreen() {
     ORDER BY peso_nominal_g ASC
   `);
 
-  const { data: potesActivos = [] } = useQuery<InventarioPote>(`
-    SELECT id, capacidad, stock_unidades, precio_venta_usd
-    FROM inventario_potes
-    WHERE estado = 'activo'
-    ORDER BY capacidad ASC
-  `);
+  const { data: productosReventa = [] } = useQuery<ProductoReventaRow>(
+    `SELECT id, nombre_producto, descripcion, stock_unidades, precio_venta_usd, estado
+     FROM productos_reventa
+     WHERE estado = ?
+     ORDER BY nombre_producto ASC`,
+    [filtroOtros]
+  );
 
   // Agrupar kilos por tipo de papel dinámicamente
   const kgPorTipo = tiposPapel.map(tp => {
@@ -72,6 +106,164 @@ export function InventarioDashboardScreen() {
     setBobinaSeleccionada(bobina);
     setMermaKg('');
     setDialogVisible(true);
+  };
+
+  const toggleAccordion = (id: string) => {
+    setExpandedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
+  };
+
+  const handleEditProducto = (id: string) => {
+    router.push(`/(screens)/registrar-producto?id=${id}`);
+  };
+
+  const handleToggleEstadoProducto = async (id: string, estadoActual: string) => {
+    const nuevoEstado = estadoActual === 'activo' ? 'inactivo' : 'activo';
+    try {
+      await powerSync.execute(`UPDATE productos_reventa SET estado = ? WHERE id = ?`, [nuevoEstado, id]);
+      Toast.show({ type: 'success', text1: `Producto ${nuevoEstado === 'activo' ? 'activado' : 'desactivado'}` });
+    } catch(e) {
+      Toast.show({ type: 'error', text1: 'Error al cambiar estado' });
+    }
+  };
+
+  const handleHistorialProducto = (id: string) => {
+    router.push(`/(screens)/historial-productos?id_producto=${id}`);
+  };
+
+  const handleOpenAjuste = (producto: any) => {
+    setProductoAjuste(producto);
+    setAjusteTipo('salida');
+    setAjusteCantidad('');
+    setAjusteMotivo('');
+    setModalAjusteVisible(true);
+  };
+
+  const handleSaveAjuste = async () => {
+    const qty = parseInt(ajusteCantidad);
+    if (isNaN(qty) || qty <= 0) {
+      Toast.show({ type: 'error', text1: 'Cantidad inválida', text2: 'Ingresa un número mayor a 0.' });
+      return;
+    }
+    if (!ajusteMotivo.trim()) {
+      Toast.show({ type: 'error', text1: 'Motivo requerido', text2: 'Por favor, indica el motivo del ajuste.' });
+      return;
+    }
+    if (ajusteTipo === 'salida' && qty > productoAjuste.stock_unidades) {
+      Toast.show({ type: 'error', text1: 'Stock insuficiente', text2: 'No puedes retirar más de lo que hay en stock.' });
+      return;
+    }
+
+    setSavingAjuste(true);
+    try {
+      const now = new Date().toISOString();
+      const nuevoStock = ajusteTipo === 'salida' 
+        ? productoAjuste.stock_unidades - qty 
+        : productoAjuste.stock_unidades + qty;
+
+      await powerSync.writeTransaction(async (tx) => {
+        await tx.execute(`UPDATE productos_reventa SET stock_unidades = ? WHERE id = ?`, [nuevoStock, productoAjuste.id]);
+        await tx.execute(
+          `INSERT INTO historial_productos (id, id_producto, cantidad, tipo, origen, referencia_id, entidad_relacionada, fecha)
+           VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
+          [uuidv4(), productoAjuste.id, qty, ajusteTipo, 'ajuste_manual', ajusteMotivo, now]
+        );
+      });
+
+      Toast.show({ type: 'success', text1: 'Ajuste guardado', text2: `Stock actualizado a ${nuevoStock}.` });
+      setModalAjusteVisible(false);
+    } catch (e) {
+      Toast.show({ type: 'error', text1: 'Error al ajustar stock' });
+    } finally {
+      setSavingAjuste(false);
+    }
+  };
+
+  const handleOpenAsignar = async (producto: any, tipo: 'papel' | 'reventa') => {
+    setProductoAsignar(producto);
+    setTipoProductoAsignar(tipo);
+    setCantidadAsignar('');
+    setPedidoSeleccionadoId('');
+    
+    const query = tipo === 'papel' 
+      ? `SELECT dp.id_pedido, p.fecha_creacion, c.razon_social, dp.cantidad_solicitada, COALESCE(dp.cantidad_producida, 0) as cantidad_producida 
+         FROM detalles_pedido dp
+         JOIN pedidos p ON p.id = dp.id_pedido
+         JOIN clientes c ON c.id = p.id_cliente
+         WHERE (p.estado = 'pendiente' OR p.estado = 'en_produccion')
+         AND dp.id_producto = ?
+         AND COALESCE(dp.cantidad_producida, 0) < dp.cantidad_solicitada`
+      : `SELECT dp.id_pedido, p.fecha_creacion, c.razon_social, dp.cantidad_solicitada, COALESCE(dp.cantidad_producida, 0) as cantidad_producida 
+         FROM detalles_pedido dp
+         JOIN pedidos p ON p.id = dp.id_pedido
+         JOIN clientes c ON c.id = p.id_cliente
+         WHERE (p.estado = 'pendiente' OR p.estado = 'en_produccion')
+         AND dp.id_producto_reventa = ?
+         AND COALESCE(dp.cantidad_producida, 0) < dp.cantidad_solicitada`;
+         
+    const res = await powerSync.getAll(query, [producto.id]);
+    setPedidosCandidatos(res);
+    setModalAsignarVisible(true);
+  };
+
+  const handleSaveAsignar = async () => {
+    const qty = parseInt(cantidadAsignar);
+    if (!pedidoSeleccionadoId) {
+      Toast.show({ type: 'error', text1: 'Seleccione un pedido' });
+      return;
+    }
+    if (isNaN(qty) || qty <= 0) {
+      Toast.show({ type: 'error', text1: 'Cantidad inválida' });
+      return;
+    }
+
+    const candidato = pedidosCandidatos.find(p => p.id_pedido === pedidoSeleccionadoId);
+    if (!candidato) return;
+
+    const faltante = candidato.cantidad_solicitada - candidato.cantidad_producida;
+    if (qty > faltante) {
+      Toast.show({ type: 'error', text1: 'Excede faltante', text2: `El pedido solo necesita ${faltante}.` });
+      return;
+    }
+
+    const stockActual = tipoProductoAsignar === 'papel' ? (productoAsignar.stock_unidades_sueltas || 0) : (productoAsignar.stock_unidades || 0);
+    if (qty > stockActual) {
+      Toast.show({ type: 'error', text1: 'Stock insuficiente' });
+      return;
+    }
+
+    setSavingAsignar(true);
+    try {
+      const now = new Date().toISOString();
+      await powerSync.writeTransaction(async (tx) => {
+        if (tipoProductoAsignar === 'papel') {
+          await tx.execute('UPDATE productos_presentacion SET stock_unidades_sueltas = stock_unidades_sueltas - ? WHERE id = ?', [qty, productoAsignar.id]);
+          await tx.execute('UPDATE detalles_pedido SET cantidad_producida = COALESCE(cantidad_producida, 0) + ? WHERE id_pedido = ? AND id_producto = ?', [qty, pedidoSeleccionadoId, productoAsignar.id]);
+        } else {
+          await tx.execute('UPDATE productos_reventa SET stock_unidades = stock_unidades - ? WHERE id = ?', [qty, productoAsignar.id]);
+          await tx.execute('UPDATE detalles_pedido SET cantidad_producida = COALESCE(cantidad_producida, 0) + ? WHERE id_pedido = ? AND id_producto_reventa = ?', [qty, pedidoSeleccionadoId, productoAsignar.id]);
+          await tx.execute(
+            `INSERT INTO historial_productos (id, id_producto, cantidad, tipo, origen, referencia_id, entidad_relacionada, fecha)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [uuidv4(), productoAsignar.id, qty, 'salida', 'venta_pedido', pedidoSeleccionadoId, candidato.razon_social, now]
+          );
+        }
+
+        const { rows: rowsFaltantes } = await tx.execute(`SELECT COUNT(*) as cuenta FROM detalles_pedido WHERE id_pedido = ? AND COALESCE(cantidad_producida, 0) < cantidad_solicitada`, [pedidoSeleccionadoId]);
+        if (rowsFaltantes && rowsFaltantes.length > 0 && rowsFaltantes.item(0).cuenta === 0) {
+          await tx.execute(`UPDATE pedidos SET estado = 'listo' WHERE id = ?`, [pedidoSeleccionadoId]);
+          Toast.show({ type: 'success', text1: 'Pedido Surtido', text2: 'Se surtió completamente y pasó a Listo.' });
+        } else {
+          await tx.execute(`UPDATE pedidos SET estado = 'en_produccion' WHERE id = ? AND estado = 'pendiente'`, [pedidoSeleccionadoId]);
+          Toast.show({ type: 'success', text1: 'Asignado', text2: 'Se transfirió al pedido.' });
+        }
+      });
+      setModalAsignarVisible(false);
+    } catch (e) {
+      console.error(e);
+      Toast.show({ type: 'error', text1: 'Error al asignar' });
+    } finally {
+      setSavingAsignar(false);
+    }
   };
 
   const handleGuardarMerma = async () => {
@@ -256,15 +448,20 @@ export function InventarioDashboardScreen() {
             <CustomCard key={prod.id}>
               <View style={styles.cardContent}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <View>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
                     <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>{prod.nombre}</Text>
                     <Text variant="bodySmall" style={{ color: '#6b7280' }}>
                       {sueltos} rollos sueltos · {paquetes} paquetes ({prod.rollos_por_paquete}×)
                     </Text>
                   </View>
-                  <Text variant="titleMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
+                  <Text variant="titleMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }} adjustsFontSizeToFit numberOfLines={1}>
                     ${prod.precio_USD?.toFixed(2)}
                   </Text>
+                </View>
+                <View style={{ marginTop: 12, flexDirection: 'row', justifyContent: 'flex-end' }}>
+                  <Button mode="contained-tonal" compact icon="truck-delivery" onPress={() => handleOpenAsignar(prod, 'papel')}>
+                    Asignar a Pedido
+                  </Button>
                 </View>
               </View>
             </CustomCard>
@@ -274,42 +471,102 @@ export function InventarioDashboardScreen() {
     </View>
   );
 
-  const renderPotes = () => (
+  const renderProductosReventa = () => (
     <View>
       <View style={styles.headerRow}>
-        <Text variant="titleMedium" style={globalStyles.sectionTitle}>Inventario de Potes</Text>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Button mode="text" compact onPress={() => router.push('/(screens)/historial-potes')}>
-            Historial
-          </Button>
-          <Button mode="text" compact onPress={() => router.push('/(screens)/gestionar-potes')}>
-            Gestionar
-          </Button>
-        </View>
+        <Text variant="titleMedium" style={globalStyles.sectionTitle}>Otros Productos</Text>
       </View>
-      {potesActivos.length === 0 ? (
+
+      <View style={{ marginBottom: 12, marginHorizontal: 4 }}>
+        <SegmentedButtons
+          value={filtroOtros}
+          onValueChange={setFiltroOtros}
+          buttons={[
+            { value: 'activo', label: 'Activos' },
+            { value: 'inactivo', label: 'Inactivos' },
+          ]}
+        />
+      </View>
+
+      {productosReventa.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text variant="bodyLarge" style={styles.emptyText}>No hay potes activos.</Text>
+          <Text variant="bodyLarge" style={styles.emptyText}>No hay productos {filtroOtros}s.</Text>
         </View>
       ) : (
-        potesActivos.map(pote => (
-          <CustomCard key={pote.id}>
-            <View style={styles.cardContent}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>Pote {pote.capacidad}</Text>
-                  <Text variant="bodyMedium" style={{ color: pote.stock_unidades < 20 ? theme.colors.error : '#6b7280' }}>
-                    {pote.stock_unidades} unidades en stock
-                    {pote.stock_unidades < 20 ? ' ⚠️ Stock bajo' : ''}
+        productosReventa.map(prod => {
+          const isExpanded = expandedIds.includes(prod.id);
+          const isInactive = prod.estado === 'inactivo';
+
+          return (
+            <CustomCard key={prod.id} style={[{ marginBottom: 8 }, isInactive && { opacity: 0.6 }]}>
+              <List.Accordion
+                title={prod.nombre_producto}
+                titleStyle={[{ fontWeight: 'bold' }, isInactive && { color: theme.colors.outline }]}
+                description={`Stock: ${prod.stock_unidades} unid.`}
+                expanded={isExpanded}
+                onPress={() => toggleAccordion(prod.id)}
+                style={{ backgroundColor: 'transparent' }}
+              >
+                <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+                  <Divider style={{ marginBottom: 12 }} />
+                  {prod.descripcion ? <Text variant="bodySmall" style={{ color: '#6b7280', marginBottom: 8 }}>{prod.descripcion}</Text> : null}
+                  <Text variant="titleSmall" style={{ color: isInactive ? theme.colors.outline : theme.colors.primary, marginBottom: 12 }}>
+                    Precio de venta: ${prod.precio_venta_usd?.toFixed(2)}
                   </Text>
+                  
+                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                    <Button 
+                      mode="outlined" 
+                      icon="pencil" 
+                      onPress={() => handleEditProducto(prod.id)}
+                      style={{ flex: 1 }}
+                    >
+                      Editar
+                    </Button>
+                    <Button 
+                      mode="contained-tonal" 
+                      icon={isInactive ? "check-circle" : "cancel"} 
+                      textColor={isInactive ? theme.colors.primary : theme.colors.error}
+                      buttonColor={isInactive ? theme.colors.primaryContainer : theme.colors.errorContainer}
+                      onPress={() => handleToggleEstadoProducto(prod.id, prod.estado)}
+                      style={{ flex: 1 }}
+                    >
+                      {isInactive ? "Activar" : "Desactivar"}
+                    </Button>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                    <Button 
+                      mode="contained-tonal" 
+                      icon="swap-vertical" 
+                      onPress={() => handleOpenAjuste(prod)}
+                      style={{ flex: 1 }}
+                    >
+                      Ajuste Stock
+                    </Button>
+                    <Button 
+                      mode="outlined" 
+                      icon="history" 
+                      onPress={() => handleHistorialProducto(prod.id)}
+                      style={{ flex: 1 }}
+                    >
+                      Historial
+                    </Button>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                    <Button 
+                      mode="contained-tonal" 
+                      icon="truck-delivery" 
+                      onPress={() => handleOpenAsignar(prod, 'reventa')}
+                      style={{ flex: 1 }}
+                    >
+                      Asignar a Pedido
+                    </Button>
+                  </View>
                 </View>
-                <Text variant="titleMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
-                  ${pote.precio_venta_usd?.toFixed(2)}
-                </Text>
-              </View>
-            </View>
-          </CustomCard>
-        ))
+              </List.Accordion>
+            </CustomCard>
+          );
+        })
       )}
     </View>
   );
@@ -323,16 +580,28 @@ export function InventarioDashboardScreen() {
           buttons={[
             { value: 'bobinas', label: 'Bobinas', icon: 'archive-outline' },
             { value: 'terminado', label: 'Rollos', icon: 'package-variant' },
-            { value: 'potes', label: 'Potes', icon: 'cup' },
+            { value: 'otros', label: 'Otros Productos', icon: 'shape-outline' },
           ]}
         />
       </View>
 
       <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
-        {tab === 'bobinas' && renderBobinas()}
+        { tab === 'bobinas' && renderBobinas()}
         {tab === 'terminado' && renderRollos()}
-        {tab === 'potes' && renderPotes()}
+        {tab === 'otros' && renderProductosReventa()}
       </ScrollView>
+
+      {tab === 'otros' && (
+        <Button
+          mode="contained"
+          icon="plus"
+          onPress={() => router.push('/(screens)/registrar-producto')}
+          style={[styles.fabExtended, { bottom: Math.max(insets.bottom + 16, 16) }]}
+          contentStyle={{ paddingVertical: 4 }}
+        >
+          Nuevo Producto
+        </Button>
+      )}
 
       {/* Dialog Merma */}
       <Portal>
@@ -366,6 +635,107 @@ export function InventarioDashboardScreen() {
             </Button>
           </Dialog.Actions>
         </Dialog>
+
+        {/* Modal de Ajuste de Stock */}
+        <Modal visible={modalAjusteVisible} onDismiss={() => setModalAjusteVisible(false)} contentContainerStyle={styles.modalContent}>
+          {productoAjuste && (
+            <>
+              <Text variant="titleMedium" style={{ marginBottom: 16, fontWeight: 'bold' }}>
+                Ajuste de Stock: {productoAjuste.nombre_producto}
+              </Text>
+              
+              <SegmentedButtons
+                value={ajusteTipo}
+                onValueChange={(val) => setAjusteTipo(val as 'salida' | 'ingreso')}
+                buttons={[
+                  { value: 'salida', label: 'Dar de Baja (Salida)' },
+                  { value: 'ingreso', label: 'Dar de Alta (Ingreso)' },
+                ]}
+                style={{ marginBottom: 16 }}
+              />
+
+              <TextInput
+                mode="outlined"
+                label="Cantidad"
+                keyboardType="numeric"
+                value={ajusteCantidad}
+                onChangeText={setAjusteCantidad}
+                style={{ marginBottom: 16 }}
+              />
+
+              <TextInput
+                mode="outlined"
+                label="Motivo (Ej: Apertura de bulto, Dañado)"
+                value={ajusteMotivo}
+                onChangeText={setAjusteMotivo}
+                style={{ marginBottom: 24 }}
+              />
+
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8 }}>
+                <Button onPress={() => setModalAjusteVisible(false)} disabled={savingAjuste}>
+                  Cancelar
+                </Button>
+                <Button mode="contained" onPress={handleSaveAjuste} loading={savingAjuste} disabled={savingAjuste}>
+                  Confirmar Ajuste
+                </Button>
+              </View>
+            </>
+          )}
+        </Modal>
+
+        {/* MODAL ASIGNAR A PEDIDO */}
+        <Modal 
+          visible={modalAsignarVisible} 
+          onDismiss={() => setModalAsignarVisible(false)}
+          contentContainerStyle={{ backgroundColor: 'white', padding: 24, margin: 20, borderRadius: 16 }}
+        >
+          <Text variant="titleLarge" style={{ fontWeight: 'bold', marginBottom: 8 }}>
+            Asignar a Pedido
+          </Text>
+          <Text variant="bodyMedium" style={{ color: '#4b5563', marginBottom: 16 }}>
+            {productoAsignar?.nombre || productoAsignar?.nombre_producto} (Stock: {tipoProductoAsignar === 'papel' ? productoAsignar?.stock_unidades_sueltas : productoAsignar?.stock_unidades})
+          </Text>
+          
+          <Text variant="labelMedium" style={{ marginBottom: 4 }}>Pedidos Pendientes (que necesitan esto):</Text>
+          {pedidosCandidatos.length === 0 ? (
+             <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 16 }}>
+               No hay pedidos pendientes que necesiten este producto.
+             </Text>
+          ) : (
+            <ScrollView style={{ maxHeight: 150, marginBottom: 16 }}>
+              {pedidosCandidatos.map(ped => (
+                <List.Item
+                  key={ped.id_pedido}
+                  title={ped.razon_social}
+                  description={`Faltan: ${ped.cantidad_solicitada - ped.cantidad_producida}`}
+                  left={props => <List.Icon {...props} icon="package" />}
+                  right={props => (
+                    <Button mode={pedidoSeleccionadoId === ped.id_pedido ? "contained" : "outlined"} compact onPress={() => setPedidoSeleccionadoId(ped.id_pedido)}>
+                      {pedidoSeleccionadoId === ped.id_pedido ? "Elegido" : "Elegir"}
+                    </Button>
+                  )}
+                />
+              ))}
+            </ScrollView>
+          )}
+
+          <TextInput
+            mode="outlined"
+            label="Cantidad a enviar"
+            keyboardType="numeric"
+            value={cantidadAsignar}
+            onChangeText={setCantidadAsignar}
+            disabled={pedidosCandidatos.length === 0}
+            style={{ marginBottom: 24 }}
+          />
+
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8 }}>
+            <Button onPress={() => setModalAsignarVisible(false)} textColor="#6b7280">Cancelar</Button>
+            <Button mode="contained" onPress={handleSaveAsignar} loading={savingAsignar} disabled={pedidosCandidatos.length === 0}>
+              Asignar
+            </Button>
+          </View>
+        </Modal>
       </Portal>
     </View>
   );
@@ -390,5 +760,22 @@ const styles = StyleSheet.create({
   detailLabel: { color: '#6b7280' },
   cardContent: { padding: 16 },
   emptyState: { alignItems: 'center', marginTop: 48, padding: 24 },
-  emptyText: { color: '#9ca3af', marginTop: 12, textAlign: 'center' },
+  emptyText: {
+    textAlign: 'center',
+    marginTop: 40,
+    color: '#888',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    padding: 20,
+    margin: 20,
+    borderRadius: 8,
+  },
+  fabExtended: {
+    position: 'absolute',
+    bottom: 24,
+    right: 16,
+    borderRadius: 28,
+    elevation: 4,
+  },
 });

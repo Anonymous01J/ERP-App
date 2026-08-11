@@ -2,7 +2,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
 import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
 import { globalStyles } from '@core/theme/globalStyles';
-import {  View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform , RefreshControl } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, RefreshControl, Share } from 'react-native';
 import { List, Text, Button, useTheme, Chip, IconButton, TextInput, Divider } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CustomCard } from '@components/ui/CustomCard';
@@ -16,12 +16,12 @@ import { parseCurrency } from '@core/utils/currency';
 
 // Categorías disponibles con íconos
 const CATEGORIAS = [
-  { key: 'gasolina',      label: 'Gasolina',      icon: 'gas-station' },
-  { key: 'peaje',         label: 'Peaje',          icon: 'road' },
-  { key: 'viaticos',      label: 'Viáticos',       icon: 'food' },
-  { key: 'mantenimiento', label: 'Mant.',          icon: 'wrench' },
-  { key: 'operativos',    label: 'Operativos',     icon: 'briefcase-outline' },
-  { key: 'otros',         label: 'Otros',          icon: 'dots-horizontal' },
+  { key: 'gasolina', label: 'Gasolina', icon: 'gas-station' },
+  { key: 'peaje', label: 'Peaje', icon: 'road' },
+  { key: 'viaticos', label: 'Viáticos', icon: 'food' },
+  { key: 'mantenimiento', label: 'Mant.', icon: 'wrench' },
+  { key: 'operativos', label: 'Operativos', icon: 'briefcase-outline' },
+  { key: 'otros', label: 'Otros', icon: 'dots-horizontal' },
 ] as const;
 
 type Categoria = typeof CATEGORIAS[number]['key'];
@@ -48,7 +48,7 @@ const MovimientosViaje = ({ idViaje, theme }: { idViaje: string; theme: any }) =
             −{totalEgresos.toFixed(2)}
           </Text>
         </View>
-        <View style={[styles.movResumenItem, { alignItems: 'center' }]}> 
+        <View style={[styles.movResumenItem, { alignItems: 'center' }]}>
           <Text variant="labelSmall" style={{ color: '#9ca3af' }}>BALANCE</Text>
           <Text variant="bodyMedium" style={{ fontWeight: 'bold', color: (totalIngresos - totalEgresos) >= 0 ? '#16a34a' : theme.colors.error }}>
             {(totalIngresos - totalEgresos) >= 0 ? '+' : ''}{(totalIngresos - totalEgresos).toFixed(2)}
@@ -118,7 +118,7 @@ const GastoViajeForm = ({ idViaje, theme }: { idViaje: string; theme: any }) => 
       await powerSync.execute(
         `INSERT INTO movimientos (id, descripcion, monto, moneda, tasa_cambio, categoria, fecha, id_viaje, tipo)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [uuidv4(), descripFinal, montoNum, moneda, 1, categoria, new Date().toISOString(), idViaje, tipo]
+        [uuidv4(), descripFinal, montoNum, moneda, tasaDolarBCV, categoria, new Date().toISOString(), idViaje, tipo]
       );
       Toast.show({
         type: 'success',
@@ -189,8 +189,8 @@ const GastoViajeForm = ({ idViaje, theme }: { idViaje: string; theme: any }) => 
           onChangeText={setMonto}
           style={[styles.montoInput, { flex: 1 }]}
           left={
-            moneda === 'USD' 
-              ? <TextInput.Icon icon="currency-usd" /> 
+            moneda === 'USD'
+              ? <TextInput.Icon icon="currency-usd" />
               : <TextInput.Icon icon={() => <Text style={{ fontWeight: 'bold', fontSize: 16, color: '#555' }}>Bs.</Text>} />
           }
           outlineStyle={{ borderRadius: 10 }}
@@ -244,10 +244,10 @@ const ParadasViaje = ({
   const { data: paradas = [] } = useQuery(
     `SELECT ev.id, ev.id_pedido, ev.orden, ev.estado, ev.hora_llegada, c.razon_social,
         (
-          SELECT GROUP_CONCAT(dp.cantidad_solicitada || 'x ' || COALESCE(pp.nombre, 'Pote ' || ip.capacidad), ', ')
+          SELECT GROUP_CONCAT(dp.cantidad_solicitada || 'x ' || COALESCE(pp.nombre, pr.descripcion), ', ')
           FROM detalles_pedido dp
           LEFT JOIN productos_presentacion pp ON pp.id = dp.id_producto
-          LEFT JOIN inventario_potes ip ON ip.id = dp.id_pote
+          LEFT JOIN productos_reventa pr ON pr.id = dp.id_producto_reventa
           WHERE dp.id_pedido = ev.id_pedido
         ) as productos
      FROM entregas_viaje ev
@@ -324,6 +324,61 @@ const ParadasViaje = ({
   );
 };
 
+// Subcomponente: Lista de paradas de compra de un viaje
+const ParadasCompraViaje = ({ idViaje, theme, router }: any) => {
+  const { data: paradasCompra = [] } = useQuery(
+    `SELECT cv.id, cv.id_proveedor, cv.orden, cv.estado, cv.hora_llegada, p.nombre_empresa
+     FROM compras_viaje cv
+     JOIN proveedores p ON p.id = cv.id_proveedor
+     WHERE cv.id_viaje = ?
+     ORDER BY cv.orden ASC`,
+    [idViaje]
+  );
+
+  if (paradasCompra.length === 0) return null;
+
+  return (
+    <View style={styles.paradasContainer}>
+      <Text variant="labelMedium" style={styles.paradasHeader}>PARADAS DE COMPRA</Text>
+      {paradasCompra.map((parada: any) => {
+        const completado = parada.estado === 'completado';
+        return (
+          <View key={parada.id} style={styles.paradaItem}>
+            <View style={[styles.paradaOrden, { backgroundColor: completado ? '#4ade80' : theme.colors.primaryContainer }]}>
+              {completado
+                ? <MaterialCommunityIcons name="check" size={14} color="#fff" />
+                : <Text style={{ color: theme.colors.onPrimaryContainer, fontWeight: 'bold', fontSize: 12 }}>{parada.orden}</Text>
+              }
+            </View>
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text variant="bodyMedium" style={{ fontWeight: completado ? 'normal' : 'bold', color: completado ? '#9ca3af' : '#1f2937' }}>
+                {parada.nombre_empresa}
+              </Text>
+              {completado && parada.hora_llegada && (
+                <Text variant="bodySmall" style={{ color: '#9ca3af', marginTop: 2 }}>
+                  ✓ Cargado a las {new Date(parada.hora_llegada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </Text>
+              )}
+            </View>
+            {!completado && (
+              <Button
+                mode="contained"
+                compact
+                icon="inbox-arrow-down"
+                onPress={() => router.push(`/(screens)/cargar-bobinas-viaje?id=${idViaje}&proveedorId=${parada.id_proveedor}&paradaCompraId=${parada.id}`)}
+                style={{ borderRadius: 8 }}
+                labelStyle={{ fontSize: 11 }}
+              >
+                Cargar Productos
+              </Button>
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
+};
+
 export function ViajesDashboardScreen() {
   const { refreshing, onRefresh } = usePullToRefresh();
   const insets = useSafeAreaInsets();
@@ -379,21 +434,26 @@ export function ViajesDashboardScreen() {
     return theme.colors.tertiary;
   };
 
-  const getViajeTitle = (viaje: any) => {
-    const proveedor = proveedores.find((p: any) => p.id === viaje.id_proveedor);
-    const nombreProveedor = proveedor ? (proveedor as any).nombre_empresa : 'Proveedor';
-    if (viaje.tipo_viaje === 'mixto') return `Mixto: Entregas + ${nombreProveedor}`;
-    if (viaje.tipo_viaje === 'compra') return `Compra: ${nombreProveedor}`;
+  const getViajeTitle = (viaje: any, comprasData: any[] = []) => {
+    if (viaje.tipo_viaje === 'mixto') return 'Mixto: Entregas + Compras';
+    if (viaje.tipo_viaje === 'compra') {
+      if (comprasData.length === 1) return `Compra: ${comprasData[0].nombre_empresa}`;
+      if (comprasData.length > 1) return `Compra en ${comprasData.length} proveedores`;
+      // Backward compatibility
+      const proveedor = proveedores.find((p: any) => p.id === viaje.id_proveedor);
+      const nombreProveedor = proveedor ? (proveedor as any).nombre_empresa : 'Proveedor';
+      return `Compra: ${nombreProveedor}`;
+    }
     return 'Entrega a Clientes';
   };
 
   // Determina el botón de acción principal dependiendo del tipo y estado del viaje
-  const renderAccionPrincipal = (viaje: any, paradasData: any[]) => {
+  const renderAccionPrincipal = (viaje: any, paradasData: any[], comprasData: any[]) => {
     const tipo = viaje.tipo_viaje;
     const estado = viaje.estado;
 
-    // Viajes de compra: ciclo de estado normal, excepto en_destino que va a CargarBobinas
-    if (tipo === 'compra') {
+    // Viajes Legacy (creados antes del multi-proveedor que dependen de id_proveedor directamente)
+    if (tipo === 'compra' && comprasData.length === 0 && viaje.id_proveedor) {
       if (estado === 'en_progreso') {
         return (
           <Button mode="contained" onPress={() => handleAvanzarEstadoSimple(viaje.id, 'en_destino', 'fecha_viaje_llegada_destino')} style={styles.actionButton}>
@@ -403,65 +463,35 @@ export function ViajesDashboardScreen() {
       }
       if (estado === 'en_destino') {
         return (
-          <Button mode="contained" icon="inbox-arrow-down" onPress={() => router.push(`/(screens)/cargar-bobinas-viaje?id=${viaje.id}`)} style={styles.actionButton}>
-            Cargar Bobinas y Retornar
-          </Button>
-        );
-      }
-      if (estado === 'retornando') {
-        return (
-          <Button mode="contained" onPress={() => handleAvanzarEstadoSimple(viaje.id, 'completado', 'fecha_viaje_llegada_base')} style={styles.actionButton}>
-            Llegué a Base (Fin)
+          <Button mode="contained" icon="inbox-arrow-down" onPress={() => router.push(`/(screens)/cargar-bobinas-viaje?id=${viaje.id}&proveedorId=${viaje.id_proveedor}`)} style={styles.actionButton}>
+            Cargar Productos y Retornar
           </Button>
         );
       }
     }
 
-    // Viajes de entrega: depende del estado de las paradas
-    if (tipo === 'entrega') {
-      const todasEntregadas = paradasData.length > 0 && paradasData.every((p: any) => p.estado === 'entregado');
-      if (estado === 'en_progreso' && todasEntregadas) {
+    const todasEntregasCompletas = paradasData.length === 0 || paradasData.every((p: any) => p.estado === 'entregado');
+    const todasComprasCompletas = comprasData.length === 0 || comprasData.every((p: any) => p.estado === 'completado');
+    const todoCompletado = todasEntregasCompletas && todasComprasCompletas;
+    const esSoloLogistica = comprasData.length === 0 && paradasData.length === 0;
+
+    if (estado === 'en_progreso' || estado === 'en_destino') { // Tratamos en_destino (legacy) igual que en_progreso aquí
+      if (todoCompletado && !esSoloLogistica) {
         return (
-          <Button mode="contained" icon="flag-checkered" onPress={() => handleCerrarViaje(viaje.id)} style={[styles.actionButton, { backgroundColor: '#4ade80' }]}>
-            Cerrar Viaje (Todas Entregadas)
+          <Button mode="contained" onPress={() => handleAvanzarEstadoSimple(viaje.id, 'retornando', 'fecha_viaje_retorno')} style={styles.actionButton}>
+            Iniciar Retorno a Base
           </Button>
         );
       }
-      if (estado === 'en_progreso' && !todasEntregadas) {
-        return null; // El usuario va marcando paradas individualmente
-      }
+      return null;
     }
 
-    // Viajes mixtos: paradas + carga de bobinas al llegar al proveedor
-    if (tipo === 'mixto') {
-      if (estado === 'en_progreso') {
-        // Pueden quedar paradas pendientes o puede avanzar manualmente al proveedor
-        const todasEntregadas = paradasData.length === 0 || paradasData.every((p: any) => p.estado === 'entregado');
-        return (
-          <Button
-            mode={todasEntregadas ? 'contained' : 'outlined'}
-            onPress={() => handleAvanzarEstadoSimple(viaje.id, 'en_destino', 'fecha_viaje_llegada_destino')}
-            style={styles.actionButton}
-            disabled={!todasEntregadas}
-          >
-            {todasEntregadas ? 'Ir al Proveedor' : 'Completa las entregas primero'}
-          </Button>
-        );
-      }
-      if (estado === 'en_destino') {
-        return (
-          <Button mode="contained" icon="inbox-arrow-down" onPress={() => router.push(`/(screens)/cargar-bobinas-viaje?id=${viaje.id}`)} style={styles.actionButton}>
-            Cargar Bobinas y Retornar
-          </Button>
-        );
-      }
-      if (estado === 'retornando') {
-        return (
-          <Button mode="contained" onPress={() => handleAvanzarEstadoSimple(viaje.id, 'completado', 'fecha_viaje_llegada_base')} style={styles.actionButton}>
-            Llegué a Base (Fin)
-          </Button>
-        );
-      }
+    if (estado === 'retornando') {
+      return (
+        <Button mode="contained" icon="flag-checkered" onPress={() => handleCerrarViaje(viaje.id)} style={[styles.actionButton, { backgroundColor: '#4ade80' }]}>
+          Cerrar Viaje (Fin)
+        </Button>
+      );
     }
 
     return null;
@@ -539,7 +569,7 @@ export function ViajesDashboardScreen() {
           <List.Section>
             <Text variant="titleMedium" style={[styles.sectionHeader, { marginTop: 16 }]}>Historial Completado</Text>
             {viajesPasados.map((viaje: any) => (
-              <ViajePasadoItem 
+              <ViajePasadoItem
                 key={viaje.id}
                 viaje={viaje}
                 theme={theme}
@@ -548,6 +578,7 @@ export function ViajesDashboardScreen() {
                 getViajeIcon={getViajeIcon}
                 formatFecha={formatFecha}
                 viajeId={viajeId}
+                router={router}
               />
             ))}
           </List.Section>
@@ -574,6 +605,67 @@ export function ViajesDashboardScreen() {
 }
 
 // Sub-componente que tiene acceso al useQuery de sus propias paradas
+const handleShareRuta = async (viaje: any, powerSync: any) => {
+  try {
+    let mensaje = `🚚 *HOJA DE RUTA - VIAJE ${viaje.tipo_viaje.toUpperCase()}*\n`;
+
+    // 1. Compras
+    const resultCompras = await powerSync.getAll(
+      `SELECT p.nombre_empresa FROM compras_viaje cv LEFT JOIN proveedores p ON p.id = cv.id_proveedor WHERE cv.id_viaje = ? ORDER BY cv.orden ASC`,
+      [viaje.id]
+    );
+    if (resultCompras.length > 0) {
+      mensaje += `\n*PARADAS DE COMPRA*\n`;
+      resultCompras.forEach((row: any, index: number) => {
+        mensaje += `${index + 1}. 🏢 Proveedor: ${row.nombre_empresa}\n`;
+      });
+    }
+
+    // 2. Entregas
+    const resultEntregas = await powerSync.getAll(
+      `SELECT ev.id_pedido, c.razon_social FROM entregas_viaje ev JOIN pedidos p ON p.id = ev.id_pedido LEFT JOIN clientes c ON c.id = p.id_cliente WHERE ev.id_viaje = ? ORDER BY ev.orden ASC`,
+      [viaje.id]
+    );
+    if (resultEntregas.length > 0) {
+      mensaje += `\n*PARADAS DE ENTREGA*\n`;
+      for (let i = 0; i < resultEntregas.length; i++) {
+        const row = resultEntregas[i];
+        mensaje += `${i + 1}. 👤 Cliente: ${row.razon_social}\n`;
+
+        // Productos del pedido
+        const resultDetalles = await powerSync.getAll(
+          `SELECT dp.cantidad_solicitada, pp.nombre as presentacion, pp.rollos_por_paquete, pr.nombre_producto as producto_reventa
+           FROM detalles_pedido dp
+           LEFT JOIN productos_presentacion pp ON pp.id = dp.id_producto
+           LEFT JOIN productos_reventa pr ON pr.id = dp.id_producto_reventa
+           WHERE dp.id_pedido = ?`,
+          [row.id_pedido]
+        );
+
+        if (resultDetalles.length > 0) {
+          resultDetalles.forEach((det: any) => {
+            if (det.presentacion) {
+              const paq = Math.floor(det.cantidad_solicitada / (det.rollos_por_paquete || 1));
+              const sueltos = det.cantidad_solicitada % (det.rollos_por_paquete || 1);
+              let desc = `   - `;
+              if (paq > 0) desc += `${paq} paq`;
+              if (paq > 0 && sueltos > 0) desc += ` y `;
+              if (sueltos > 0) desc += `${sueltos} rollo(s)`;
+              desc += ` de ${det.presentacion}\n`;
+              mensaje += desc;
+            } else if (det.producto_reventa) {
+              mensaje += `   - ${det.cantidad_solicitada} unds x ${det.producto_reventa}\n`;
+            }
+          });
+        }
+      }
+    }
+
+    await Share.share({ message: mensaje });
+  } catch (e) {
+    console.error('Error compartiendo ruta', e);
+  }
+};
 function ViajeActivoItem({
   viaje, theme, powerSync, router, getViajeTitle, getViajeIcon, getViajeColor,
   formatFecha, formatearEstadoUi, renderAccionPrincipal, viajeId
@@ -582,20 +674,32 @@ function ViajeActivoItem({
     `SELECT * FROM entregas_viaje WHERE id_viaje = ? ORDER BY orden ASC`,
     [viaje.id]
   );
-  
+  const { data: comprasData = [] } = useQuery(
+    `SELECT cv.*, p.nombre_empresa FROM compras_viaje cv JOIN proveedores p ON p.id = cv.id_proveedor WHERE id_viaje = ? ORDER BY orden ASC`,
+    [viaje.id]
+  );
+
   const [expanded, setExpanded] = useState(viajeId === viaje.id);
 
   return (
     <List.Accordion
       expanded={expanded}
       onPress={() => setExpanded(!expanded)}
-      title={getViajeTitle(viaje)}
+      title={getViajeTitle(viaje, comprasData)}
       description={`${formatFecha(viaje.fecha_viaje_inicio)} \u2022 ${formatearEstadoUi(viaje.estado)}`}
       left={props => <List.Icon {...props} icon={getViajeIcon(viaje.tipo_viaje)} color={getViajeColor(viaje.tipo_viaje)} />}
+      right={props => (
+        <List.Icon {...props} icon={expanded ? 'chevron-up' : 'chevron-down'} />
+      )}
       style={styles.accordion}
       titleStyle={{ fontWeight: 'bold' }}
     >
       <View style={styles.accordionContent}>
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 4 }}>
+          <Button icon="share-variant" mode="text" onPress={() => handleShareRuta(viaje, powerSync)}>
+            Compartir Ruta
+          </Button>
+        </View>
         {viaje.notas ? (
           <Text variant="bodyMedium" style={styles.detailText}>
             Notas: <Text style={{ fontWeight: 'bold' }}>{viaje.notas}</Text>
@@ -605,6 +709,11 @@ function ViajeActivoItem({
         {/* Paradas de entrega */}
         {(viaje.tipo_viaje === 'entrega' || viaje.tipo_viaje === 'mixto') && (
           <ParadasViaje idViaje={viaje.id} theme={theme} powerSync={powerSync} />
+        )}
+
+        {/* Paradas de compra */}
+        {(viaje.tipo_viaje === 'compra' || viaje.tipo_viaje === 'mixto') && (
+          <ParadasCompraViaje idViaje={viaje.id} theme={theme} router={router} />
         )}
 
         {/* Historial de movimientos de este viaje */}
@@ -617,7 +726,7 @@ function ViajeActivoItem({
 
         {/* Botón de acción principal */}
         <View style={styles.actionRow}>
-          {renderAccionPrincipal(viaje, paradasData)}
+          {renderAccionPrincipal(viaje, paradasData, comprasData)}
         </View>
       </View>
     </List.Accordion>
@@ -625,21 +734,33 @@ function ViajeActivoItem({
 }
 
 function ViajePasadoItem({
-  viaje, theme, powerSync, getViajeTitle, getViajeIcon, formatFecha, viajeId
+  viaje, theme, powerSync, getViajeTitle, getViajeIcon, formatFecha, viajeId, router
 }: any) {
+  const { data: comprasData = [] } = useQuery(
+    `SELECT cv.*, p.nombre_empresa FROM compras_viaje cv JOIN proveedores p ON p.id = cv.id_proveedor WHERE id_viaje = ? ORDER BY orden ASC`,
+    [viaje.id]
+  );
   const [expanded, setExpanded] = useState(viajeId === viaje.id);
 
   return (
     <List.Accordion
       expanded={expanded}
       onPress={() => setExpanded(!expanded)}
-      title={getViajeTitle(viaje)}
+      title={getViajeTitle(viaje, comprasData)}
       description={`${formatFecha(viaje.fecha_viaje_inicio)} • Completado`}
       left={props => <List.Icon {...props} icon={getViajeIcon(viaje.tipo_viaje)} color="#888" />}
+      right={props => (
+        <List.Icon {...props} icon={expanded ? 'chevron-up' : 'chevron-down'} />
+      )}
       style={styles.accordion}
       titleStyle={{ fontWeight: 'bold', color: '#555' }}
     >
       <View style={styles.accordionContent}>
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 4 }}>
+          <Button icon="share-variant" mode="text" onPress={() => handleShareRuta(viaje, powerSync)}>
+            Compartir Ruta
+          </Button>
+        </View>
         {viaje.notas ? (
           <Text variant="bodyMedium" style={styles.detailText}>
             Notas: <Text style={{ fontWeight: 'bold' }}>{viaje.notas}</Text>
@@ -653,6 +774,10 @@ function ViajePasadoItem({
         {(viaje.tipo_viaje === 'entrega' || viaje.tipo_viaje === 'mixto') && (
           <ParadasViaje idViaje={viaje.id} theme={theme} powerSync={powerSync} />
         )}
+        {/* Paradas de compra (si hubo) */}
+        {(viaje.tipo_viaje === 'compra' || viaje.tipo_viaje === 'mixto') && (
+          <ParadasCompraViaje idViaje={viaje.id} theme={theme} router={router} />
+        )}
 
         {/* Historial de movimientos (gastos/ingresos) */}
         <MovimientosViaje idViaje={viaje.id} theme={theme} />
@@ -662,13 +787,13 @@ function ViajePasadoItem({
 }
 
 const styles = StyleSheet.create({
-  
+
   filtersContainer: {
     paddingVertical: 12, paddingHorizontal: 8,
     backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#e0e0e0',
   },
   chip: { marginHorizontal: 4 },
-  
+
   sectionHeader: { fontWeight: 'bold', marginLeft: 8, marginBottom: 8, color: '#333' },
   accordion: { backgroundColor: '#ffffff', marginBottom: 8, borderRadius: 8 },
   accordionContent: {
@@ -689,7 +814,7 @@ const styles = StyleSheet.create({
   },
   actionRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16, gap: 8 },
   actionButton: { borderRadius: 8 },
-  
+
   // Estilos del nuevo GastoViajeForm
   formCard: {
     marginTop: 16,

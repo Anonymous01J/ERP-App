@@ -36,12 +36,12 @@ Always use path aliases defined in `tsconfig.json` to prevent relative path hell
 - `@core/*` ➔ `src/core/*`
 
 ## 6. Reglas de Negocio a Resolver
-* **Materia Prima e Inventario:** Registro de compras de bobinas grandes (Tipo A/B), control de kilos consumidos y cálculo de merma ("peso muerto"/core).
+* **Materia Prima e Inventario:** Registro de compras de bobinas grandes (Tipo A/B), control de kilos consumidos, cálculo de merma ("peso muerto"/core) y analíticas de rendimiento/calidad por proveedor.
 * **Pedidos y Empaque:** Control en rollos agrupados por presentación (600g = 7 ud, 1kg = 5 ud, 2.5kg = 2 ud, 5kg = 1 ud).
 * **Producción Diaria:** Registro de rebobinado por día, asignación a stock/pedidos y cálculo automático de pagos por destajo. Estimación de tiempo de producción basado en `tiempo_x_paquete_min`.
 * **Logística de Viajes:** Registro flexible de gastos (gasolina, peajes, viáticos) durante o después del viaje.
 * **Venta de Potes:** Control de stock y salidas independiente de los rollos de papel.
-* **Finanzas:** Ventas a crédito a 30 días (una sola cuota), soporte para abonos, adelantos y notas de entrega.
+* **Finanzas:** Ventas a crédito a 30 días (una sola cuota), soporte para abonos, notas de entrega, e indicador dinámico de ROI basado en liquidez real (ingresos menos egresos e inversiones).
 * **Identidades (Cédula/RIF):** Soporte global para todos los tipos fiscales y personales de Venezuela (V, E, J, G, P, C).
 
 ## 7. Currency & Input Rules
@@ -66,7 +66,8 @@ Always use path aliases defined in `tsconfig.json` to prevent relative path hell
     - Set JWKS URI to `https://<ref>.supabase.co/auth/v1/.well-known/jwks.json`.
     - Add `authenticated` to **JWT Audience**.
     - Remove conflicting manual HS256 secrets.
-- **Connection Management:** Always await `db.init()` before `db.connect()` and use module-level guards to prevent concurrent double-connections during React re-mounts.
+- **Connection Management:** Do NOT `await db.connect(connector)` during the critical path of app initialization (e.g., inside `AuthProvider.tsx`). Awaiting the network connection defeats the purpose of Offline-First and can cause the app to hang indefinitely on the splash screen if the device wakes up from deep sleep with a stale socket. Always initialize local storage with `await db.init()` first, and then fire-and-forget the network connection (`db.connect(connector).catch(...)`).
+- **Auth Token Refreshes:** Supabase background token refreshes (`TOKEN_REFRESHED` or custom auth state changes) must NOT block the UI or trigger full-screen loaders (`AppLoader`). Only show full-screen loaders during the initial `SIGNED_IN` event.
 - **Upload Queue Blockages:** If a pending local change lacks required columns (e.g., added after the change was made) or violates constraints, the PowerSync Edge Function will return a 500 error. This stalls the local upload queue and blocks further syncs. To resolve in development, instruct the user to clear app data (wipe SQLite cache) or delete the offending record locally.
 - **Sync Streams & Edition 3 (Sync Rules):**
   - In Sync Streams (`edition: 3`), the legacy `bucket` parameter references (e.g. `bucket.user_id` or `:user_id`) are not required for standard user filters.
@@ -95,6 +96,7 @@ Always use path aliases defined in `tsconfig.json` to prevent relative path hell
 To maintain a clean, maintainable, and scalable codebase, strictly adhere to the following coding standards:
 
 ### 🎨 UI & Status Bar (Contraste)
+- **Montos Monetarios y Desbordamiento (Overflow):** Cuando renderices montos monetarios dinámicos que puedan ser grandes (ej. Bolívares `Bs. 1.250.000,00`), siempre utiliza `<Text adjustsFontSizeToFit numberOfLines={1}>` y asegúrate de aplicar `flex: 1` o `flexShrink: 1` en sus contenedores padre si comparten el ancho con otro elemento. Esto garantiza que el texto se reduzca automáticamente en lugar de desbordarse o empujar otros componentes fuera de la pantalla.
 - **Global/Drawer Layouts:** Usar `<StatusBar style="light" backgroundColor={theme.colors.primary} />` si la cabecera es oscura/azul, para que los íconos del sistema se fundan con la cabecera en Android.
 - **Pantallas Modales (Fondos Blancos):** Siempre incluir `<StatusBar style="dark" />` dentro del `<View>` principal para asegurar que los íconos de batería y señal sean visibles (negros) sobre el fondo blanco.
 

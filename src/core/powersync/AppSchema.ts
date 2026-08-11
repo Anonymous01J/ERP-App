@@ -27,8 +27,9 @@ const clientes = new Table({
   estado: column.text
 });
 
-const inventario_potes = new Table({
-  capacidad: column.text,
+const productos_reventa = new Table({
+  nombre_producto: column.text,
+  descripcion: column.text,
   stock_unidades: column.integer,
   precio_compra_usd: column.real,
   precio_venta_usd: column.real,
@@ -73,6 +74,14 @@ const viajes = new Table({
   estado: column.text
 });
 
+const compras_viaje = new Table({
+  id_viaje: column.text,
+  id_proveedor: column.text,
+  hora_llegada: column.text,
+  estado: column.text,
+  orden: column.integer
+});
+
 const pedidos = new Table({
   id_cliente: column.text,
   fecha_creacion: column.text,
@@ -99,6 +108,7 @@ const abonos_pagos = new Table({
 
 const bobinas_grandes = new Table({
   id_viaje_compra: column.text,
+  id_proveedor: column.text,
   peso_inicial_kg: column.real,
   id_tipo_papel: column.text,
   peso_actual_kg: column.real,
@@ -127,7 +137,7 @@ const consumo_bobinas = new Table({
 const detalles_pedido = new Table({
   id_pedido: column.text,
   id_producto: column.text,
-  id_pote: column.text,
+  id_producto_reventa: column.text,
   id_tipo_papel: column.text,
   cantidad_solicitada: column.integer,
   cantidad_producida: column.integer,
@@ -141,6 +151,16 @@ const entregas_viaje = new Table({
   hora_llegada: column.text,
   estado: column.text,
   orden: column.integer
+});
+
+const historial_productos = new Table({
+  id_producto: column.text,
+  cantidad: column.integer,
+  tipo: column.text,
+  origen: column.text,
+  referencia_id: column.text,
+  entidad_relacionada: column.text,
+  fecha: column.text
 });
 
 const movimientos = new Table({
@@ -165,10 +185,11 @@ const notificaciones_historial = new Table({
 
 export const AppSchema = new Schema({
   clientes,
-  inventario_potes,
+  productos_reventa,
   productos_presentacion,
   proveedores,
   viajes,
+  compras_viaje,
   pedidos,
   abonos_pagos,
   bobinas_grandes,
@@ -176,6 +197,7 @@ export const AppSchema = new Schema({
   consumo_bobinas,
   detalles_pedido,
   entregas_viaje,
+  historial_productos,
   movimientos,
   tipos_papel,
   perfiles,

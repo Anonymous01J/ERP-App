@@ -8,6 +8,7 @@ import { CustomCard } from '@components/ui/CustomCard';
 import { usePowerSync, useQuery } from '@powersync/react';
 import Toast from 'react-native-toast-message';
 import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
+import { generateEstadoCuentaPdf } from '../utils/pdfEstadoCuenta';
 
 export function ClientesDashboardScreen() {
   const insets = useSafeAreaInsets();
@@ -24,6 +25,11 @@ export function ClientesDashboardScreen() {
   const { data: clientes = [] } = useQuery(
     `SELECT * FROM clientes WHERE estado = ? ORDER BY razon_social ASC`, 
     [filtroEstado]
+  );
+
+  const { data: historialPedidos = [] } = useQuery(
+    expandedId ? `SELECT * FROM pedidos WHERE id_cliente = ? ORDER BY fecha_creacion DESC LIMIT 3` : `SELECT * FROM pedidos WHERE 1=0`,
+    expandedId ? [expandedId] : []
   );
 
   const toggleExpand = (id: string) => {
@@ -52,6 +58,36 @@ export function ClientesDashboardScreen() {
     } catch (error) {
       console.error('Error actualizando estado del cliente:', error);
       Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo actualizar el estado del cliente.' });
+    }
+  };
+
+  const handleGenerarEstadoCuenta = async (clienteId: string) => {
+    try {
+      // 1. Obtener datos del cliente
+      const clienteData = clientes.find(c => c.id === clienteId);
+      if (!clienteData) throw new Error('Cliente no encontrado');
+
+      // 2. Obtener historial de pedidos a crédito o deudas
+      const pedidosResult = await powerSync.getAll(
+        `SELECT * FROM pedidos WHERE id_cliente = ? AND estado != 'cancelado' ORDER BY fecha_creacion ASC`, 
+        [clienteId]
+      );
+
+      // 3. Obtener todos los abonos realizados por este cliente
+      // Buscamos los abonos a través de los pedidos del cliente
+      const abonosResult = await powerSync.getAll(
+        `SELECT a.* FROM abonos_pagos a
+         JOIN pedidos p ON a.id_pedido = p.id
+         WHERE p.id_cliente = ? ORDER BY a.fecha_pago ASC`,
+        [clienteId]
+      );
+
+      // 4. Generar el PDF
+      await generateEstadoCuentaPdf(clienteData, pedidosResult, abonosResult);
+      
+    } catch (error) {
+      console.error('Error generando estado de cuenta:', error);
+      Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo generar el Estado de Cuenta.' });
     }
   };
 
@@ -141,15 +177,53 @@ export function ClientesDashboardScreen() {
               {isExpanded && (
                 <View style={styles.historyContainer}>
                   <Divider style={styles.divider} />
-                  <Text variant="bodySmall" style={{ color: '#888', fontStyle: 'italic', marginBottom: 12 }}>
-                    El historial de transacciones se mostrará aquí.
-                  </Text>
+                  
+                  <View style={{ marginBottom: 12 }}>
+                    <Text variant="labelMedium" style={{ fontWeight: 'bold', color: '#6b7280', marginBottom: 8 }}>ÚLTIMOS PEDIDOS</Text>
+                    {historialPedidos.length === 0 ? (
+                      <Text variant="bodySmall" style={{ color: '#888', fontStyle: 'italic' }}>
+                        No hay pedidos recientes.
+                      </Text>
+                    ) : (
+                      historialPedidos.map((ped, idx) => (
+                        <View key={ped.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: idx < historialPedidos.length - 1 ? 1 : 0, borderBottomColor: '#f3f4f6' }}>
+                          <View>
+                            <Text variant="bodySmall" style={{ fontWeight: 'bold' }}>
+                              {new Date(ped.fecha_creacion).toLocaleDateString('es-VE')}
+                            </Text>
+                            <Text variant="bodySmall" style={{ color: ped.estado === 'entregado' ? '#10b981' : '#f59e0b' }}>
+                              {ped.estado === 'entregado' ? 'Entregado' : 'Pendiente'}
+                            </Text>
+                          </View>
+                          <View style={{ alignItems: 'flex-end' }}>
+                            <Text variant="bodySmall" style={{ fontWeight: 'bold' }}>
+                              ${ped.monto_total?.toFixed(2) || '0.00'}
+                            </Text>
+                            <Text variant="bodySmall" style={{ color: ped.estado_pago === 'pagado' ? '#10b981' : '#ef4444' }}>
+                              {ped.estado_pago === 'pagado' ? 'Pagado' : 'Deuda'}
+                            </Text>
+                          </View>
+                        </View>
+                      ))
+                    )}
+                  </View>
                   
                   <View style={styles.actionsRow}>
-                    <Button mode="contained-tonal" compact onPress={() => {}} style={{ flex: 1, marginRight: 8 }} disabled={isInactive}>
+                    <Button 
+                      mode="contained-tonal" 
+                      compact 
+                      onPress={() => router.push('/(tabs)/pedidos?vista=finanzas')} 
+                      style={{ flex: 1, marginRight: 8 }} 
+                      disabled={isInactive}
+                    >
                       Registrar Abono
                     </Button>
-                    <Button mode="outlined" compact onPress={() => {}} style={{ flex: 1 }}>
+                    <Button 
+                      mode="outlined" 
+                      compact 
+                      onPress={() => handleGenerarEstadoCuenta(cliente.id)} 
+                      style={{ flex: 1 }}
+                    >
                       Estado de Cta
                     </Button>
                   </View>

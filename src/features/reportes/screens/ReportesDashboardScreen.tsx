@@ -12,6 +12,8 @@ import ViewShot from 'react-native-view-shot';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { generateProductionPDF, generateFinancePDF, generateLogisticsPDF } from '../utils/generatePdf';
 
+const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+
 const CATEGORY_COLORS: Record<string, string> = {
   gasolina: '#dc2626',
   peaje: '#1e3a8a',
@@ -19,6 +21,14 @@ const CATEGORY_COLORS: Record<string, string> = {
   mantenimiento: '#8b5cf6',
   operativos: '#14b8a6',
   otros: '#9ca3af'
+};
+
+// Genera 'YYYY-MM-DD' en hora local del dispositivo
+const localDateStr = (d: Date) => {
+  const y = d.getFullYear();
+  const m = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${y}-${m}-${day}`;
 };
 
 export function ReportesDashboardScreen() {
@@ -60,9 +70,14 @@ export function ReportesDashboardScreen() {
   // Consultas PowerSync
   const queryData = useMemo(() => {
     let queryStr = `
-      SELECT id, peso_inicial_kg, peso_actual_kg, peso_muerto_kg, merma_core_kg, fecha_llegada, fecha_gasto
-      FROM bobinas_grandes
-      WHERE fecha_llegada >= ?
+      SELECT 
+        bg.id, bg.peso_inicial_kg, bg.peso_actual_kg, bg.peso_muerto_kg, bg.merma_core_kg, bg.fecha_llegada, bg.fecha_gasto,
+        p.nombre_empresa as proveedor,
+        tp.nombre as tipo_papel
+      FROM bobinas_grandes bg
+      LEFT JOIN proveedores p ON bg.id_proveedor = p.id
+      LEFT JOIN tipos_papel tp ON bg.id_tipo_papel = tp.id
+      WHERE bg.fecha_llegada >= ?
     `;
     let params: any[] = [fechaInicio];
 
@@ -103,7 +118,7 @@ export function ReportesDashboardScreen() {
   }, [fechaInicio, filtroTiempo, fechaFinPersonalizada]);
 
   const queryDataLogistica = useMemo(() => {
-    let queryStr = `SELECT categoria, monto, moneda, tasa_cambio, fecha, descripcion FROM movimientos WHERE id_viaje IS NOT NULL AND fecha >= ?`;
+    let queryStr = `SELECT id_viaje, tipo, categoria, monto, moneda, tasa_cambio, fecha, descripcion FROM movimientos WHERE fecha >= ?`;
     let params: any[] = [fechaInicio];
     if (filtroTiempo === 'personalizado' && fechaFinPersonalizada) {
       queryStr += ` AND fecha <= ?`;
@@ -121,9 +136,12 @@ export function ReportesDashboardScreen() {
         pp.nombre as presentacion,
         cb.id_bobina,
         SUM(pd.cantidad_rollos_total) as total_rollos,
-        COALESCE(SUM(cb.kg_consumidos), 0) as total_kg
+        COALESCE(SUM(cb.kg_consumidos), 0) as total_kg,
+        p.nombre_empresa as proveedor
       FROM produccion_diaria pd
       LEFT JOIN consumo_bobinas cb ON cb.id_produccion = pd.id
+      LEFT JOIN bobinas_grandes bg ON cb.id_bobina = bg.id
+      LEFT JOIN proveedores p ON bg.id_proveedor = p.id
       LEFT JOIN productos_presentacion pp ON pd.id_producto = pp.id
       WHERE pd.fecha >= ?
     `;
@@ -135,8 +153,49 @@ export function ReportesDashboardScreen() {
       end.setHours(23, 59, 59, 999);
       params.push(end.toISOString());
     }
-    queryStr += ` GROUP BY pd.fecha, pp.nombre, cb.id_bobina ORDER BY pd.fecha ASC`;
+    queryStr += ` GROUP BY pd.fecha, pp.nombre, cb.id_bobina, p.nombre_empresa ORDER BY pd.fecha ASC`;
     
+    return { queryStr, params };
+  }, [fechaInicio, filtroTiempo, fechaFinPersonalizada]);
+
+  // Queries separados para Rollos (por presentación) y Kg (por tipo de papel)
+  const queryDataRollos = useMemo(() => {
+    let queryStr = `
+      SELECT 
+        CASE WHEN length(pd.fecha) > 10 THEN DATE(pd.fecha, 'localtime') ELSE pd.fecha END as fecha,
+        pp.nombre as nombre_serie,
+        SUM(pd.cantidad_rollos_total) as valor
+      FROM produccion_diaria pd
+      LEFT JOIN productos_presentacion pp ON pd.id_producto = pp.id
+      WHERE CASE WHEN length(pd.fecha) > 10 THEN DATE(pd.fecha, 'localtime') ELSE pd.fecha END >= ?
+    `;
+    let params: any[] = [fechaInicio.substring(0, 10)];
+    if (filtroTiempo === 'personalizado' && fechaFinPersonalizada) {
+      queryStr += ` AND CASE WHEN length(pd.fecha) > 10 THEN DATE(pd.fecha, 'localtime') ELSE pd.fecha END <= ?`;
+      params.push(fechaFinPersonalizada.substring(0, 10));
+    }
+    queryStr += ` GROUP BY 1, pp.nombre ORDER BY 1 ASC`;
+    return { queryStr, params };
+  }, [fechaInicio, filtroTiempo, fechaFinPersonalizada]);
+
+  const queryDataKg = useMemo(() => {
+    let queryStr = `
+      SELECT 
+        CASE WHEN length(pd.fecha) > 10 THEN DATE(pd.fecha, 'localtime') ELSE pd.fecha END as fecha,
+        COALESCE(tp.nombre, 'Sin tipo') as nombre_serie,
+        SUM(cb.kg_consumidos) as valor
+      FROM consumo_bobinas cb
+      JOIN produccion_diaria pd ON pd.id = cb.id_produccion
+      JOIN bobinas_grandes bg ON bg.id = cb.id_bobina
+      LEFT JOIN tipos_papel tp ON tp.id = bg.id_tipo_papel
+      WHERE CASE WHEN length(pd.fecha) > 10 THEN DATE(pd.fecha, 'localtime') ELSE pd.fecha END >= ?
+    `;
+    let params: any[] = [fechaInicio.substring(0, 10)];
+    if (filtroTiempo === 'personalizado' && fechaFinPersonalizada) {
+      queryStr += ` AND CASE WHEN length(pd.fecha) > 10 THEN DATE(pd.fecha, 'localtime') ELSE pd.fecha END <= ?`;
+      params.push(fechaFinPersonalizada.substring(0, 10));
+    }
+    queryStr += ` GROUP BY 1, tp.nombre ORDER BY 1 ASC`;
     return { queryStr, params };
   }, [fechaInicio, filtroTiempo, fechaFinPersonalizada]);
 
@@ -144,6 +203,8 @@ export function ReportesDashboardScreen() {
   const { data: abonosFin = [] } = useQuery(queryDataAbonos.queryStr, queryDataAbonos.params);
   const { data: gastosViaje = [] } = useQuery(queryDataLogistica.queryStr, queryDataLogistica.params);
   const { data: produccionRaw = [] } = useQuery(queryDataProduccion.queryStr, queryDataProduccion.params);
+  const { data: rollosRaw = [] } = useQuery(queryDataRollos.queryStr, queryDataRollos.params);
+  const { data: kgRaw = [] } = useQuery(queryDataKg.queryStr, queryDataKg.params);
 
   // Cálculos de Mermas
   const metricasMermas = useMemo(() => {
@@ -166,155 +227,182 @@ export function ReportesDashboardScreen() {
     return { bruto, desperdicio, util };
   }, [bobinas]);
 
-  // Cálculos Producción (Líneas)
-  const { lineDataRollos, lineDataKg } = useMemo(() => {
-    const dataRollosMap: Record<string, number> = {};
-    const dataKgMap: Record<string, number> = {};
-    const labelsEnOrden: string[] = [];
-    const hoy = new Date();
-    hoy.setHours(23, 59, 59, 999);
-
-    if (filtroTiempo === 'personalizado' && fechaInicioPersonalizada && fechaFinPersonalizada) {
-      // Diferencia en días para rango personalizado
-      const inicio = new Date(fechaInicioPersonalizada);
-      const fin = new Date(fechaFinPersonalizada);
-      fin.setHours(23, 59, 59, 999);
-      const diffDays = Math.floor((fin.getTime() - inicio.getTime()) / 86400000);
+  // Cálculos Rendimiento Proveedores
+  const rendimientoProveedores = useMemo(() => {
+    const map: Record<string, { bruto: number; desperdicio: number }> = {};
+    bobinas.forEach((b: any) => {
+      const prov = b.proveedor || 'Sin Proveedor';
+      if (!map[prov]) map[prov] = { bruto: 0, desperdicio: 0 };
       
-      if (diffDays <= 31) {
-        // Agrupar por días
-        for (let i = diffDays; i >= 0; i--) {
-          const d = new Date(fin.getTime() - i * 86400000);
-          const key = d.toISOString().split('T')[0];
-          labelsEnOrden.push(key);
-          dataRollosMap[key] = 0;
-          dataKgMap[key] = 0;
-        }
-      } else {
-        // Agrupar por semanas si es mayor a un mes
-        const diffWeeks = Math.floor(diffDays / 7);
-        for (let i = diffWeeks; i >= 0; i--) {
-          const start = new Date(fin.getTime() - (i * 7 + 6) * 86400000);
-          const startStr = start.toISOString().split('T')[0].slice(5);
-          const key = `Sem (${startStr})`;
-          labelsEnOrden.push(key);
-          dataRollosMap[key] = 0;
-          dataKgMap[key] = 0;
-        }
-      }
-    } else if (filtroTiempo === 'mensual') {
-      for (let i = 3; i >= 0; i--) {
-        const start = new Date(hoy.getTime() - (i * 7 + 6) * 86400000);
-        const startStr = start.toISOString().split('T')[0].slice(5);
-        const key = `Sem ${4 - i} (${startStr})`;
-        labelsEnOrden.push(key);
-        dataRollosMap[key] = 0;
-        dataKgMap[key] = 0;
-      }
-    } else if (filtroTiempo === 'trimestral') {
-      for (let i = 2; i >= 0; i--) {
-        const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
-        const key = d.toISOString().split('T')[0].slice(0, 7); // YYYY-MM
-        labelsEnOrden.push(key);
-        dataRollosMap[key] = 0;
-        dataKgMap[key] = 0;
-      }
-    } else if (filtroTiempo === 'semestral') {
-      for (let i = 5; i >= 0; i--) {
-        const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
-        const key = d.toISOString().split('T')[0].slice(0, 7); // YYYY-MM
-        labelsEnOrden.push(key);
-        dataRollosMap[key] = 0;
-        dataKgMap[key] = 0;
-      }
-    } else if (filtroTiempo === 'anual') {
-      for (let i = 11; i >= 0; i--) {
-        const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
-        const key = d.toISOString().split('T')[0].slice(0, 7); // YYYY-MM
-        labelsEnOrden.push(key);
-        dataRollosMap[key] = 0;
-        dataKgMap[key] = 0;
-      }
-    }
+      const bruto = b.peso_inicial_kg || 0;
+      const desperdicio = (b.peso_muerto_kg || 0) + (b.merma_core_kg || 0);
+      
+      map[prov].bruto += bruto;
+      map[prov].desperdicio += desperdicio;
+    });
 
-    for (const row of produccionRaw as any[]) {
-      const f = row.fecha?.split('T')[0] ?? row.fecha;
-      if (!f) continue;
-      const d = new Date(f);
-      const rollos = row.total_rollos ?? 0;
-      const kg = row.total_kg ?? 0;
+    return Object.entries(map).map(([proveedor, data]) => {
+      const util = data.bruto - data.desperdicio;
+      const eficiencia = data.bruto > 0 ? (util / data.bruto) * 100 : 0;
+      return { proveedor, ...data, util, eficiencia };
+    }).sort((a, b) => b.eficiencia - a.eficiencia);
+  }, [bobinas]);
 
-      if (filtroTiempo === 'personalizado') {
-        const inicio = new Date(fechaInicioPersonalizada);
-        const fin = new Date(fechaFinPersonalizada);
-        fin.setHours(23, 59, 59, 999);
-        const diffDays = Math.floor((fin.getTime() - inicio.getTime()) / 86400000);
-        if (diffDays <= 31) {
-          if (dataRollosMap[f] !== undefined) {
-            dataRollosMap[f] += rollos;
-            dataKgMap[f] += kg;
-          }
-        } else {
-          const pastDays = Math.floor((fin.getTime() - d.getTime()) / 86400000);
-          const semIndex = Math.floor(pastDays / 7);
-          const keyIndex = labelsEnOrden.length - 1 - semIndex;
-          if (keyIndex >= 0 && keyIndex < labelsEnOrden.length) {
-            const key = labelsEnOrden[keyIndex];
-            dataRollosMap[key] += rollos;
-            dataKgMap[key] += kg;
-          }
-        }
-      } else if (filtroTiempo === 'mensual') {
-        const diffDays = Math.floor((hoy.getTime() - d.getTime()) / 86400000);
-        if (diffDays >= 0 && diffDays < 28) {
-          const semIndex = 3 - Math.floor(diffDays / 7);
-          const key = labelsEnOrden[semIndex];
-          dataRollosMap[key] += rollos;
-          dataKgMap[key] += kg;
-        }
-      } else {
-        const key = f.slice(0, 7); // YYYY-MM
-        if (dataRollosMap[key] !== undefined) {
-          dataRollosMap[key] += rollos;
-          dataKgMap[key] += kg;
-        }
-      }
-    }
+  // Procesa datos multi-línea por nombre_serie para el período dado
+  const processMultiLine = (
+    rawData: any[], 
+    filtro: string, 
+    hoy: Date, 
+    fechaIni: string, 
+    fechaFin: string
+  ) => {
+    const dataMap: Record<string, Record<string, number>> = {};
+    const labelsEnOrden: string[] = [];
+    const uniqueNames = new Set<string>();
 
     const formatLabel = (lbl: string) => {
-      if (lbl.startsWith('Sem')) return lbl.split(' ')[0]; // Sem X
-      if (lbl.length === 7) { // YYYY-MM
-        const parts = lbl.split('-');
-        return `${parts[1]}/${parts[0].slice(2)}`; // MM/YY
-      }
-      if (lbl.length === 10) { // YYYY-MM-DD
-        const parts = lbl.split('-');
-        return `${parts[2]}/${parts[1]}`; // DD/MM
-      }
+      if (lbl.startsWith('Sem')) return lbl.split(' ')[0];
+      if (lbl.length === 7) { const p = lbl.split('-'); return `${p[1]}/${p[0].slice(2)}`; }
+      if (lbl.length === 10) { const p = lbl.split('-'); return `${p[2]}/${p[1]}`; }
       return lbl;
     };
 
-    const outRollos = labelsEnOrden.map(lbl => ({ value: dataRollosMap[lbl], label: formatLabel(lbl), dataLabel: formatLabel(lbl) }));
-    const outKg = labelsEnOrden.map(lbl => ({ value: dataKgMap[lbl], label: formatLabel(lbl), dataLabel: formatLabel(lbl) }));
-    
-    return { lineDataRollos: outRollos, lineDataKg: outKg };
-  }, [produccionRaw, filtroTiempo, fechaInicioPersonalizada, fechaFinPersonalizada]);
+    if (filtro === 'personalizado' && fechaIni && fechaFin) {
+      const inicio = new Date(fechaIni + 'T00:00:00');
+      const fin = new Date(fechaFin + 'T00:00:00');
+      const diffDays = Math.round((fin.getTime() - inicio.getTime()) / 86400000);
+      if (diffDays <= 31) {
+        for (let i = 0; i <= diffDays; i++) {
+          const d = new Date(inicio); d.setDate(d.getDate() + i);
+          const key = localDateStr(d);
+          labelsEnOrden.push(key); dataMap[key] = {};
+        }
+      } else {
+        const diffWeeks = Math.floor(diffDays / 7);
+        for (let i = 0; i <= diffWeeks; i++) {
+          const s = new Date(inicio); s.setDate(s.getDate() + i * 7);
+          const key = `Sem (${(s.getMonth()+1).toString().padStart(2,'0')}-${s.getDate().toString().padStart(2,'0')})`;
+          labelsEnOrden.push(key); dataMap[key] = {};
+        }
+      }
+    } else if (filtro === 'mensual') {
+      for (let i = 3; i >= 0; i--) {
+        const start = new Date(hoy); start.setDate(start.getDate() - (i * 7 + 6));
+        const key = `Sem ${4 - i} (${(start.getMonth()+1).toString().padStart(2,'0')}-${start.getDate().toString().padStart(2,'0')})`;
+        labelsEnOrden.push(key); dataMap[key] = {};
+      }
+    } else {
+      const meses = filtro === 'trimestral' ? 3 : filtro === 'semestral' ? 6 : 12;
+      for (let i = meses - 1; i >= 0; i--) {
+        const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2,'0')}`;
+        labelsEnOrden.push(key); dataMap[key] = {};
+      }
+    }
+
+    for (const row of rawData as any[]) {
+      if (!row.fecha) continue;
+      const f = row.fecha.substring(0, 10);
+      const name = String(row.nombre_serie || 'Sin nombre');
+      const val = Number(row.valor) || 0;
+      if (val <= 0) continue;
+
+      let key: string | undefined;
+      if (filtro === 'personalizado' && fechaIni && fechaFin) {
+        const fin = new Date(fechaFin + 'T00:00:00');
+        const inicio = new Date(fechaIni + 'T00:00:00');
+        const diffDays = Math.round((fin.getTime() - inicio.getTime()) / 86400000);
+        if (diffDays <= 31) {
+          key = dataMap[f] !== undefined ? f : undefined;
+        } else {
+          const [y, mo, dy] = f.split('-').map(Number);
+          const dNorm = new Date(y, mo - 1, dy);
+          const pastDays = Math.round((fin.getTime() - dNorm.getTime()) / 86400000);
+          const semIndex = labelsEnOrden.length - 1 - Math.floor(pastDays / 7);
+          key = labelsEnOrden[semIndex];
+        }
+      } else if (filtro === 'mensual') {
+        const [y, mo, dy] = f.split('-').map(Number);
+        const hoyNorm = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+        const dNorm = new Date(y, mo - 1, dy);
+        const diffDays = Math.round((hoyNorm.getTime() - dNorm.getTime()) / 86400000);
+        if (diffDays >= 0 && diffDays < 28) {
+          const semIndex = 3 - Math.floor(diffDays / 7);
+          key = labelsEnOrden[semIndex];
+        }
+      } else {
+        key = f.slice(0, 7); // YYYY-MM
+      }
+
+      if (key && dataMap[key] !== undefined) {
+        dataMap[key][name] = (dataMap[key][name] ?? 0) + val;
+        uniqueNames.add(name);
+      }
+    }
+
+    const namesArray = Array.from(uniqueNames);
+    if (namesArray.length === 0) {
+      return {
+        dataSet: [{ data: labelsEnOrden.map(lbl => ({ value: 0, label: formatLabel(lbl), dataLabel: formatLabel(lbl) })), color: '#9ca3af' }],
+        legends: [],
+        maxVal: 10
+      };
+    }
+
+    const dataSet = namesArray.map((name, index) => {
+      const color = CHART_COLORS[index % CHART_COLORS.length];
+      return {
+        data: labelsEnOrden.map(lbl => ({ value: dataMap[lbl]?.[name] ?? 0, label: formatLabel(lbl), dataLabel: formatLabel(lbl) })),
+        color, startFillColor: color, endFillColor: color, startOpacity: 0.3, endOpacity: 0.05, thickness: 2,
+      };
+    });
+    const legends = namesArray.map((name, index) => ({ name, color: CHART_COLORS[index % CHART_COLORS.length] }));
+    let maxVal = 0;
+    dataSet.forEach(s => s.data.forEach(d => { if (d.value > maxVal) maxVal = d.value; }));
+    return { dataSet, legends, maxVal: maxVal * 1.2 || 10 };
+  };
+
+  const { dataSetRollos, legendsRollos, maxRollos } = useMemo(() => {
+    const hoy = new Date();
+    const res = processMultiLine(rollosRaw, filtroTiempo, hoy, fechaInicioPersonalizada, fechaFinPersonalizada);
+    return { dataSetRollos: res.dataSet, legendsRollos: res.legends, maxRollos: res.maxVal };
+  }, [rollosRaw, filtroTiempo, fechaInicioPersonalizada, fechaFinPersonalizada]);
+
+  const { dataSetKg, legendsKg, maxKg } = useMemo(() => {
+    const hoy = new Date();
+    const res = processMultiLine(kgRaw, filtroTiempo, hoy, fechaInicioPersonalizada, fechaFinPersonalizada);
+    return { dataSetKg: res.dataSet, legendsKg: res.legends, maxKg: res.maxVal };
+  }, [kgRaw, filtroTiempo, fechaInicioPersonalizada, fechaFinPersonalizada]);
 
   // Cálculos Finanzas
   const metricasFinanzas = useMemo(() => {
     let ventas = 0;
     let cobranzas = 0;
+    let inversion = 0;
+    
     pedidosFin.forEach((p: any) => ventas += (p.monto_total || 0));
     abonosFin.forEach((a: any) => cobranzas += (a.monto_equivalente_usd || 0));
-    return { ventas, cobranzas, cuentasPorCobrar: ventas - cobranzas };
-  }, [pedidosFin, abonosFin]);
+    
+    gastosViaje.forEach((m: any) => {
+      const montoUsd = m.moneda === 'USD' ? m.monto : (m.monto / (m.tasa_cambio || 1));
+      if (m.tipo === 'ingreso') {
+        cobranzas += montoUsd;
+      } else {
+        inversion += montoUsd;
+      }
+    });
+
+    const roi = inversion > 0 ? ((cobranzas - inversion) / inversion) * 100 : 0;
+
+    return { ventas, cobranzas, cuentasPorCobrar: ventas - cobranzas, inversion, roi };
+  }, [pedidosFin, abonosFin, gastosViaje]);
 
   // Cálculos Logística
   const metricasLogistica = useMemo(() => {
     const desglose: Record<string, number> = { gasolina: 0, peaje: 0, viaticos: 0, mantenimiento: 0, operativos: 0, otros: 0 };
     let totalGastos = 0;
     
-    gastosViaje.forEach((g: any) => {
+    gastosViaje.filter((m: any) => m.id_viaje !== null).forEach((g: any) => {
       const montoUsd = g.moneda === 'USD' ? g.monto : (g.monto / (g.tasa_cambio || 1));
       const cat = g.categoria || 'otros';
       if (desglose[cat] !== undefined) {
@@ -368,9 +456,9 @@ export function ReportesDashboardScreen() {
       }
       
       if (vista === 'produccion') {
-        await generateProductionPDF(label, metricasMermas, chartBase64, chartBase64Rollos, chartBase64Kg, tipoReporte === 'detallado', bobinas, produccionRaw);
+        await generateProductionPDF(label, metricasMermas, chartBase64, chartBase64Rollos, chartBase64Kg, tipoReporte === 'detallado', bobinas, produccionRaw, rendimientoProveedores);
       } else if (vista === 'finanzas') {
-        await generateFinancePDF(label, metricasFinanzas, chartBase64, tipoReporte === 'detallado', pedidosFin, abonosFin);
+        await generateFinancePDF(label, metricasFinanzas, chartBase64, tipoReporte === 'detallado', pedidosFin, abonosFin, gastosViaje);
       } else {
         await generateLogisticsPDF(label, metricasLogistica, chartBase64, tipoReporte === 'detallado', gastosViaje);
       }
@@ -379,8 +467,6 @@ export function ReportesDashboardScreen() {
     }
   };
 
-  const maxRollos = Math.max(10, ...lineDataRollos.map(d => d.value)) * 1.2;
-  const maxKg = Math.max(10, ...lineDataKg.map(d => d.value)) * 1.2;
 
   return (
     <View style={globalStyles.containerWhite}>
@@ -497,6 +583,37 @@ export function ReportesDashboardScreen() {
                 </View>
             </CustomCard>
 
+            {/* Rendimiento por Proveedor */}
+            <CustomCard style={{ marginBottom: 16 }}>
+              <View style={{ padding: 16 }}>
+                <Text variant="titleMedium" style={globalStyles.sectionTitle}>
+                  Rendimiento por Proveedor
+                </Text>
+                {rendimientoProveedores.length > 0 ? (
+                  rendimientoProveedores.map((rp, idx) => (
+                    <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: idx < rendimientoProveedores.length - 1 ? 1 : 0, borderBottomColor: theme.colors.surfaceVariant }}>
+                      <View style={{ flex: 1 }}>
+                        <Text variant="bodyMedium" style={{ fontWeight: 'bold' }}>{rp.proveedor}</Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                          Materia Prima: {rp.bruto.toFixed(0)} kg
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+                        <Text variant="titleMedium" style={{ color: rp.eficiencia >= 95 ? '#16a34a' : rp.eficiencia >= 90 ? '#f59e0b' : '#dc2626', fontWeight: 'bold' }}>
+                          {rp.eficiencia.toFixed(1)}%
+                        </Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Eficiencia</Text>
+                      </View>
+                    </View>
+                  ))
+                ) : (
+                  <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center', padding: 16 }}>
+                    No hay datos de proveedores en este período
+                  </Text>
+                )}
+              </View>
+            </CustomCard>
+
             {/* Gráfico Rollos */}
             <CustomCard style={{ marginBottom: 16 }}>
               <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 }}>
@@ -506,7 +623,7 @@ export function ReportesDashboardScreen() {
               </View>
               <ViewShot ref={chartRefRollos} options={{ format: 'png', quality: 0.9, result: 'base64' }}>
                 <View style={{ paddingHorizontal: 16, paddingBottom: 16, alignItems: 'center', backgroundColor: theme.colors.surface }}>
-                  {lineDataRollos.every(d => d.value === 0) ? (
+                  {dataSetRollos[0]?.data.every((d: any) => d.value === 0) ? (
                     <Text variant="bodyMedium" style={{ color: '#9ca3af', textAlign: 'center', paddingVertical: 40 }}>
                       Sin producción en este período.
                     </Text>
@@ -515,23 +632,11 @@ export function ReportesDashboardScreen() {
                       maxValue={maxRollos}
                       areaChart
                       curved
-                      data={lineDataRollos}
+                      dataSet={dataSetRollos}
                       height={200}
                       width={Dimensions.get('window').width - 120}
                       color={theme.colors.primary}
-                      startFillColor={theme.colors.primary}
-                      endFillColor={theme.colors.primary}
-                      startOpacity={0.3}
-                      endOpacity={0.05}
-                      yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
-                      xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
-                      yAxisThickness={0}
-                      xAxisThickness={1}
-                      xAxisColor="#e5e7eb"
-                      rulesColor="#f3f4f6"
-                      rulesType="dashed"
-                      noOfSections={4}
-                      spacing={lineDataRollos.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataRollos.length - 1) : 45}
+                      spacing={dataSetRollos[0]?.data?.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (dataSetRollos[0].data.length - 1) : 45}
                       initialSpacing={15}
                       endSpacing={15}
                       pointerConfig={{
@@ -540,35 +645,48 @@ export function ReportesDashboardScreen() {
                         pointerStripWidth: 2,
                         pointerColor: 'lightgray',
                         radius: 6,
-                        pointerLabelWidth: 100,
-                        pointerLabelHeight: 72,
+                        pointerLabelWidth: 140,
+                        pointerLabelHeight: 90,
                         activatePointersOnLongPress: false,
                         autoAdjustPointerLabelPosition: true,
-                        pointerLabelComponent: (items: any) => {
-                          const item = items[0];
-                          return (
-                            <View style={{ padding: 8, backgroundColor: '#1f2937', borderRadius: 8, alignItems: 'center' }}>
-                              <Text style={{ color: '#d1d5db', fontSize: 12, marginBottom: 4 }}>{item?.dataLabel || ''}</Text>
-                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.primary, marginRight: 6 }} />
-                                <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>
-                                  {item?.value ?? 0} rollos
-                                </Text>
+                        pointerLabelComponent: (items: any) => (
+                          <View style={{ padding: 8, backgroundColor: '#1f2937', borderRadius: 8, alignItems: 'flex-start' }}>
+                            <Text style={{ color: '#d1d5db', fontSize: 12, marginBottom: 4 }}>{items[0]?.dataLabel || ''}</Text>
+                            {items.map((item: any, i: number) => (
+                              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: CHART_COLORS[i % CHART_COLORS.length], marginRight: 6 }} />
+                                <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>{item?.value ?? 0} rollos</Text>
                               </View>
-                            </View>
-                          );
-                        },
+                            ))}
+                          </View>
+                        ),
                       }}
+                      yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
+                      xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
+                      yAxisThickness={0}
+                      xAxisThickness={1}
+                      xAxisColor="#e5e7eb"
+                      rulesColor="#f3f4f6"
+                      rulesType="dashed"
+                      noOfSections={4}
                     />
                   )}
                 </View>
-              </ViewShot>
-              <View style={{ flexDirection: 'row', justifyContent: 'center', paddingBottom: 16 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: theme.colors.primary }} />
-                  <Text variant="bodySmall">Rollos producidos</Text>
+                {/* Leyenda multi-línea */}
+                <View style={styles.chartLegendContainer}>
+                  {legendsRollos.length > 0 ? legendsRollos.map((leg: any, idx: number) => (
+                    <View key={idx} style={styles.chartLegendItem}>
+                      <View style={[styles.chartLegendColor, { backgroundColor: leg.color }]} />
+                      <Text variant="bodyMedium">{leg.name}</Text>
+                    </View>
+                  )) : (
+                    <View style={styles.chartLegendItem}>
+                      <View style={[styles.chartLegendColor, { backgroundColor: theme.colors.primary }]} />
+                      <Text variant="bodyMedium">Rollos producidos</Text>
+                    </View>
+                  )}
                 </View>
-              </View>
+              </ViewShot>
             </CustomCard>
 
             {/* Gráfico Kg */}
@@ -580,7 +698,7 @@ export function ReportesDashboardScreen() {
               </View>
               <ViewShot ref={chartRefKg} options={{ format: 'png', quality: 0.9, result: 'base64' }}>
                 <View style={{ paddingHorizontal: 16, paddingBottom: 16, alignItems: 'center', backgroundColor: theme.colors.surface }}>
-                  {lineDataKg.every(d => d.value === 0) ? (
+                  {dataSetKg[0]?.data.every((d: any) => d.value === 0) ? (
                     <Text variant="bodyMedium" style={{ color: '#9ca3af', textAlign: 'center', paddingVertical: 40 }}>
                       Sin consumo en este período.
                     </Text>
@@ -589,14 +707,34 @@ export function ReportesDashboardScreen() {
                       maxValue={maxKg}
                       areaChart
                       curved
-                      data={lineDataKg}
+                      dataSet={dataSetKg}
                       height={200}
                       width={Dimensions.get('window').width - 120}
-                      color="#f59e0b"
-                      startFillColor="#f59e0b"
-                      endFillColor="#f59e0b"
-                      startOpacity={0.3}
-                      endOpacity={0.05}
+                      spacing={dataSetKg[0]?.data?.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (dataSetKg[0].data.length - 1) : 45}
+                      initialSpacing={15}
+                      endSpacing={15}
+                      pointerConfig={{
+                        pointerStripHeight: 160,
+                        pointerStripColor: 'lightgray',
+                        pointerStripWidth: 2,
+                        pointerColor: 'lightgray',
+                        radius: 6,
+                        pointerLabelWidth: 140,
+                        pointerLabelHeight: 90,
+                        activatePointersOnLongPress: false,
+                        autoAdjustPointerLabelPosition: true,
+                        pointerLabelComponent: (items: any) => (
+                          <View style={{ padding: 8, backgroundColor: '#1f2937', borderRadius: 8, alignItems: 'flex-start' }}>
+                            <Text style={{ color: '#d1d5db', fontSize: 12, marginBottom: 4 }}>{items[0]?.dataLabel || ''}</Text>
+                            {items.map((item: any, i: number) => (
+                              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: CHART_COLORS[i % CHART_COLORS.length], marginRight: 6 }} />
+                                <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>{(item?.value ?? 0).toFixed(1)} kg</Text>
+                              </View>
+                            ))}
+                          </View>
+                        ),
+                      }}
                       yAxisTextStyle={{ color: '#9ca3af', fontSize: 10 }}
                       xAxisLabelTextStyle={{ color: '#9ca3af', fontSize: 11 }}
                       yAxisThickness={0}
@@ -605,45 +743,25 @@ export function ReportesDashboardScreen() {
                       rulesColor="#f3f4f6"
                       rulesType="dashed"
                       noOfSections={4}
-                      spacing={lineDataKg.length > 1 ? (Dimensions.get('window').width - 120 - 30) / (lineDataKg.length - 1) : 45}
-                      initialSpacing={15}
-                      endSpacing={15}
                       yAxisLabelSuffix=" kg"
-                      pointerConfig={{
-                        pointerStripHeight: 160,
-                        pointerStripColor: 'lightgray',
-                        pointerStripWidth: 2,
-                        pointerColor: 'lightgray',
-                        radius: 6,
-                        pointerLabelWidth: 100,
-                        pointerLabelHeight: 72,
-                        activatePointersOnLongPress: false,
-                        autoAdjustPointerLabelPosition: true,
-                        pointerLabelComponent: (items: any) => {
-                          const item = items[0];
-                          return (
-                            <View style={{ padding: 8, backgroundColor: '#1f2937', borderRadius: 8, alignItems: 'center' }}>
-                              <Text style={{ color: '#d1d5db', fontSize: 12, marginBottom: 4 }}>{item?.dataLabel || ''}</Text>
-                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#f59e0b', marginRight: 6 }} />
-                                <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>
-                                  {(item?.value ?? 0).toFixed(1)} kg
-                                </Text>
-                              </View>
-                            </View>
-                          );
-                        },
-                      }}
                     />
                   )}
                 </View>
-              </ViewShot>
-              <View style={{ flexDirection: 'row', justifyContent: 'center', paddingBottom: 16 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#f59e0b' }} />
-                  <Text variant="bodySmall">Kg consumidos</Text>
+                {/* Leyenda multi-línea */}
+                <View style={styles.chartLegendContainer}>
+                  {legendsKg.length > 0 ? legendsKg.map((leg: any, idx: number) => (
+                    <View key={idx} style={styles.chartLegendItem}>
+                      <View style={[styles.chartLegendColor, { backgroundColor: leg.color }]} />
+                      <Text variant="bodyMedium">{leg.name}</Text>
+                    </View>
+                  )) : (
+                    <View style={styles.chartLegendItem}>
+                      <View style={[styles.chartLegendColor, { backgroundColor: '#f59e0b' }]} />
+                      <Text variant="bodyMedium">Kg consumidos</Text>
+                    </View>
+                  )}
                 </View>
-              </View>
+              </ViewShot>
             </CustomCard>
           </>
         ) : vista === 'finanzas' ? (
@@ -798,5 +916,23 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     marginRight: 8,
-  }
+  },
+  // Leyendas multi-línea (estilo lista vertical)
+  chartLegendContainer: {
+    marginTop: 8,
+    marginBottom: 16,
+    paddingHorizontal: 20,
+    width: '100%',
+  },
+  chartLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  chartLegendColor: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: 10,
+  },
 });

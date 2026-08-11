@@ -127,7 +127,7 @@ export function FinanzasDashboardScreen() {
         else egresosMes += montoUsd;
       }
       
-      // Cálculo histórico (Liquidez total)
+      // Cálculo histórico (Liquidez total y ROI)
       if (f.moneda === 'VES') {
         if (f.tipo === 'ingreso') liquidezVES += f.monto;
         else liquidezVES -= f.monto;
@@ -135,14 +135,19 @@ export function FinanzasDashboardScreen() {
         if (f.tipo === 'ingreso') liquidezUSD += f.monto;
         else liquidezUSD -= f.monto;
       }
+
+      // Sumar para ROI Global (usando USD o convirtiendo VES a USD de la fecha)
+      const montoUsd = f.moneda === 'USD' ? f.monto : (f.monto / (f.tasa_cambio || 1));
+      if (f.tipo === 'ingreso') ingresosMes += montoUsd; // Usamos ingresosMes y egresosMes como globales para el cálculo rápido
+      else egresosMes += montoUsd;
     }
     
     const estimadaUSD = liquidezUSD + (tasaBCV > 0 ? (liquidezVES / tasaBCV) : 0);
+    const roiGlobal = egresosMes > 0 ? ((ingresosMes - egresosMes) / egresosMes) * 100 : 0;
 
-    return {
-      deudaTotal, deudaAlDia, deudaPorVencer, deudaAtrasada,
-      ingresosMes, egresosMes, balance: ingresosMes - egresosMes,
-      liquidezVES, liquidezUSD, estimadaUSD
+    return { 
+      deudaTotal, deudaAlDia, deudaPorVencer, deudaAtrasada, 
+      ingresosMes, egresosMes, liquidezVES, liquidezUSD, estimadaUSD, roiGlobal
     };
   }, [deudas, flujoCaja, tasaBCV]);
 
@@ -283,6 +288,19 @@ export function FinanzasDashboardScreen() {
                 </Text>
                 <Text variant="titleLarge" style={{ fontWeight: 'bold', color: '#1f2937', textAlign: 'center' }} adjustsFontSizeToFit numberOfLines={1}>
                   $ {formatNumber(kpis.liquidezUSD)}
+                </Text>
+              </View>
+            </View>
+
+            <View style={{ width: '100%', height: 1, backgroundColor: '#e5e7eb', marginVertical: 20 }} />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+              <Text variant="labelMedium" style={{ color: '#6b7280', marginRight: 8 }}>
+                Rentabilidad Histórica (ROI):
+              </Text>
+              <View style={{ backgroundColor: kpis.roiGlobal >= 0 ? '#dcfce7' : '#fee2e2', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                <Text variant="titleMedium" style={{ fontWeight: 'bold', color: kpis.roiGlobal >= 0 ? '#16a34a' : '#dc2626' }}>
+                  {kpis.roiGlobal > 0 ? '+' : ''}{kpis.roiGlobal.toFixed(1)}%
                 </Text>
               </View>
             </View>
@@ -477,7 +495,7 @@ export function FinanzasDashboardScreen() {
                         {mov.descripcion}
                       </Text>
                       <Text variant="bodySmall" style={{ color: '#d97706', fontWeight: 'bold', marginTop: 2 }}>
-                        {eqString}
+                        {eqString} {mov.tasa_cambio > 1 ? `(Tasa: ${formatNumber(mov.tasa_cambio)})` : ''}
                       </Text>
                     </View>
                     
@@ -487,7 +505,7 @@ export function FinanzasDashboardScreen() {
                         {isIngreso ? '+' : '-'} {formatNumber(mov.monto)}
                       </Text>
                       <Text variant="bodySmall" style={{ color: '#6b7280' }}>
-                        {formatNumber(mov.tasa_cambio || 1)} VES
+                        {mov.moneda}
                       </Text>
                     </View>
                   </View>

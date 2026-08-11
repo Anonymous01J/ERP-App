@@ -3,19 +3,21 @@ import { usePullToRefresh } from '@core/hooks/usePullToRefresh';
 import { globalStyles } from '@core/theme/globalStyles';
 import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { Text, Appbar, useTheme, Divider, Chip, SegmentedButtons } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@powersync/react';
 import { CustomCard } from '@components/ui/CustomCard';
 import { DatePickerInput } from '@components/ui/DatePickerInput';
 import { StatusBar } from 'expo-status-bar';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
-export function HistorialPotesScreen() {
+export function HistorialProductosScreen() {
   const { refreshing, onRefresh } = usePullToRefresh();
   const router = useRouter();
   const theme = useTheme();
+  const { id_producto } = useLocalSearchParams<{ id_producto?: string }>();
 
-  // Filtro de Tiempo
+  // Filtros
+  const [tipoMovimiento, setTipoMovimiento] = useState('todos'); // 'todos', 'entrada', 'salida'
   const [filtroTiempo, setFiltroTiempo] = useState('mensual');
   const [fechaInicioPersonalizada, setFechaInicioPersonalizada] = useState('');
   const [fechaFinPersonalizada, setFechaFinPersonalizada] = useState('');
@@ -40,34 +42,42 @@ export function HistorialPotesScreen() {
   const queryData = useMemo(() => {
     let queryStr = `
       SELECT 
-        dp.id,
-        p.fecha_creacion as fecha,
-        dp.cantidad_solicitada,
-        dp.cantidad_producida,
-        ip.capacidad,
-        c.razon_social as cliente,
-        p.estado
-      FROM detalles_pedido dp
-      JOIN pedidos p ON p.id = dp.id_pedido
-      JOIN inventario_potes ip ON ip.id = dp.id_pote
-      LEFT JOIN clientes c ON c.id = p.id_cliente
-      WHERE dp.id_pote IS NOT NULL AND p.fecha_creacion >= ?
+        hp.id,
+        hp.fecha,
+        hp.cantidad,
+        hp.tipo,
+        hp.origen,
+        hp.entidad_relacionada,
+        pr.nombre_producto
+      FROM historial_productos hp
+      JOIN productos_reventa pr ON pr.id = hp.id_producto
+      WHERE hp.fecha >= ?
     `;
     let params: any[] = [fechaInicio];
 
+    if (id_producto) {
+      queryStr += ` AND hp.id_producto = ?`;
+      params.push(id_producto);
+    }
+
+    if (tipoMovimiento !== 'todos') {
+      queryStr += ` AND hp.tipo = ?`;
+      params.push(tipoMovimiento);
+    }
+
     if (filtroTiempo === 'personalizado' && fechaFinPersonalizada) {
-      queryStr += ` AND p.fecha_creacion <= ?`;
+      queryStr += ` AND hp.fecha <= ?`;
       const end = new Date(fechaFinPersonalizada);
       end.setHours(23, 59, 59, 999);
       params.push(end.toISOString());
     }
     
-    queryStr += ` ORDER BY p.fecha_creacion DESC`;
+    queryStr += ` ORDER BY hp.fecha DESC`;
     
     return { queryStr, params };
-  }, [fechaInicio, filtroTiempo, fechaFinPersonalizada]);
+  }, [fechaInicio, filtroTiempo, fechaFinPersonalizada, id_producto, tipoMovimiento]);
 
-  const { data: potesData = [] } = useQuery(queryData.queryStr, queryData.params);
+  const { data: productosData = [] } = useQuery(queryData.queryStr, queryData.params);
 
   const formatFecha = (f: string) => {
     try {
@@ -86,11 +96,25 @@ export function HistorialPotesScreen() {
       <StatusBar style="dark" />
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => router.back()} />
-        <Appbar.Content title="Historial de Potes" subtitle="Salidas por pedidos" />
+        <Appbar.Content title="Historial de Productos" subtitle="Entradas y Salidas" />
       </Appbar.Header>
 
       <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={globalStyles.scrollContent}>
         
+        {/* Pestañas de Movimientos (Todos | Entradas | Salidas) */}
+        <View style={{ marginBottom: 16 }}>
+          <SegmentedButtons
+            value={tipoMovimiento}
+            onValueChange={setTipoMovimiento}
+            buttons={[
+              { value: 'todos', label: 'Todos' },
+              { value: 'entrada', label: 'Entradas' },
+              { value: 'salida', label: 'Salidas' },
+            ]}
+          />
+        </View>
+
+        {/* Pestañas de Tiempo */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
           <SegmentedButtons
             value={filtroTiempo}
@@ -124,16 +148,16 @@ export function HistorialPotesScreen() {
           </View>
         )}
 
-        {potesData.length === 0 ? (
+        {productosData.length === 0 ? (
           <View style={styles.emptyState}>
             <MaterialCommunityIcons name="clipboard-text-off-outline" size={56} color="#d1d5db" />
             <Text variant="bodyLarge" style={styles.emptyText}>
-              No hay historial de salidas de potes.
+              No hay historial en este periodo.
             </Text>
           </View>
         ) : (
-          potesData.map((mov: any, index: number) => {
-            const isCancelado = mov.estado === 'cancelado';
+          productosData.map((mov: any, index: number) => {
+            const isEntrada = mov.tipo === 'entrada';
             
             return (
               <CustomCard key={mov.id + index} style={styles.card}>
@@ -141,18 +165,18 @@ export function HistorialPotesScreen() {
                   
                   {/* Cabecera del movimiento */}
                   <View style={styles.headerRow}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 8 }}>
                       <MaterialCommunityIcons name="calendar-clock" size={18} color={theme.colors.primary} />
-                      <Text variant="titleMedium" style={{ fontWeight: 'bold', color: '#1f2937' }}>
+                      <Text variant="titleMedium" style={{ fontWeight: 'bold', color: '#1f2937', flexShrink: 1 }} numberOfLines={1} adjustsFontSizeToFit>
                         {formatFecha(mov.fecha)}
                       </Text>
                     </View>
                     <Chip 
                       mode="flat" 
                       textStyle={{ fontSize: 11, fontWeight: 'bold' }}
-                      style={{ backgroundColor: isCancelado ? '#fee2e2' : '#e0e7ff' }}
+                      style={{ backgroundColor: isEntrada ? '#dcfce7' : '#fee2e2' }}
                     >
-                      {isCancelado ? 'Cancelado' : 'Pedido'}
+                      {mov.origen === 'viaje_compra' ? 'Viaje de Compra' : mov.origen === 'venta_pedido' ? 'Venta' : 'Ajuste Manual'}
                     </Chip>
                   </View>
 
@@ -160,19 +184,26 @@ export function HistorialPotesScreen() {
 
                   {/* Resultados */}
                   <View style={styles.prodRow}>
-                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text variant="bodyMedium" style={{ fontWeight: 'bold', color: isCancelado ? '#9ca3af' : theme.colors.error }}>
-                        -{mov.cantidad_solicitada}
+                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingRight: 8 }}>
+                      <Text variant="bodyLarge" style={{ fontWeight: 'bold', color: isEntrada ? '#16a34a' : theme.colors.error }}>
+                        {isEntrada ? '+' : '-'}{mov.cantidad}
                       </Text>
-                      <Text variant="bodyMedium" style={{ color: '#4b5563' }}>
-                        Potes {mov.capacidad}
-                      </Text>
-                    </View>
-                    <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                      <Text variant="bodySmall" style={{ color: '#6b7280' }}>
-                        Cliente: <Text style={{ fontWeight: 'bold', color: '#1f2937' }}>{mov.cliente}</Text>
+                      <Text variant="bodyMedium" style={{ color: '#4b5563', flexShrink: 1 }} numberOfLines={2}>
+                        {mov.nombre_producto}
                       </Text>
                     </View>
+                    
+                    {/* Entidad (Cliente o Proveedor) */}
+                    {(mov.entidad_relacionada || mov.origen === 'ajuste_manual') && (
+                      <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                        <Text variant="bodySmall" style={{ color: '#6b7280', flexShrink: 1, textAlign: 'right' }}>
+                          {isEntrada ? 'De: ' : 'Para: '}
+                          <Text style={{ fontWeight: 'bold', color: '#1f2937' }}>
+                            {mov.entidad_relacionada || 'Manual'}
+                          </Text>
+                        </Text>
+                      </View>
+                    )}
                   </View>
 
                 </View>

@@ -1,200 +1,210 @@
--- Esquema convertido para Supabase (PostgreSQL)
--- Usa UUIDs para claves primarias en vez de INT para soportar inserciones offline-first de PowerSync.
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- Tablas de catálogo/maestras
 CREATE TABLE public.clientes (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
   razon_social text NOT NULL,
   telefono text,
-  limite_credito numeric(10,2) DEFAULT 0.00,
-  saldo_a_favor_usd numeric(10,2) NOT NULL DEFAULT 0.00,
-  estado text NOT NULL DEFAULT 'activo' CHECK (estado IN ('activo', 'inactivo'))
+  limite_credito numeric DEFAULT 0.00,
+  saldo_a_favor_usd numeric NOT NULL DEFAULT 0.00,
+  estado text NOT NULL DEFAULT 'activo'::text CHECK (estado = ANY (ARRAY['activo'::text, 'inactivo'::text])),
+  cedula text,
+  rif text,
+  CONSTRAINT clientes_pkey PRIMARY KEY (id)
 );
-
 CREATE TABLE public.inventario_potes (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
   capacidad text NOT NULL,
-  stock_unidades int NOT NULL DEFAULT 0,
-  precio_compra_usd numeric(10,2) NOT NULL DEFAULT 0.00,
-  precio_venta_usd numeric(10,2) NOT NULL DEFAULT 0.00,
-  estado text NOT NULL DEFAULT 'activo' CHECK (estado IN ('activo', 'inactivo'))
+  stock_unidades integer NOT NULL DEFAULT 0,
+  precio_compra_usd numeric NOT NULL DEFAULT 0.00,
+  precio_venta_usd numeric NOT NULL DEFAULT 0.00,
+  estado text NOT NULL DEFAULT 'activo'::text CHECK (estado = ANY (ARRAY['activo'::text, 'inactivo'::text])),
+  CONSTRAINT inventario_potes_pkey PRIMARY KEY (id)
 );
-
 CREATE TABLE public.productos_presentacion (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
   nombre text,
-  peso_nominal_g int,
-  peso_real_g int,
-  rollos_por_paquete int,
-  stock_unidades_sueltas int,
-  precio_USD numeric(10,2) NOT NULL DEFAULT 0.00,
+  peso_nominal_g integer,
+  peso_real_g integer,
+  rollos_por_paquete integer,
+  stock_unidades_sueltas integer,
+  precio_USD numeric NOT NULL DEFAULT 0.00,
   tiempo_x_paquete_min real,
-  estado text NOT NULL DEFAULT 'activo' CHECK (estado IN ('activo', 'inactivo'))
+  estado text NOT NULL DEFAULT 'activo'::text CHECK (estado = ANY (ARRAY['activo'::text, 'inactivo'::text])),
+  CONSTRAINT productos_presentacion_pkey PRIMARY KEY (id)
 );
-
-CREATE TABLE public.proveedores (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  nombre_empresa text NOT NULL,
-  telefono text,
-  direccion text,
-  notas text,
-  estado text NOT NULL DEFAULT 'activo' CHECK (estado IN ('activo','inactivo'))
-);
-
 CREATE TABLE public.viajes (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
   tipo_viaje text NOT NULL,
-  id_proveedor uuid REFERENCES public.proveedores(id),
-  notas text,
   fecha_viaje_inicio timestamp with time zone NOT NULL,
   fecha_viaje_llegada_destino timestamp with time zone,
   fecha_viaje_retorno timestamp with time zone,
   fecha_viaje_llegada_base timestamp with time zone,
-  estado text NOT NULL DEFAULT 'en_progreso' CHECK (estado IN ('en_progreso','en_destino','retornando','completado'))
+  estado text NOT NULL DEFAULT 'en_progreso'::text CHECK (estado = ANY (ARRAY['en_progreso'::text, 'en_destino'::text, 'retornando'::text, 'completado'::text])),
+  notas text,
+  id_proveedor uuid,
+  CONSTRAINT viajes_pkey PRIMARY KEY (id),
+  CONSTRAINT viajes_id_proveedor_fkey FOREIGN KEY (id_proveedor) REFERENCES public.proveedores(id)
 );
-
 CREATE TABLE public.pedidos (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  id_cliente uuid NOT NULL REFERENCES public.clientes(id) ON DELETE CASCADE,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  id_cliente uuid NOT NULL,
   fecha_creacion timestamp with time zone NOT NULL DEFAULT now(),
   fecha_entrega_estimada timestamp with time zone NOT NULL,
   fecha_entrega timestamp with time zone,
-  estado text NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente','en_produccion','listo','entregado','cancelado')),
-  estado_pago text NOT NULL DEFAULT 'pendiente' CHECK (estado_pago IN ('pendiente','pagado')),
+  estado text NOT NULL DEFAULT 'pendiente'::text CHECK (estado = ANY (ARRAY['pendiente'::text, 'en_produccion'::text, 'listo'::text, 'entregado'::text, 'cancelado'::text])),
+  estado_pago text NOT NULL DEFAULT 'pendiente'::text CHECK (estado_pago = ANY (ARRAY['pendiente'::text, 'pagado'::text])),
   fecha_vencimiento_credito date,
-  monto_total numeric(10,2) NOT NULL DEFAULT 0.00,
-  tasa_cambio_creacion numeric(10,4)
+  monto_total numeric NOT NULL DEFAULT 0.00,
+  tasa_cambio_creacion numeric,
+  nota_entrega_numero integer,
+  CONSTRAINT pedidos_pkey PRIMARY KEY (id),
+  CONSTRAINT pedidos_id_cliente_fkey FOREIGN KEY (id_cliente) REFERENCES public.clientes(id)
 );
-
 CREATE TABLE public.abonos_pagos (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  id_pedido uuid NOT NULL REFERENCES public.pedidos(id) ON DELETE CASCADE,
-  monto numeric(10,2) NOT NULL,
-  monto_equivalente_usd numeric(10,2) NOT NULL DEFAULT 0.00,
-  moneda text NOT NULL DEFAULT 'VES' CHECK (moneda IN ('VES','USD')),
-  tasa_cambio numeric(10,4) NOT NULL DEFAULT 1.0000,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  id_pedido uuid NOT NULL,
+  monto numeric NOT NULL,
+  monto_equivalente_usd numeric NOT NULL DEFAULT 0.00,
+  moneda text NOT NULL DEFAULT 'VES'::text CHECK (moneda = ANY (ARRAY['VES'::text, 'USD'::text])),
+  tasa_cambio numeric NOT NULL DEFAULT 1.0000,
   fecha_pago timestamp with time zone DEFAULT now(),
-  tipo_pago text NOT NULL CHECK (tipo_pago IN ('adelanto','abono'))
+  tipo_pago text NOT NULL CHECK (tipo_pago = ANY (ARRAY['adelanto'::text, 'abono'::text])),
+  CONSTRAINT abonos_pagos_pkey PRIMARY KEY (id),
+  CONSTRAINT abonos_pagos_id_pedido_fkey FOREIGN KEY (id_pedido) REFERENCES public.pedidos(id)
 );
-
 CREATE TABLE public.bobinas_grandes (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  id_viaje_compra uuid NOT NULL REFERENCES public.viajes(id),
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  id_viaje_compra uuid NOT NULL,
   peso_inicial_kg real NOT NULL,
-  tipo_papel text NOT NULL DEFAULT 'A' CHECK (tipo_papel IN ('A','B')),
   peso_actual_kg real,
   peso_muerto_kg real,
   merma_core_kg real,
-  costo_bobina numeric(10,2) NOT NULL DEFAULT 0.00,
+  costo_bobina numeric NOT NULL DEFAULT 0.00,
   fecha_llegada timestamp with time zone,
   fecha_uso timestamp with time zone,
   fecha_gasto timestamp with time zone,
-  estado text NOT NULL DEFAULT 'disponible' CHECK (estado IN ('disponible','en_uso','agotada'))
+  estado text NOT NULL DEFAULT 'disponible'::text CHECK (estado = ANY (ARRAY['disponible'::text, 'en_uso'::text, 'agotada'::text])),
+  id_tipo_papel uuid NOT NULL,
+  CONSTRAINT bobinas_grandes_pkey PRIMARY KEY (id),
+  CONSTRAINT bobinas_grandes_id_viaje_compra_fkey FOREIGN KEY (id_viaje_compra) REFERENCES public.viajes(id),
+  CONSTRAINT bobinas_grandes_id_tipo_papel_fkey FOREIGN KEY (id_tipo_papel) REFERENCES public.tipos_papel(id)
 );
-
 CREATE TABLE public.produccion_diaria (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  id_producto uuid NOT NULL REFERENCES public.productos_presentacion(id),
-  id_pedido_destino uuid REFERENCES public.pedidos(id) ON DELETE SET NULL,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  id_producto uuid NOT NULL,
+  id_pedido_destino uuid,
   fecha date NOT NULL,
-  cantidad_rollos_total int NOT NULL
+  cantidad_rollos_total integer NOT NULL,
+  CONSTRAINT produccion_diaria_pkey PRIMARY KEY (id),
+  CONSTRAINT produccion_diaria_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.productos_presentacion(id),
+  CONSTRAINT produccion_diaria_id_pedido_destino_fkey FOREIGN KEY (id_pedido_destino) REFERENCES public.pedidos(id)
 );
-
 CREATE TABLE public.consumo_bobinas (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  id_produccion uuid NOT NULL REFERENCES public.produccion_diaria(id) ON DELETE CASCADE,
-  id_bobina uuid NOT NULL REFERENCES public.bobinas_grandes(id),
-  kg_consumidos numeric(10,2) NOT NULL
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  id_produccion uuid NOT NULL,
+  id_bobina uuid NOT NULL,
+  kg_consumidos numeric NOT NULL,
+  CONSTRAINT consumo_bobinas_pkey PRIMARY KEY (id),
+  CONSTRAINT consumo_bobinas_id_produccion_fkey FOREIGN KEY (id_produccion) REFERENCES public.produccion_diaria(id),
+  CONSTRAINT consumo_bobinas_id_bobina_fkey FOREIGN KEY (id_bobina) REFERENCES public.bobinas_grandes(id)
 );
-
 CREATE TABLE public.detalles_pedido (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  id_pedido uuid NOT NULL REFERENCES public.pedidos(id),
-  id_producto uuid REFERENCES public.productos_presentacion(id),
-  id_pote uuid REFERENCES public.inventario_potes(id),
-  cantidad_solicitada int NOT NULL,
-  cantidad_producida int,
-  precio_unitario numeric(10,2) NOT NULL DEFAULT 0.00
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  id_pedido uuid NOT NULL,
+  id_producto uuid,
+  id_pote uuid,
+  cantidad_solicitada integer NOT NULL,
+  cantidad_producida integer,
+  precio_unitario numeric NOT NULL DEFAULT 0.00,
+  id_tipo_papel uuid,
+  CONSTRAINT detalles_pedido_pkey PRIMARY KEY (id),
+  CONSTRAINT detalles_pedido_id_pedido_fkey FOREIGN KEY (id_pedido) REFERENCES public.pedidos(id),
+  CONSTRAINT detalles_pedido_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.productos_presentacion(id),
+  CONSTRAINT detalles_pedido_id_pote_fkey FOREIGN KEY (id_pote) REFERENCES public.inventario_potes(id),
+  CONSTRAINT detalles_pedido_id_tipo_papel_fkey FOREIGN KEY (id_tipo_papel) REFERENCES public.tipos_papel(id)
 );
-
 CREATE TABLE public.entregas_viaje (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  id_viaje uuid NOT NULL REFERENCES public.viajes(id) ON DELETE CASCADE,
-  id_pedido uuid NOT NULL REFERENCES public.pedidos(id) ON DELETE CASCADE,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  id_viaje uuid NOT NULL,
+  id_pedido uuid NOT NULL,
   nota_entrega_numero text,
   hora_llegada timestamp with time zone,
-  estado text NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'entregado')),
-  orden int NOT NULL DEFAULT 1
+  estado text NOT NULL DEFAULT 'pendiente'::text CHECK (estado = ANY (ARRAY['pendiente'::text, 'entregado'::text])),
+  orden integer NOT NULL DEFAULT 1,
+  CONSTRAINT entregas_viaje_pkey PRIMARY KEY (id),
+  CONSTRAINT entregas_viaje_id_viaje_fkey FOREIGN KEY (id_viaje) REFERENCES public.viajes(id),
+  CONSTRAINT entregas_viaje_id_pedido_fkey FOREIGN KEY (id_pedido) REFERENCES public.pedidos(id)
 );
-
--- MIGRATION: Si la tabla ya existe, ejecutar en Supabase SQL Editor:
--- ALTER TABLE public.entregas_viaje ADD COLUMN IF NOT EXISTS hora_llegada timestamp with time zone;
--- ALTER TABLE public.entregas_viaje ADD COLUMN IF NOT EXISTS estado text NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'entregado'));
--- ALTER TABLE public.entregas_viaje ADD COLUMN IF NOT EXISTS orden int NOT NULL DEFAULT 1;
-
 CREATE TABLE public.movimientos (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  descripcion text NOT NULL,
-  monto numeric(10,2) NOT NULL,
-  moneda text NOT NULL DEFAULT 'VES' CHECK (moneda IN ('VES','USD')),
-  tasa_cambio numeric(10,4) NOT NULL DEFAULT 1.0000,
-  categoria text NOT NULL CHECK (categoria IN ('gasolina','peaje','viaticos','mantenimiento','operativos','otros','nomina')),
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  descripcion text,
+  monto numeric NOT NULL,
+  moneda text NOT NULL DEFAULT 'VES'::text CHECK (moneda = ANY (ARRAY['VES'::text, 'USD'::text])),
+  tasa_cambio numeric NOT NULL DEFAULT 1.0000,
+  categoria text NOT NULL CHECK (categoria = ANY (ARRAY['gasolina'::text, 'peaje'::text, 'viaticos'::text, 'mantenimiento'::text, 'operativos'::text, 'otros'::text, 'nomina'::text])),
   fecha timestamp with time zone DEFAULT now(),
-  id_viaje uuid REFERENCES public.viajes(id) ON DELETE SET NULL,
-  tipo text CHECK (tipo IN ('ingreso','egreso'))
+  id_viaje uuid,
+  tipo text CHECK (tipo = ANY (ARRAY['ingreso'::text, 'egreso'::text])),
+  CONSTRAINT movimientos_pkey PRIMARY KEY (id),
+  CONSTRAINT movimientos_id_viaje_fkey FOREIGN KEY (id_viaje) REFERENCES public.viajes(id)
 );
-
--- RLS Policies
-ALTER TABLE public.clientes ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.clientes;
-CREATE POLICY "Allow all for authenticated users" ON public.clientes FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.inventario_potes ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.inventario_potes;
-CREATE POLICY "Allow all for authenticated users" ON public.inventario_potes FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.productos_presentacion ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.productos_presentacion;
-CREATE POLICY "Allow all for authenticated users" ON public.productos_presentacion FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.proveedores ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.proveedores;
-CREATE POLICY "Allow all for authenticated users" ON public.proveedores FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.viajes ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.viajes;
-CREATE POLICY "Allow all for authenticated users" ON public.viajes FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.pedidos ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.pedidos;
-CREATE POLICY "Allow all for authenticated users" ON public.pedidos FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.abonos_pagos ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.abonos_pagos;
-CREATE POLICY "Allow all for authenticated users" ON public.abonos_pagos FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.bobinas_grandes ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.bobinas_grandes;
-CREATE POLICY "Allow all for authenticated users" ON public.bobinas_grandes FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.produccion_diaria ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.produccion_diaria;
-CREATE POLICY "Allow all for authenticated users" ON public.produccion_diaria FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.consumo_bobinas ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.consumo_bobinas;
-CREATE POLICY "Allow all for authenticated users" ON public.consumo_bobinas FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.detalles_pedido ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.detalles_pedido;
-CREATE POLICY "Allow all for authenticated users" ON public.detalles_pedido FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.entregas_viaje ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.entregas_viaje;
-CREATE POLICY "Allow all for authenticated users" ON public.entregas_viaje FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.movimientos ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON public.movimientos;
-CREATE POLICY "Allow all for authenticated users" ON public.movimientos FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE TABLE public.proveedores (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  nombre_empresa text NOT NULL,
+  telefono text,
+  direccion text,
+  notas text,
+  estado text NOT NULL DEFAULT 'activo'::text CHECK (estado = ANY (ARRAY['activo'::text, 'inactivo'::text])),
+  cedula text,
+  rif text,
+  encargado text,
+  CONSTRAINT proveedores_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.tipos_papel (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  nombre text NOT NULL,
+  estado text NOT NULL DEFAULT 'activo'::text,
+  CONSTRAINT tipos_papel_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.perfiles (
+  id uuid NOT NULL,
+  nombre text NOT NULL DEFAULT ''::text,
+  rol text NOT NULL DEFAULT 'operador'::text CHECK (rol = ANY (ARRAY['admin'::text, 'operador'::text, 'chofer'::text, 'vendedor'::text])),
+  activo boolean NOT NULL DEFAULT false,
+  CONSTRAINT perfiles_pkey PRIMARY KEY (id),
+  CONSTRAINT perfiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.rol_permisos (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  rol text NOT NULL CHECK (rol = ANY (ARRAY['admin'::text, 'operador'::text, 'chofer'::text, 'vendedor'::text])),
+  modulo text NOT NULL,
+  habilitado boolean NOT NULL DEFAULT false,
+  CONSTRAINT rol_permisos_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.configuracion (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  clave text NOT NULL UNIQUE,
+  valor text NOT NULL,
+  CONSTRAINT configuracion_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.push_tokens (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  token text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT push_tokens_pkey PRIMARY KEY (id),
+  CONSTRAINT push_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.notificaciones_historial (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  titulo text NOT NULL,
+  cuerpo text NOT NULL,
+  data jsonb,
+  leido boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT notificaciones_historial_pkey PRIMARY KEY (id),
+  CONSTRAINT notificaciones_historial_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);

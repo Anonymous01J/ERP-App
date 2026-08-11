@@ -22,13 +22,13 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - **Edge Function `powersync`:** Recibe las operaciones CRUD enviadas desde la app y las ejecuta en Supabase utilizando el token JWT del usuario.
   - **Replicación y Permisos de BD:** `powersync_role` cuenta con permisos `GRANT SELECT` en todas las tablas (`ALTER DEFAULT PRIVILEGES`), tablas registradas en la publicación de replicación y con `REPLICA IDENTITY FULL`.
 - **Autenticación PowerSync:** Validada mediante JWKS con la URI de Supabase (`https://<ref>.supabase.co/auth/v1/.well-known/jwks.json`), soportando algoritmos `ES256` y audience `authenticated`.
-- **Manejo de Sesión:** `AuthProvider.tsx` gestiona globalmente el estado de autenticación de Supabase y sincronización de PowerSync con protección contra dobles conexiones en re-montajes.
+- **Manejo de Sesión:** `AuthProvider.tsx` gestiona globalmente el estado de autenticación de Supabase y sincronización de PowerSync. Inicializa la BD local sin bloquear por red (Offline-First fire-and-forget) evitando congelamientos al retornar del background, y maneja refrescos de token silenciosos sin interrupción de UI.
 - **Notificaciones Push (Nativas):** Integración mediante Edge Functions (`notify`, `check_cobranzas`) y Triggers en PostgreSQL (`pg_net`). Los tokens de Expo se recolectan vía `usePushNotifications` al hacer login. **FCM V1 configurado y verificado:** Service Account JSON subido al dashboard de EAS (`expo.dev/.../credentials`). La Edge Function `notify` incluye cabecera `Authorization: Bearer` usando el secreto `EXPO_ACCESS_TOKEN` almacenado en Supabase. Notificaciones push funcionando y verificadas en dispositivo físico Android.
   - **Triggers de Notificación Corregidos:** Se actualizaron todos los triggers (`on_bobinas_insert`, `on_pedidos_insert`, `on_viajes_update`, `on_movimientos_insert`, `on_produccion_insert`) para usar `jsonb_build_object` en lugar de `json_build_object`, evitando errores de discrepancia de tipos (JSON vs JSONB) al invocar `send_push_notification`.
   - **Parámetros en Tabla `configuracion`:** Para evadir las restricciones de permisos GUC (`ALTER DATABASE`) en instancias gestionadas de Supabase, la función `send_push_notification` lee dinámicamente la URL del proyecto (`project_url`) y el token (`anon_key`) directamente desde la tabla `public.configuracion`.
   - **Campana In-App (Offline-First):** Se agregó `NotificacionesScreen` con un ícono de campana global en el header. Utiliza la tabla `notificaciones_historial` sincronizada vía PowerSync para mantener el conteo de no leídas (badge) e historial localmente.
   - **Sincronización en PowerSync v3 (Edition 3):** El historial de notificaciones se sincroniza de forma segura y automática para cada usuario utilizando la función `auth.user_id()` (`SELECT * FROM notificaciones_historial WHERE user_id = auth.user_id()`) en la configuración de Sync Streams, lo que permite la separación implícita y automática de buckets.
-  - **Deep Linking:** Las notificaciones (tanto OS como In-App) incluyen un payload `ruta` que redirige automáticamente al usuario al módulo correspondiente (`/inventario`, `/pedidos`, etc.) al tocarlas.
+  - **Deep Linking:** Las notificaciones (tanto OS como In-App) incluyen un payload `ruta` que redirige automáticamente al usuario al módulo correspondiente (`/inventario`, `/pedidos?vista=finanzas`, `/viajes?viajeId=X`) al tocarlas, mostrando un overlay de carga (`AppLoader`) intermedio para una UX fluida.
 
 ---
 
@@ -161,7 +161,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 ### 💰 Finanzas / Flujo de Caja (`src/features/finanzas`)
 - **Dashboard General (`FinanzasDashboardScreen`)** accesible globalmente desde las pestañas inferiores:
   - **Sin encabezados duplicados:** Se eliminó el `Appbar.Header` interno para integrarse directamente con la navegación global del Drawer.
-  - **Tu Liquidez Estimada:** Nueva tarjeta principal interactiva que consolida todo el historial de flujo de caja real (abonos y movimientos). Separa con precisión el saldo físico disponible en **Dólares (USD)** y **Bolívares (VES)**, calculando dinámicamente tu liquidez total global convirtiendo los Bolívares usando la **Tasa Oficial BCV** actualizada en tiempo real vía API al ingresar a la pantalla.
+  - **Tu Liquidez Estimada:** Nueva tarjeta principal interactiva que consolida todo el historial de flujo de caja real (abonos y movimientos). Separa con precisión el saldo físico disponible en **Dólares (USD)** y **Bolívares (VES)** (incorporando flexbox y auto-scaling para montos millonarios sin desbordamiento visual), calculando dinámicamente tu liquidez total global convirtiendo los Bolívares usando la **Tasa Oficial BCV** actualizada en tiempo real vía API al ingresar a la pantalla.
   - **KPIs Financieros:** Consolida las cuentas por cobrar como un bloque compacto superior para no perder visibilidad del capital invertido.
   - **Estado de la Deuda:** Barra gráfica que segmenta porcentualmente si la cartera de crédito está "Al Día", "Por Vencer" (a menos de 5 días) o "Atrasada" (créditos con fecha vencida).
   - **Flujo de Caja Histórico (Timeline):** Unifica entradas (`abonos_pagos`) y salidas (`movimientos`). Rediseñado con **Agrupación por Fechas Exactas**, iconos circulares direccionales e indicador multi-moneda (ej. Abono en Bs convertido visualmente a dólares debajo del título).
@@ -230,7 +230,7 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
   - **Producción:** Analíticas de eficiencia de materia prima (Mermas vs Papel Útil) con gráfico tipo Pie. Historial de producción en gráficos de línea para **Rollos Producidos** y **Kg Consumidos**.
   - **Finanzas:** Flujo de caja comparativo (Ventas, Cobranzas, Cuentas por Cobrar) con gráfico de Barras multi-columna.
   - **Logística:** Desglose del presupuesto gastado en ruta (Gasolina, Peaje, Viáticos) con gráfico tipo Donut interactivo, convertido a USD automáticamente.
-- **Filtros Globales de Tiempo:** Selector unificado (1 Mes, 3 Meses, Rango Personalizado "Desde-Hasta").
+- **Filtros Globales de Tiempo:** Selector unificado (1 Mes, 3 Meses, Rango Personalizado "Desde-Hasta") configurado con "1 Mes" como valor predeterminado en todos los módulos históricos para garantizar cargas iniciales ultra-rápidas.
 - **Motor de Exportación PDF Avanzado (`generatePdf.ts`):** 
   - **Gráficos Incrustados:** Captura en tiempo real del gráfico activo (Base64) mediante `react-native-view-shot`. Se implementó un algoritmo dinámico (`maxValue={max * 1.2}`) para evitar recortes en la parte superior de las gráficas de línea.
   - **Selector de Nivel de Detalle:** Permite emitir un "Resumen" gerencial o un reporte "Detallado" con tablas de registro exacto (ej. lista de facturas emitidas, historia de viáticos).
@@ -264,6 +264,64 @@ Este documento resume todo lo que ya está implementado en el sistema ERP-App (S
 | Exportación a Excel/CSV | No iniciado | Baja |
 | **Refactoring: Queries a Custom Hooks** | Pendiente | Media |
 | **Limpieza de Tokens Push Muertos (`DeviceNotRegistered`) en Edge Functions** | Pendiente | Media |
+| **Generalización de Potes a Productos de Reventa** | ✅ Completado | Alta |
+| **Historial Unificado de Inventario (Ledger)** | ✅ Completado | Alta |
+| **Múltiples Proveedores por Viaje (Enfoque Libre)** | ✅ Completado | Alta |
+| **Compartir Hoja de Ruta (Texto)** | ✅ Completado | Media |
+| **Registro de Costo de Bobinas y Movimientos** | ✅ Completado | Alta |
+| **Analíticas de Rendimiento de Proveedores (Mermas vs Calidad)** | ✅ Completado | Media |
+| **Columna de Proveedor por Bobina en Reportes de Producción** | ✅ Completado | Media |
+| **Añadir métrica de ROI al módulo de Finanzas / Reportes** | ✅ Completado | Media |
+
+### Detalle: Registro de Costo de Bobinas y Flujo de Caja
+Al cargar una Bobina, actualmente el sistema no solicita su precio. 
+- **UI:** Agregar un `<CurrencyInput>` para capturar el `costo_bobina` en el formulario de `CargarBobinasViajeScreen`.
+- **Base de Datos:** La tabla `bobinas_grandes` ya cuenta con la columna `costo_bobina`, por lo que solo hay que asegurar su correcta inserción desde la app.
+- **Finanzas (Automatización):** En la misma mutación que inserta la bobina, se debe insertar un registro en la tabla `movimientos` (tipo `egreso`), cuya `descripcion` enlace dinámicamente el viaje y la bobina (Ej: "Compra de Bobina de X kg - Viaje a Proveedor Y").
+
+### Detalle: Múltiples Proveedores por Viaje (Enfoque Libre)
+Para permitir comprar a distintos proveedores en un solo viaje usando el catálogo global (Opción B):
+- **Base de Datos:**
+  - Eliminar `id_proveedor` de la tabla `viajes`.
+  - Agregar `id_proveedor` a la tabla `bobinas_grandes` (para saber el origen de la materia prima).
+  - Crear la tabla `compras_viaje` (Paradas de Compra), idéntica en estructura a `entregas_viaje`.
+- **UI/UX:**
+  - `RegistrarViajeScreen`: Permitir armar una ruta con múltiples "Paradas de Compra", seleccionando distintos proveedores.
+  - Al marcar "Llegué" en la parada del "Proveedor A", se abrirá el modal de `CargarBobinasViajeScreen`. Cualquier bobina o producto de reventa que se agregue ahí, quedará amarrado a dicho proveedor.
+
+### Detalle: Compartir Hoja de Ruta (Texto)
+El chofer o administrador debe poder compartir rápidamente la ruta trazada para un viaje (tanto de entregas como de compras).
+- **UI:** Agregar un botón de "Compartir Ruta" en la vista de detalle del viaje (`ViajesDashboardScreen`).
+- **Implementación:** Utilizar la API nativa `Share.share({ message: ... })` de `react-native` (no `expo-sharing`, ya que este último es solo para archivos físicos). 
+- **Formato del Texto:** El string generado debe iterar sobre los detalles del pedido asociado a cada parada de entrega y mostrar la lista de carga exacta con **Cantidad, Tipo y Nombre** de cada producto, funcionando como un manifiesto completo.
+  - *Ejemplo de Formato Esperado:*
+    ```text
+    🚚 *HOJA DE RUTA - VIAJE #1042*
+    
+    *PARADA 1 (COMPRA)*
+    🏢 Proveedor: Empaques del Norte
+    
+    *PARADA 2 (ENTREGA)*
+    👤 Cliente: Panadería San José
+    📦 Pedido #5021
+    - 50 unds x Rollo Institucional 600g
+    - 10 unds x Potes Transparente 1L
+    ```
+
+
+
+
+
+### Detalle: Generalización de Potes a Productos de Reventa
+Para soportar nuevos productos de reventa sin alterar la lógica de producción interna (Bobinas ➔ Rollos), se generalizará el actual módulo de "Potes":
+- **Base de Datos (Supabase / AppSchema):** 
+  - Renombrar tabla `inventario_potes` a `productos_reventa`.
+  - Renombrar columna `capacidad` a `nombre_producto`.
+  - Renombrar en tabla `detalles_pedido`: `id_pote` ➔ `id_producto_reventa`.
+- **UI/UX:**
+  - Cambiar los textos y tabs de "Potes" por "Otros Productos" o "Catálogo" en el Dashboard de Inventario.
+  - Refactorizar `RegistrarPoteScreen` / `GestionarPotesScreen` para que sean formularios genéricos de productos, pidiendo "Nombre" en lugar de "Capacidad".
+  - Refactorizar selectores en `NuevoPedidoScreen` y `CargarBobinasViajeScreen` para reflejar el nuevo nombre genérico y permitir registrar stock/ventas de cualquiera de los nuevos productos.
 
 ---
 

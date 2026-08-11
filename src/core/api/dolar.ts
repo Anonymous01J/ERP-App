@@ -1,5 +1,7 @@
 // src/core/api/dolar.ts
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 export interface TasaCambioResponse {
   moneda: string;
   nombre: string;
@@ -18,10 +20,20 @@ export async function getTasaDolarBCV(): Promise<number> {
     }
     const data: TasaCambioResponse[] = await response.json();
     const oficial = data.find(d => d.fuente === 'oficial');
-    return oficial ? oficial.promedio : 0;
+    const tasa = oficial ? oficial.promedio : 0;
+    if (tasa > 0) {
+      await AsyncStorage.setItem('TASA_DOLAR_BCV_CACHE', tasa.toString());
+    }
+    return tasa;
   } catch (error) {
-    console.error('Error fetching Dolar BCV:', error);
-    throw new Error('No se pudo obtener la tasa del Dólar BCV.');
+    console.warn('Error fetching Dolar BCV, intentando usar caché local:', error);
+    try {
+      const cached = await AsyncStorage.getItem('TASA_DOLAR_BCV_CACHE');
+      if (cached) return parseFloat(cached);
+    } catch (e) {
+      console.error('Error leyendo caché Tasa Dolar:', e);
+    }
+    throw new Error('No se pudo obtener la tasa del Dólar BCV y no hay caché disponible.');
   }
 }
 
@@ -33,9 +45,19 @@ export async function getTasaEuroBCV(): Promise<number> {
     }
     const data: TasaCambioResponse[] = await response.json();
     const oficial = data.find(d => d.fuente === 'oficial');
-    return oficial ? oficial.promedio : 0;
+    const tasa = oficial ? oficial.promedio : 0;
+    if (tasa > 0) {
+      await AsyncStorage.setItem('TASA_EURO_BCV_CACHE', tasa.toString());
+    }
+    return tasa;
   } catch (error) {
-    console.error('Error fetching Euro BCV:', error);
-    throw new Error('No se pudo obtener la tasa del Euro BCV.');
+    console.warn('Error fetching Euro BCV, intentando usar caché local:', error);
+    try {
+      const cached = await AsyncStorage.getItem('TASA_EURO_BCV_CACHE');
+      if (cached) return parseFloat(cached);
+    } catch (e) {
+      console.error('Error leyendo caché Tasa Euro:', e);
+    }
+    throw new Error('No se pudo obtener la tasa del Euro BCV y no hay caché disponible.');
   }
 }
