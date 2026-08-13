@@ -28,10 +28,14 @@ export const generateNotaEntregaPdf = async (
   detalles.forEach(item => {
     const precio = item.precio_unitario || 0;
     const totalItem = item.cantidad_solicitada * precio;
+    const nombre = item.nombre_item || 'Producto Genérico';
+    const tipoPapel = item.nombre_tipo_papel ? ` (${item.nombre_tipo_papel})` : '';
+    const descripcion = `${nombre}${tipoPapel}`;
+    
     rowsHtml += `
       <tr>
         <td class="center">${item.cantidad_solicitada}</td>
-        <td>${item.nombre_item || 'Producto Genérico'}</td>
+        <td>${descripcion}</td>
         <td class="right">${formatCurrencyATM(precio.toFixed(2))}</td>
         <td class="right">${formatCurrencyATM(totalItem.toFixed(2))}</td>
       </tr>
