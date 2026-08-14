@@ -13,6 +13,7 @@ import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import { CurrencyInput } from '@components/ui/CurrencyInput';
 import { parseCurrency } from '@core/utils/currency';
+import { getTasaDolarBCV } from '@core/api/dolar';
 
 // Categorías disponibles con íconos
 const CATEGORIAS = [
@@ -112,13 +113,16 @@ const GastoViajeForm = ({ idViaje, theme }: { idViaje: string; theme: any }) => 
     }
     setSaving(true);
     try {
+      let tasaLocal = 1;
+      try { tasaLocal = await getTasaDolarBCV(); } catch (e) { /* ignore offline */ }
+
       const catLabel = CATEGORIAS.find(c => c.key === categoria)?.label || 'Gasto de viaje';
       const descripFinal = descripcion.trim() || catLabel;
 
       await powerSync.execute(
         `INSERT INTO movimientos (id, descripcion, monto, moneda, tasa_cambio, categoria, fecha, id_viaje, tipo)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [uuidv4(), descripFinal, montoNum, moneda, tasaDolarBCV, categoria, new Date().toISOString(), idViaje, tipo]
+        [uuidv4(), descripFinal, montoNum, moneda, tasaLocal, categoria, new Date().toISOString(), idViaje, tipo]
       );
       Toast.show({
         type: 'success',
